@@ -1092,7 +1092,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 method=_method_summary(spots_a, spots_b, an, names, noun, locs, home),
                 timeline=(map_a, map_b))
             st.download_button("\u2B07\ufe0f Download report (PDF)", data=lambda: compare_report_pdf(pdf_ctx),
-                               file_name=f"RBN_compare_{callsign}_{file_date}.pdf", mime="application/pdf",
+                               file_name=f"FarFieldLab_compare_{callsign}_{file_date}.pdf", mime="application/pdf",
                                help="The verdict, scoreboard and every chart and table, as a PDF you can keep or share.")
             with st.expander(used["label"]):
                 st.dataframe(pd.DataFrame(used["rows"], index=[names["A"], names["B"]]).T, width="stretch")
@@ -1236,7 +1236,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                         height=min(38 * (len(every) + 1), 420))
                     table_col.download_button("⬇️ This table (CSV)", head_to_head_table(every, units).data.rename(
                                                   columns=lambda c: c.replace("🔵 ", "").replace("🟠 ", "")).to_csv(),
-                                              f"RBN_compare_{callsign}_{file_date}_by_{noun}.csv", "text/csv",
+                                              f"FarFieldLab_compare_{callsign}_{file_date}_by_{noun}.csv", "text/csv",
                                               help="Every receiver's average SNR on A and B and the relative gain, as shown.")
                 if not every.empty:
                     st.subheader("Relative gain by direction and distance")
@@ -1375,7 +1375,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     st.markdown(f"#### {icon} {names[side]}")
                     st.iframe(html, height=620)
                     st.download_button(f"⬇️ Download map {side}", html,
-                                       f"RBN_map_{callsign}_{file_date}_{slug}.html", "text/html", key=f"dl_{side}")
+                                       f"FarFieldLab_map_{callsign}_{file_date}_{slug}.html", "text/html", key=f"dl_{side}")
 
 
     # wspr.live fills a slot in over several minutes: about 1 receiver at 2 minutes old, half by 3-4, complete by 6-8 (measured).

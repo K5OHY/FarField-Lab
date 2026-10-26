@@ -18,7 +18,7 @@ MAX_BYTES = 400 * 1024 * 1024
 
 
 def folder():
-    path = Path(os.environ.get("RBN_CACHE_DIR") or Path(tempfile.gettempdir()) / "rbn_signal_mapper_cache")
+    path = Path(os.environ.get("RBN_CACHE_DIR") or Path(tempfile.gettempdir()) / "farfield_lab_cache")
     path.mkdir(parents=True, exist_ok=True)
     return path
 

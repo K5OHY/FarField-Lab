@@ -24,6 +24,16 @@ class Structure(unittest.TestCase):
         for page in ("spots_page", "conditions_page", "help_page", "main"):
             self.assertTrue(callable(getattr(web, page)), page)
 
+    def test_the_name_and_the_branding_files_are_there(self):
+        import ui_common
+        self.assertEqual(ui_common.GITHUB_URL, "https://github.com/K5OHY/FarField-Lab")
+        for name in ("farfield-icon-512.png", "farfield-favicon.png", "farfield-logo-dark.png", "farfield-logo-light.png",
+                     "farfield-banner.png"):
+            self.assertTrue(os.path.exists(os.path.join(HERE, "images", "branding", name)), name)
+        self.assertTrue(os.path.exists(os.path.join(HERE, "LICENSE")))
+        with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
+            self.assertIn("# FarField Lab", f.read())
+
     def test_the_entry_point_stays_small(self):
         with open(os.path.join(HERE, "web.py"), encoding="utf-8") as f:
             self.assertLess(len(f.read().splitlines()), 60)

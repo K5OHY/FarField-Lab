@@ -31,7 +31,7 @@ def help_page():
     while i < len(lines):
         line = lines[i]
         i += 1
-        if line.startswith("# ") or "online, nothing to install" in line:
+        if line.startswith("# ") or line.startswith("![FarField Lab]") or "online, nothing to install" in line:
             continue
         if line.startswith("## What it looks like"):  # the screenshots are for GitHub, not for the app itself
             while i < len(lines) and not lines[i].startswith("## "):

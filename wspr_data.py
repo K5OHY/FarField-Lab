@@ -1,4 +1,4 @@
-"""WSPR spots for the RBN Signal Mapper, from the public wspr.live database.
+"""WSPR spots for FarField Lab, from the public wspr.live database.
 
 wspr.live mirrors wsprnet.org's spot archive and exposes it over a plain HTTP SQL interface. A spot is one
 receiver decoding one WSPR transmission, so it lines up with an RBN spot: spotter, frequency, SNR, time. Unlike RBN,
@@ -17,7 +17,7 @@ import requests
 from rbn_data import get_band
 
 WSPR_URL = "https://db1.wspr.live/"
-HEADERS = {"User-Agent": "RBN-Signal-Mapper (personal project)"}
+HEADERS = {"User-Agent": "FarField-Lab (personal project)"}
 MAX_ROWS = 300_000
 MAX_LISTEN_ROWS = 600_000
 # wspr.live numbers its bands by the first digits of the frequency; see https://wspr.live

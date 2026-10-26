@@ -143,10 +143,9 @@ WSPR_SOURCE = "WSPR"
 SOURCE_CODES = {"rbn": "Download by date", "paste": "Paste from RBN site", "wspr": WSPR_SOURCE}  # as they appear in a link
 
 
-GITHUB_URL = "https://github.com/K5OHY/RBN_Map"
-GITHUB_BETA_URL = "https://github.com/K5OHY/RBN-Map-Beta"
+GITHUB_URL = "https://github.com/K5OHY/FarField-Lab"
 
 
 def github_url():
-    """The repository this copy of the app comes from: the beta's when it is running at the beta address."""
-    return GITHUB_BETA_URL if "beta" in (st.context.url or "").lower() else GITHUB_URL
+    """The repository the app comes from (the live site is its main branch, the beta site its beta branch)."""
+    return GITHUB_URL

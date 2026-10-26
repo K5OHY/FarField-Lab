@@ -395,6 +395,7 @@ class HelpPage(unittest.TestCase):
         self.assertIn("Try an example", text)
         self.assertIn("/blob/main/docs/METHODOLOGY.md", text)  # the README's relative link, pointed at the repository
         self.assertNotIn("](docs/METHODOLOGY.md)", text)
+        self.assertNotIn("farfield-banner", text)  # the banner is for GitHub, not the Help page
 
 
 class WholeApp(unittest.TestCase):

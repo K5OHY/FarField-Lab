@@ -109,8 +109,8 @@ def _session_report_view(spots, locs, home, units, noun, band_choice):
 
 
 def spots_page():
-    st.title("\U0001F4E1 RBN Signal Mapper")
-    st.markdown('<p class="subtitle">Map the Reverse Beacon Network and WSPR stations that heard you, and see how strong '
+    st.title("\U0001F4E1 FarField Lab")
+    st.markdown('<p class="subtitle">Explore propagation. Compare antennas. Map the Reverse Beacon Network and WSPR stations that heard you, and see how strong '
                 'your signal was and in which directions. To find out which of two antennas does better, open '
                 '<b>Compare antennas</b> in the menu.</p>', unsafe_allow_html=True)
 
@@ -188,15 +188,15 @@ def spots_page():
         # so everything it needs is read here and captured.
         pdf_call, pdf_date, pdf_kind, pdf_all_bands = ss.callsign, ss.file_date, ss.kind, all_bands
         left, middle, csv_col, right = st.columns([1, 1, 1, 2])
-        left.download_button("⬇️ Download map", map_html, f"RBN_map_{ss.callsign}_{ss.file_date}.html",
+        left.download_button("⬇️ Download map", map_html, f"FarFieldLab_map_{ss.callsign}_{ss.file_date}.html",
                              "text/html", width="stretch")
         csv_col.download_button("⬇️ Spots (CSV)", spots.sort_values("time").to_csv(index=False), 
-                                f"RBN_spots_{ss.callsign}_{ss.file_date}.csv", "text/csv", width="stretch",
+                                f"FarFieldLab_spots_{ss.callsign}_{ss.file_date}.csv", "text/csv", width="stretch",
                                 help="The spots on the map, with the band and time filters applied, for a spreadsheet.")
         middle.download_button("\u2B07\ufe0f Download report (PDF)", width="stretch", mime="application/pdf",
                                data=lambda: single_report_pdf(spots, locs, home, label, pdf_call, pdf_date, pdf_kind, noun,
                                                               units, scale, pdf_all_bands),
-                               file_name=f"RBN_report_{pdf_call}_{pdf_date}.pdf")
+                               file_name=f"FarFieldLab_report_{pdf_call}_{pdf_date}.pdf")
         st.subheader("Direction of your spots")
         chart_col, text_col = st.columns([2, 3])
         result = bearing_chart(spots, locs, home, scale)

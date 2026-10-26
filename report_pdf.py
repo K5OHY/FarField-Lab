@@ -1,4 +1,4 @@
-"""PDF reports for the RBN Signal Mapper, drawn with matplotlib's own PDF writer (no extra packages to install).
+"""PDF reports for FarField Lab, drawn with matplotlib's own PDF writer (no extra packages to install).
 
 Everything here takes plain data (text, numbers, matplotlib figures), never Streamlit objects, so it can be tried on
 its own. `build_pdf(meta, blocks)` lays the blocks out on Letter pages, starting a new page whenever one runs out:
@@ -71,7 +71,7 @@ class _Flow:
             self.y += 0.35
 
     def _footer(self):
-        self.fig.text(0.5, 0.03, f"{self.meta.get('footer', 'RBN Signal Mapper')}  ·  page {self.page}",
+        self.fig.text(0.5, 0.03, f"{self.meta.get('footer', 'FarField Lab')}  ·  page {self.page}",
                       ha="center", va="bottom", fontsize=7.5, color=GREY)
 
     def finish(self):
@@ -295,10 +295,10 @@ class _Flow:
 def build_pdf(meta, blocks):
     """The finished PDF as bytes. `meta` = {"title", "callsign", "subtitle": [lines], "footer"}."""
     meta = dict(meta)
-    meta.setdefault("footer", "Made with RBN Signal Mapper by K5OHY")
+    meta.setdefault("footer", "Made with FarField Lab by K5OHY")
     meta["footer"] = f"{meta['footer']}  ·  generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC"
     buf = io.BytesIO()
-    with PdfPages(buf, metadata={"Title": clean(meta["title"]), "Author": "RBN Signal Mapper"}) as pdf:
+    with PdfPages(buf, metadata={"Title": clean(meta["title"]), "Author": "FarField Lab"}) as pdf:
         flow = _Flow(pdf, meta)
         for i, block in enumerate(blocks):
             kind, args = block[0], block[1:]

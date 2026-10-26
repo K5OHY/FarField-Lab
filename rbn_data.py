@@ -1,4 +1,4 @@
-"""Data helpers for the RBN Signal Mapper.
+"""Data helpers for FarField Lab.
 
 - Skimmer (reverse beacon) locations are pulled live from reversebeacon.net and
   cached in spotter_coords.csv, refreshed automatically when the cache is stale.
@@ -17,7 +17,7 @@ NODES_URL = "https://www.reversebeacon.net/cont_includes/status.php?t=skt"
 CACHE_FILE = Path(__file__).with_name("spotter_coords.csv")
 REFRESH_MARKER = Path(__file__).with_name(".spotters_refreshed")
 CACHE_MAX_AGE_HOURS = 24
-HEADERS = {"User-Agent": "RBN-Signal-Mapper (personal project)"}
+HEADERS = {"User-Agent": "FarField-Lab (personal project)"}
 
 BAND_RANGES_KHZ = [
     ("160m", 1800, 2000), ("80m", 3500, 4000), ("60m", 5300, 5500), ("40m", 7000, 7300),
@@ -220,7 +220,7 @@ def lookup_callsign_location(callsign, skimmers=None):
         pass
 
     try:
-        data = requests.get(f"https://api.hamdb.org/{base}/json/rbn-signal-mapper", headers=HEADERS, timeout=10).json()
+        data = requests.get(f"https://api.hamdb.org/{base}/json/farfield-lab", headers=HEADERS, timeout=10).json()
         info = data["hamdb"]["callsign"]
         if info.get("call") != "NOT_FOUND" and info.get("grid"):
             lat, lon = maidenhead_to_latlon(info["grid"])
