@@ -63,7 +63,7 @@ from maps import build_map, compute_stats
 from pdfs import compare_report_pdf
 from ui_common import KM_PER_MILE, SPLIT_FREQ, _pretty_date, _views
 from views import test_link
-from world_map import MIN_CELL, azimuth_map_figure
+from world_map import MAX_KM, MIN_CELL, azimuth_map_figure, fit_radius_km
 from wspr_data import WsprError
 
 
@@ -503,7 +503,9 @@ def _azimuth_map_section(points, an, names, noun, units, home, callsign, scale):
     layer_name = c1.radio("Colour the map by", list(layers), horizontal=True, key="azmap_layer")
     layer = layers[layer_name]
     show_dots = c2.checkbox("Show the receivers", value=False, key="azmap_dots") or layer == "dots"
-    choice = st.radio("How much of the world", list(views), index=1, horizontal=True, key="azmap_view")
+    fit = fit_radius_km(points, layer, include_points=show_dots)
+    views = {"Fit to the data": min(fit, MAX_KM), **views}  # the default: zoomed to where there is something to see
+    choice = st.radio("How much of the world", list(views), index=0, horizontal=True, key="azmap_view")
     radius = views[choice]
     map_col, info_col = st.columns([3, 2])
     map_col.pyplot(azimuth_map_figure(home[0], home[1], points, names, callsign, units, radius, layer, show_dots, scale,

@@ -371,5 +371,37 @@ class DownloadsAreRemembered(unittest.TestCase):
         self.assertEqual((len(mine), len(theirs)), (1, 1))
 
 
+class MapZoomAndGainText(unittest.TestCase):
+    def _points(self, kms):
+        rows = [(km, 45.0, "both", 2.0, -10.0, -12.0) for km in kms]
+        return pd.DataFrame(rows, columns=["km", "bearing", "group", "gap", "snr_a", "snr_b"])
+
+    def test_the_map_zooms_to_where_the_cells_are(self):
+        import world_map
+        near = world_map.fit_radius_km(self._points([300, 400, 500]))
+        self.assertLess(near, 3000)
+        self.assertGreaterEqual(near, 2000)  # never tighter than the floor
+        far = world_map.fit_radius_km(self._points([300, 400, 500] + [9000, 9100, 9200]))
+        self.assertGreater(far, 9200)  # far cells pull the map out to include them
+
+    def test_the_map_shows_the_whole_world_when_there_is_nothing_to_fit(self):
+        import world_map
+        self.assertEqual(world_map.fit_radius_km(self._points([])), world_map.MAX_KM)
+        self.assertEqual(world_map.fit_radius_km(self._points([300, 9000]), "dots"), world_map.MAX_KM)
+
+    def test_receivers_shown_as_dots_are_included_in_the_fit(self):
+        import world_map
+        points = self._points([300, 400, 500, 7000])  # one far receiver, too few there for a cell
+        self.assertLess(world_map.fit_radius_km(points), 3000)
+        self.assertGreater(world_map.fit_radius_km(points, include_points=True), 7000)
+
+    def test_a_tie_reads_zero_not_minus_zero(self):
+        from ui_common import signed
+        self.assertEqual(signed(-0.0), "0")
+        self.assertEqual(signed(0.04), "0")
+        self.assertEqual(signed(3.5), "+3.5")
+        self.assertEqual(signed(-2), "-2")
+
+
 if __name__ == "__main__":
     unittest.main()

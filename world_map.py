@@ -154,13 +154,16 @@ def _cells(points, layer, radius_km, sector):
     return cells
 
 
-def fit_radius_km(points, layer="advantage", margin=1.15, floor_km=2000.0):
-    """How much of the world a map needs to show every cell it will draw: the outer edge of the farthest cell plus a little
-    margin, never less than `floor_km`. The whole world when there are no cells."""
-    cells = _cells(points, layer, MAX_KM, 30) if len(points) else []
-    if not cells:
+def fit_radius_km(points, layer="advantage", include_points=False, margin=1.15, floor_km=2000.0):
+    """How much of the world a map needs to show everything it will draw: the outer edge of the farthest cell (and, with
+    `include_points`, the farthest receiver) plus a little margin, never less than `floor_km`. The whole world when there is
+    nothing to fit."""
+    reach = [c["r1"] for c in _cells(points, layer, MAX_KM, 30)] if len(points) and layer != "dots" else []
+    if include_points and len(points):
+        reach.append(float(points["km"].max()))
+    if not reach:
         return MAX_KM
-    return float(min(max(max(c["r1"] for c in cells) * margin, floor_km), MAX_KM))
+    return float(min(max(max(reach) * margin, floor_km), MAX_KM))
 
 
 def azimuth_map_figure(lat0, lon0, points, names, callsign, units="mi", radius_km=MAX_KM, layer="dots", show_dots=True,

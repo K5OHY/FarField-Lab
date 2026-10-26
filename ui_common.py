@@ -112,6 +112,11 @@ CSS = """
 BANNER = Path(__file__).resolve().parent / "images" / "branding" / "farfield-banner.png"
 
 
+def signed(value):
+    """A gain with its sign (+3.5, -2), and a plain 0 for none, never -0."""
+    return "0" if round(float(value), 1) == 0 else f"{value:+g}"
+
+
 STRIP = BANNER.with_name("farfield-strip.png")
 
 

@@ -21,7 +21,7 @@ from charts import (
 from compare_stats import BIN_MIN_SHARED, receiver_table
 from maps import _single_points, compute_stats
 from report_pdf import INK, build_pdf
-from ui_common import BAND_COLORS, KM_PER_MILE, _pretty_date
+from ui_common import BAND_COLORS, KM_PER_MILE, _pretty_date, signed
 from world_map import MAX_KM, azimuth_map_figure, fit_radius_km
 
 MAP_BACKDROP = "#0b1119"  # the maps are drawn for a dark page; on a white PDF page they get their own dark panel
@@ -44,7 +44,7 @@ def compare_report_pdf(ctx):
     r, s_ = an["reach"], an["strength"]
     sub = [f"{ctx['callsign']} · {ctx['label']}", f"{ctx['source']} · {ctx['bands']} · {_pretty_date(ctx['file_date'])}", ctx["test"]]
     if names["A"] != "A" or names["B"] != "B":
-        sub.append(f"A = {names['A']}    B = {names['B']}")
+        sub.append(f"A = {names['A']}  ·  B = {names['B']}")
     setup = ctx.get("setup")
     blocks = ([("heading", "Test setup"), ("table", ["Setting", "Value"], [[k, v] for k, v in setup["rows"]], [0.3, 0.7])]
               + ([("heading", "Schedule"), ("table", *setup["table"])] if setup["table"] else [])
@@ -89,7 +89,7 @@ def compare_report_pdf(ctx):
         every = ctx.get("every", an["shared_all"])  # the table on screen, if the reader changed how it is averaged
         k = KM_PER_MILE if units == "mi" else 1
         order = every.sort_values("km_a", ascending=False)
-        rows = [[i, f"{row.km_a / k:,.0f}", f"{-row.gap:+g}", f"{row.snr_a:g}", f"{row.snr_b:g}",
+        rows = [[i, f"{row.km_a / k:,.0f}", signed(-row.gap), f"{row.snr_a:g}", f"{row.snr_b:g}",
                  "A" if row.gap > 0 else "B" if row.gap < 0 else "Tie"]
                 for i, row in zip(order.index, order.itertuples())]
         blocks += [("heading", f"{noun.capitalize()} by {noun}"),

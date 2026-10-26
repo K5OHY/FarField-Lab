@@ -9,7 +9,7 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
 from compare_stats import BIN_MIN_SHARED, SECTOR_NAMES, locate as skimmer_location, t_crit
-from ui_common import KM_PER_MILE, RBN_SNR_SCALE, SNR_CMAP, _bold, snr_color
+from ui_common import KM_PER_MILE, RBN_SNR_SCALE, SNR_CMAP, _bold, signed, snr_color
 
 
 SECTORS = 16
@@ -146,7 +146,7 @@ def head_to_head_table(shared, units):
             if row["Stronger"] == side:
                 style[view.columns.get_loc(col)] = f"background-color:{color}33;font-weight:600"
         return style
-    return view.style.apply(tint, axis=1).format({col_a: "{:g}", col_b: "{:g}", col_d: "{:+g}", dist: "{:,}"})
+    return view.style.apply(tint, axis=1).format({col_a: "{:g}", col_b: "{:g}", col_d: signed, dist: "{:,}"})
 
 
 def scoreboard_html(name_a, name_b, rows):
