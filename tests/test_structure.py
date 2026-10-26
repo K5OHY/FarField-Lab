@@ -27,7 +27,7 @@ class Structure(unittest.TestCase):
     def test_the_name_and_the_branding_files_are_there(self):
         import ui_common
         self.assertEqual(ui_common.GITHUB_URL, "https://github.com/K5OHY/FarField-Lab")
-        for name in ("farfield-icon-512.png", "farfield-favicon.png", "farfield-logo-dark.png", "farfield-logo-light.png", "farfield-sidebar-logo.png",
+        for name in ("farfield-icon-512.png", "farfield-favicon.png", "farfield-logo-dark.png", "farfield-logo-light.png", "farfield-sidebar-logo.png", "farfield-strip.png",
                      "farfield-banner.png"):
             self.assertTrue(os.path.exists(os.path.join(HERE, "images", "branding", name)), name)
         self.assertTrue(os.path.exists(os.path.join(HERE, "LICENSE")))

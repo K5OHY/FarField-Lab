@@ -96,7 +96,7 @@ def _views(units):
 
 CSS = """
 <style>
-  .block-container { padding-top: 2rem; max-width: 1400px; }
+  .block-container { padding-top: 4rem; max-width: 1400px; }
   h1 { font-weight: 700; letter-spacing: -0.5px; margin-bottom: 0; }
   .subtitle { color: #8a8f98; margin: 0 0 1.2rem 0; }
   div[data-testid="stMetric"] {
@@ -109,6 +109,15 @@ CSS = """
 
 
 BANNER = Path(__file__).resolve().parent / "images" / "branding" / "farfield-banner.png"
+
+
+STRIP = BANNER.with_name("farfield-strip.png")
+
+
+def brand_strip():
+    """A slim header band for the pages that are not the home page."""
+    if STRIP.exists():
+        st.image(str(STRIP), width="stretch")
 
 
 def running_locally():

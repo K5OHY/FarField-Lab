@@ -4,11 +4,12 @@ from pathlib import Path
 
 import streamlit as st
 
-from ui_common import github_url
+from ui_common import brand_strip, github_url
 
 
 def help_page():
     """The README, shown in the app, with the links to the code and to Dale's site."""
+    brand_strip()
     st.title("Help and README")
     st.markdown(f"This is the project's README, the same one that is on [GitHub]({github_url()}#readme), where the code lives "
                 "and where you can report a problem or suggest something. The long-test method (relative gain at each "

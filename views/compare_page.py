@@ -2,7 +2,7 @@
 import streamlit as st
 
 from data_sources import skimmer_data
-from ui_common import RBN_SNR_SCALE, SPLIT_FREQ, SPLIT_LOG, WSPR_SNR_SCALE, WSPR_SOURCE
+from ui_common import RBN_SNR_SCALE, brand_strip, SPLIT_FREQ, SPLIT_LOG, WSPR_SNR_SCALE, WSPR_SOURCE
 from views import inputs, test_link
 from views.compare_view import compare_view
 
@@ -57,6 +57,7 @@ def _how_to_test():
 
 
 def compare_page():
+    brand_strip()
     st.title(":material/balance: Compare antennas")
     st.markdown('<p class="subtitle">Which of two antennas, power levels or tests gets out better? Load the spots from one '
                 'station, say how you switched, and read the verdict, with the evidence behind it.</p>', unsafe_allow_html=True)

@@ -10,7 +10,7 @@ import dashboard as dash
 import ionosphere as iono
 import space_weather as sw
 from data_sources import resolve_home, skimmer_data
-from ui_common import KM_PER_MILE, _views, load_settings
+from ui_common import KM_PER_MILE, _views, brand_strip, load_settings
 from world_map import azimuth_map_figure
 from wspr_data import WsprError
 
@@ -309,6 +309,7 @@ def _use_my_location():
 
 def conditions_page():
     """Which bands are open and where a signal like yours would be heard, from the WSPR stations near you."""
+    brand_strip()
     st.header(":material/public: Band conditions now")
     st.markdown('<p class="subtitle">Which bands are open and where you would be heard, worked out from the WSPR stations near '
                 'you in the last half hour, restated for your power and mode.</p>', unsafe_allow_html=True)
