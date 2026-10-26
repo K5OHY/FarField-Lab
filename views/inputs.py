@@ -122,9 +122,9 @@ _SETUP_KEYS = ("cmp_name_a", "cmp_name_b", "test_mode", "test_cycles", "test_sta
 _SETUP_PREFIXES = ("blk_", "antenna_log_", "avg_near_", "rx_min_reports_")
 
 
-def start_over(clear_callsign=False):
-    """Back to a clean page: the loaded spots, the dates (to the latest), the band and a comparison's setup are cleared. Your
-    callsign and grid stay unless `clear_callsign`. The source (RBN or WSPR), units and map settings stay."""
+def start_over(source=None):
+    """Back to a clean page, as if it had just been opened: the loaded spots, the callsigns and grid, the dates (to the latest),
+    the band, the source (`source`, or RBN) and a comparison's setup are cleared. Units and the map settings stay."""
     ss = st.session_state
     for key in DATA_KEYS:
         ss[key] = None
@@ -133,9 +133,10 @@ def start_over(clear_callsign=False):
             del ss[key]
     for key in ("day_in", "from_in", "to_in", "range_in", "_range_seen"):  # the next run sets them to the latest day
         ss.pop(key, None)
-    ss.update(span_in="Single day", band_choice="All")
-    if clear_callsign:
-        ss.update(callsign_in="", grid_in="")
+    for key in ("how_in", "_how_last", "_src_seen"):  # the source's own radios follow the source
+        ss.pop(key, None)
+    ss.update(span_in="Single day", band_choice="All", callsign_in="", callsign_b_in="", grid_in="",
+              src_in=source or RBN_SOURCES[0])
     st.query_params.clear()
 
 
@@ -165,7 +166,7 @@ def example_banner(ss):
     if which and example_data.available(which):
         st.caption("Opened from a saved copy of the real data, so it appears at once. Your own spots are downloaded live.")
     if which:
-        st.button("Use my own data instead", key="banner_own", on_click=start_over, kwargs={"clear_callsign": True},
+        st.button("Use my own data instead", key="banner_own", on_click=start_over,
                   help="Clears the example and the callsign and dates it filled in, so you can enter your own.")
 
 

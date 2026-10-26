@@ -84,14 +84,25 @@ class MySpotsPage(unittest.TestCase):
         self.assertEqual([d.label for d in at.sidebar.date_input], ["Dates (UTC)"])
         self.assertEqual(at.session_state["to_in"], date(2024, 3, 3))
 
-    def test_start_over_goes_back_to_the_latest_day_and_keeps_the_callsign(self):
-        at = page("spots_page", call="K5OHY", src="rbn", date="2024-03-01").run()
+    def test_start_over_clears_everything_and_goes_back_to_the_latest_day(self):
+        at = page("spots_page", call="K5OHY", grid="DM81wx", src="wspr", date="2024-03-01").run()
         self.assertEqual(at.session_state["day_in"], date(2024, 3, 1))
         click(at, "Start over")
         self.assertEqual(errors(at), [])
         self.assertGreater(at.session_state["day_in"], date(2025, 1, 1))
-        self.assertEqual(at.session_state["callsign_in"], "K5OHY")
+        self.assertEqual(at.session_state["callsign_in"], "")
+        self.assertEqual(at.session_state["grid_in"], "")
+        self.assertEqual(at.session_state["src_in"], "Download by date")
         self.assertIsNone(at.session_state["raw"])
+
+    def test_start_over_on_compare_clears_both_callsigns_and_keeps_wspr(self):
+        at = page("compare_page", call="K5OHY", cb="N3HXZ", grid="DM81wx", src="wspr", date="2024-03-01").run()
+        self.assertEqual(at.session_state["callsign_b_in"], "N3HXZ")
+        click(at, "Start over")
+        self.assertEqual(errors(at), [])
+        for key in ("callsign_in", "callsign_b_in", "grid_in"):
+            self.assertEqual(at.session_state[key], "", key)
+        self.assertEqual(at.session_state["src_in"], "WSPR")
 
     def test_use_my_own_data_clears_an_example(self):
         at = page("spots_page").run()

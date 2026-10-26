@@ -76,8 +76,8 @@ def compare_page():
         st.button("Try a long-test example", width="stretch", on_click=inputs.start_example, args=("long",),
                   help="Loads Dale's long WSPR test of 26 August 2026: a Performer (tuned elevated quarter-wave) against a 17 ft whip on a 5:1 unun, "
                        "switched every 30 minutes for nine and a half hours.")
-        st.button("Start over", type="tertiary", on_click=inputs.start_over,
-                  help="Clears the loaded spots, the dates and the test setup. Your callsign and grid stay.")
+        st.button("Start over", type="tertiary", on_click=inputs.start_over, kwargs={"source": WSPR_SOURCE},
+                  help="Clears everything: the callsigns, grid, dates, loaded spots and test setup.")
         where.load = inputs.take_autoload(ss, load)
         st.divider()
         view = inputs.view_controls(ss, cfg, pick, where.kind, comparing=True)

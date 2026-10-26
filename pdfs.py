@@ -83,16 +83,16 @@ def compare_report_pdf(ctx):
         every = ctx.get("every", an["shared_all"])  # the table on screen, if the reader changed how it is averaged
         k = KM_PER_MILE if units == "mi" else 1
         order = every.sort_values("km_a", ascending=False)
-        rows = [[i, f"{row.km_a / k:,.0f}", f"{row.snr_a:g}", f"{row.snr_b:g}",
-                 "A" if row.gap > 0 else "B" if row.gap < 0 else "Tie", f"{-row.gap:+g}"]
+        rows = [[i, f"{row.km_a / k:,.0f}", f"{-row.gap:+g}", f"{row.snr_a:g}", f"{row.snr_b:g}",
+                 "A" if row.gap > 0 else "B" if row.gap < 0 else "Tie"]
                 for i, row in zip(order.index, order.itertuples())]
         blocks += [("heading", f"{noun.capitalize()} by {noun}"),
                    *([("paragraph", ctx["settings"])] if ctx.get("settings") else []),
                    ("figure", paired_scatter(ctx.get("scatter_src", an["shared"]), names), 3.8),
                    ("note", f"{len(every)} {noun}s heard both sides, shown farthest first (up to 40). "
                             + ctx.get("rx_note", "Each SNR is the median of that station's spots.")),
-                   ("table", [noun.capitalize(), f"Distance ({units})", "A SNR", "B SNR", "Stronger", "B \u2212 A (dB)"],
-                    rows[:40], [0.28, 0.2, 0.13, 0.13, 0.13, 0.13]),
+                   ("table", [noun.capitalize(), f"Distance ({units})", "Gain B\u2212A (dB)", "A SNR", "B SNR", "Stronger"],
+                    rows[:40], [0.24, 0.17, 0.19, 0.13, 0.13, 0.13]),
                    ("heading", "Relative gain by direction and distance"),
                    ("figure", relative_gain_chart(every, names, units, "direction"), 3.0),
                    ("figure", relative_gain_chart(every, names, units, "distance"), 3.0),
