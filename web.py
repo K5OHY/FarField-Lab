@@ -16,8 +16,8 @@ BRAND = Path(__file__).resolve().parent / "images" / "branding"
 def main():
     favicon = BRAND / "farfield-favicon.png"
     st.set_page_config(layout="wide", page_title="FarField Lab", page_icon=str(favicon) if favicon.exists() else "\U0001F4E1")
-    if (BRAND / "farfield-icon-512.png").exists():
-        st.logo(str(BRAND / "farfield-icon-512.png"), size="large")
+    if (BRAND / "farfield-sidebar-logo.png").exists():
+        st.logo(str(BRAND / "farfield-sidebar-logo.png"), icon_image=str(BRAND / "farfield-icon-512.png"), size="large")
     st.markdown(CSS, unsafe_allow_html=True)
     pages = [st.Page(spots_page, title="My spots", icon=":material/cell_tower:", url_path="spots", default=True),
              st.Page(compare_page, title="Compare antennas", icon=":material/balance:", url_path="compare"),
