@@ -22,7 +22,9 @@ from compare_stats import BIN_MIN_SHARED, receiver_table
 from maps import _single_points, compute_stats
 from report_pdf import INK, build_pdf
 from ui_common import BAND_COLORS, KM_PER_MILE, _pretty_date
-from world_map import MAX_KM, azimuth_map_figure
+from world_map import MAX_KM, azimuth_map_figure, fit_radius_km
+
+MAP_BACKDROP = "#0b1119"  # the maps are drawn for a dark page; on a white PDF page they get their own dark panel
 
 
 def comparison_headline(names, bands):
@@ -61,12 +63,16 @@ def compare_report_pdf(ctx):
     widths = [0.26, 0.09, 0.09, 0.09, 0.2, 0.27]
     if ctx["means_a"].notna().any() or ctx["means_b"].notna().any():
         if len(ctx["az_points"]):
+            radius = fit_radius_km(ctx["az_points"])  # zoomed to where the cells are, not the whole world
             blocks += [("heading", "Where each antenna reached"),
                        ("figure", azimuth_map_figure(ctx["home"][0], ctx["home"][1], ctx["az_points"], names, ctx["callsign"],
-                                                      units, MAX_KM, "advantage", True, ctx["scale"],
-                                                      label_min=3 if ctx["noun"] == "skimmer" else 5), 5.6),
-                       ("note", "The station is at the centre; a dot's distance and angle are its true distance and bearing from "
-                                "you. Cells show which antenna was stronger there (blue A, orange B) where at least 3 receivers heard both; "+"filled dots heard both antennas, open rings only one.")]
+                                                      units, radius, "advantage", False, ctx["scale"],
+                                                      label_min=3 if ctx["noun"] == "skimmer" else 5, backdrop=MAP_BACKDROP), 5.6),
+                       ("note", "The station is at the centre; distance and angle are the true distance and bearing from you. Each "
+                                "cell is a direction and a distance band where at least 3 receivers heard both antennas. Its "
+                                "colour says which antenna was stronger there (blue A, orange B), and the number is how many dB "
+                                "stronger, on average." + (" The map shows the part of the world that has data."
+                                                          if radius < MAX_KM else ""))]
         if ctx["adv"]["n"].sum():
             blocks += [("heading", "Which side is stronger, by direction"),
                        ("figure", direction_advantage_chart(ctx["adv"], names, 45, ctx["callsign"]), 3.8),
@@ -177,7 +183,7 @@ def single_report_pdf(spots, locs, home, label, callsign, file_date, kind, noun,
         one_band = spots["band"].nunique() == 1
         blocks += [("heading", "World view from your station"),
                    ("figure", azimuth_map_figure(home[0], home[1], pts, {"A": "", "B": ""}, callsign, units, MAX_KM,
-                                                  "snr" if one_band else "dots", not one_band, scale), 5.6),
+                                                  "snr" if one_band else "dots", not one_band, scale, backdrop=MAP_BACKDROP), 5.6),
                    ("note", "You are at the centre; distance and angle from the centre are true distance and compass bearing. "
                             + ("Cells show the average SNR by direction and distance." if one_band else
                                "Dots are coloured by band."))]

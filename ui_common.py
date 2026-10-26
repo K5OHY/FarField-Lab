@@ -104,7 +104,7 @@ CSS = """
   }
   iframe { border-radius: 12px; }
   div[data-testid="stImage"] img { border-radius: 12px; }
-  div[data-testid="stTooltipContent"] { max-width: 20rem; white-space: normal; }
+  div[data-testid="stTooltipContent"] { max-width: 15rem; white-space: normal; }
 </style>
 """
 

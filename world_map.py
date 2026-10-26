@@ -154,19 +154,32 @@ def _cells(points, layer, radius_km, sector):
     return cells
 
 
+def fit_radius_km(points, layer="advantage", margin=1.15, floor_km=2000.0):
+    """How much of the world a map needs to show every cell it will draw: the outer edge of the farthest cell plus a little
+    margin, never less than `floor_km`. The whole world when there are no cells."""
+    cells = _cells(points, layer, MAX_KM, 30) if len(points) else []
+    if not cells:
+        return MAX_KM
+    return float(min(max(max(c["r1"] for c in cells) * margin, floor_km), MAX_KM))
+
+
 def azimuth_map_figure(lat0, lon0, points, names, callsign, units="mi", radius_km=MAX_KM, layer="dots", show_dots=True,
-                       snr_range=(-28, 2), size=7.2, when=None, label_min=5):
+                       snr_range=(-28, 2), size=7.2, when=None, label_min=5, backdrop=None):
     """The map. `points` is a DataFrame with `km`, `bearing` (degrees), `group` ('both', 'only_a', 'only_b' or 'single'), `gap`
     (A's SNR minus B's, for stations that heard both), `snr_a` and `snr_b` (each antenna's SNR at the station; for one antenna,
     `snr_a`) and optionally `color`. `layer` colours direction-and-distance cells: 'advantage', 'snr_a', 'snr_b', 'snr',
     'reach', or 'dots' for none. With `when` (naive UTC) the night side is shaded and the line between day and night drawn.
-    A cell's number is written in it from `label_min` receivers up (cells are drawn from MIN_CELL).
+    A cell's number is written in it from `label_min` receivers up (cells are drawn from MIN_CELL). The page behind it is
+    see-through for the screen; `backdrop` (a colour) fills it for a white PDF page, where the pale lettering would vanish.
     Returns a matplotlib Figure."""
     radius_km = min(float(radius_km), MAX_KM)
     km_per_unit = 1.609344 if units == "mi" else 1.0
     single = len(points) > 0 and bool((points["group"] == "single").all())
     fig = Figure(figsize=(size, size))
-    fig.patch.set_alpha(0)
+    if backdrop:
+        fig.patch.set_facecolor(backdrop)
+    else:
+        fig.patch.set_alpha(0)
     ax = fig.add_axes([0.02, 0.13, 0.96, 0.85])
     ax.set_aspect("equal")
     ax.axis("off")

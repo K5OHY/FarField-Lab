@@ -247,7 +247,8 @@ class _Flow:
 
     def figure(self, fig, max_h=3.6, width=TEXT_W):
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=200, facecolor="white", bbox_inches="tight")
+        fig.savefig(buf, format="png", dpi=200, facecolor="white" if fig.patch.get_alpha() == 0 else fig.get_facecolor(),
+                    bbox_inches="tight")  # a see-through figure goes on white; one given its own backdrop keeps it
         buf.seek(0)
         import matplotlib.image as mpimg
         img = mpimg.imread(buf)
