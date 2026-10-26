@@ -19,10 +19,10 @@ def main():
     if (BRAND / "farfield-icon-512.png").exists():
         st.logo(str(BRAND / "farfield-icon-512.png"), size="large")
     st.markdown(CSS, unsafe_allow_html=True)
-    pages = [st.Page(spots_page, title="My spots", icon="\U0001F4E1", url_path="spots", default=True),
-             st.Page(compare_page, title="Compare antennas", icon="⚖️", url_path="compare"),
-             st.Page(conditions_page, title="Band conditions", icon="\U0001F310", url_path="conditions"),
-             st.Page(help_page, title="Help and README", icon="\u2753", url_path="help")]
+    pages = [st.Page(spots_page, title="My spots", icon=":material/cell_tower:", url_path="spots", default=True),
+             st.Page(compare_page, title="Compare antennas", icon=":material/balance:", url_path="compare"),
+             st.Page(conditions_page, title="Band conditions", icon=":material/public:", url_path="conditions"),
+             st.Page(help_page, title="Help and README", icon=":material/help:", url_path="help")]
     st.navigation(pages).run()
     st.sidebar.divider()
     st.sidebar.caption(f"Built by Tim, K5OHY \u00b7 [README and code on GitHub]({github_url()}#readme) \u00b7 long-test method by "

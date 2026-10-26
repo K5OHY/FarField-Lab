@@ -103,8 +103,12 @@ CSS = """
       background: rgba(128,128,128,.10); border-radius: 10px; padding: 12px 16px;
   }
   iframe { border-radius: 12px; }
+  div[data-testid="stImage"] img { border-radius: 12px; }
 </style>
 """
+
+
+BANNER = Path(__file__).resolve().parent / "images" / "branding" / "farfield-banner.png"
 
 
 def running_locally():

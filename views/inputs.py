@@ -344,7 +344,7 @@ def remember(ss, cfg, where, view, extra=None, slot=None):
         st.query_params.from_dict(link)
     if where.callsign and ss.raw is not None:
         with (slot if slot is not None else st.sidebar):
-            st.caption("\U0001F517 Link to this view")
+            st.caption(":material/link: Link to this view")
             st.code((st.context.url or "").split("?")[0] + "?" + urlencode(link), language=None)
     save_settings({"callsign": where.callsign, "grid": where.grid, "source": where.source, "span": where.span, "band": view.band,
                    "min_snr": cfg.get("min_snr", 0) if where.kind == "WSPR" else view.min_snr,

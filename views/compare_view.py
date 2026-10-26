@@ -1056,8 +1056,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
 
     with details:
         tab_result, tab_where, tab_each, tab_method, tab_maps = st.tabs(
-            ["\U0001F4CA Result", "\U0001F9ED Direction & distance", "\U0001F4CB Receiver by receiver",
-             "\U0001F4D0 Linear average", "\U0001F5FA️ Maps"])
+            [":material/bar_chart: Result", ":material/explore: Direction & distance", ":material/table_rows: Receiver by receiver",
+             ":material/functions: Linear average", ":material/map: Maps"])
 
         with tab_result:
             snr_note = f"at the {s_['n']} {noun}s that heard both" if s_["n"] else f"no {noun} heard both"
@@ -1091,7 +1091,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 az_points=_azimuth_points(ta_all, tb_all, an), home=home, scale=scale,
                 method=_method_summary(spots_a, spots_b, an, names, noun, locs, home),
                 timeline=(map_a, map_b))
-            st.download_button("\u2B07\ufe0f Download report (PDF)", data=lambda: compare_report_pdf(pdf_ctx),
+            st.download_button(":material/download: Download report (PDF)", data=lambda: compare_report_pdf(pdf_ctx),
                                file_name=f"FarFieldLab_compare_{callsign}_{file_date}.pdf", mime="application/pdf",
                                help="The verdict, scoreboard and every chart and table, as a PDF you can keep or share.")
             with st.expander(used["label"]):
@@ -1234,7 +1234,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                           f"{noun}'s spots. Click a column heading to sort.")
                     table_col.dataframe(head_to_head_table(every, units), width="stretch",
                                         height=min(38 * (len(every) + 1), 420))
-                    table_col.download_button("⬇️ This table (CSV)", head_to_head_table(every, units).data.rename(
+                    table_col.download_button(":material/download: This table (CSV)", head_to_head_table(every, units).data.rename(
                                                   columns=lambda c: c.replace("🔵 ", "").replace("🟠 ", "")).to_csv(),
                                               f"FarFieldLab_compare_{callsign}_{file_date}_by_{noun}.csv", "text/csv",
                                               help="Every receiver's average SNR on A and B and the relative gain, as shown.")
@@ -1374,7 +1374,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 with col:
                     st.markdown(f"#### {icon} {names[side]}")
                     st.iframe(html, height=620)
-                    st.download_button(f"⬇️ Download map {side}", html,
+                    st.download_button(f":material/download: Download map {side}", html,
                                        f"FarFieldLab_map_{callsign}_{file_date}_{slug}.html", "text/html", key=f"dl_{side}")
 
 

@@ -262,7 +262,7 @@ def _space_weather_card(boxed=True):
         if value is not None]
     with st.container(border=True) if boxed else nullcontext():
         if boxed:
-            st.markdown("**\u2600\ufe0f Space weather right now**")
+            st.markdown("**:material/wb_sunny: Space weather right now**")
         for start in range(0, len(items), 4):
             row = items[start:start + 4]
             for col, (label, value, help_) in zip(st.columns(4)[:len(row)], row):
@@ -288,7 +288,7 @@ def _muf_card(lat, lon, boxed=True):
     if not est:
         return
     with st.container(border=True) if boxed else nullcontext():
-        st.markdown("**\U0001F4E1 MUF near you** (MHz)" if boxed else "MHz:")
+        st.markdown("**:material/cell_tower: MUF near you** (MHz)" if boxed else "MHz:")
         shown = [(f"{d:,} km", f"{est['muf'][d]:.0f}", f"The highest frequency expected to work over a {d:,} km path. "
                   "Shorter paths cannot use as high a frequency, because the signal meets the ionosphere at a steeper angle.")
                  for d in (3000, 2000, 1000, 500)]
@@ -309,7 +309,7 @@ def _use_my_location():
 
 def conditions_page():
     """Which bands are open and where a signal like yours would be heard, from the WSPR stations near you."""
-    st.header("\U0001F310 Band conditions now")
+    st.header(":material/public: Band conditions now")
     st.markdown('<p class="subtitle">Which bands are open and where you would be heard, worked out from the WSPR stations near '
                 'you in the last half hour, restated for your power and mode.</p>', unsafe_allow_html=True)
     skimmers, _ = skimmer_data()
@@ -353,7 +353,7 @@ def conditions_page():
                 st.session_state["cond_geo"] = (float(fix.position["lat"]), float(fix.position["lon"]))
             geo = st.session_state.get("cond_geo")
             if geo:
-                st.caption(f"\U0001F4CD {geo[0]:.3f}, {geo[1]:.3f} \u00b7 grid {cond.latlon_to_maidenhead(*geo)}")
+                st.caption(f":material/location_on: {geo[0]:.3f}, {geo[1]:.3f} \u00b7 grid {cond.latlon_to_maidenhead(*geo)}")
             st.caption("Your browser asks before sharing. The position is used only to find WSPR stations near you and is not "
                        "saved; only a box around it goes to wspr.live.")
         source = st.radio("Learn from", ["Stations near me", "One transmitter"], horizontal=True, key="cond_source",

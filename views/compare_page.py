@@ -57,7 +57,7 @@ def _how_to_test():
 
 
 def compare_page():
-    st.title("⚖️ Compare antennas")
+    st.title(":material/balance: Compare antennas")
     st.markdown('<p class="subtitle">Which of two antennas, power levels or tests gets out better? Load the spots from one '
                 'station, say how you switched, and read the verdict, with the evidence behind it.</p>', unsafe_allow_html=True)
 
@@ -81,7 +81,7 @@ def compare_page():
         st.divider()
         view = inputs.view_controls(ss, cfg, pick, where.kind, comparing=True)
         link_slot = st.container()  # the link is drawn last, once the test's setup widgets exist
-        st.caption(f"\U0001F6F0️ {refresh_msg}")
+        st.caption(f":material/satellite_alt: {refresh_msg}")
     inputs.load_spots(ss, skimmers, where)
     _result(ss, skimmers, where, view)
     inputs.remember(ss, cfg, where, view, extra=test_link.params(ss, view.units), slot=link_slot)
@@ -122,9 +122,9 @@ def _result(ss, skimmers, where, view):
         st.warning(ss.notice)
     inputs.example_banner(ss)
     if wspr and ss.loaded_at is not None:
-        st.caption(f"\U0001F552 Loaded at {ss.loaded_at:%H:%M} UTC. The newest transmission in it is at "
+        st.caption(f":material/schedule: Loaded at {ss.loaded_at:%H:%M} UTC. The newest transmission in it is at "
                    f"{ss.raw['time'].max():%H:%M} UTC. Sent something since? Click **Load spots** again.")
-    st.caption(f"\U0001F4CD {ss.callsign}" + (f" (A) and {ss.tx_call_b} (B)" if ss.get("tx_call_b") else "") + f" · {label}")
+    st.caption(f":material/location_on: {ss.callsign}" + (f" (A) and {ss.tx_call_b} (B)" if ss.get("tx_call_b") else "") + f" · {label}")
     if not wspr:
         st.caption("RBN tells A and B apart by frequency: call CQ on one frequency with the first antenna, then on a nearby "
                    "frequency with the other, back to back (a minute or two apart).")

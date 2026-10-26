@@ -8,7 +8,7 @@ from compare_stats import locate as skimmer_location
 from data_sources import skimmer_data
 from maps import _single_points, build_map, compute_stats
 from pdfs import single_report_pdf
-from ui_common import BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, WSPR_SNR_SCALE, _views
+from ui_common import BANNER, BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, WSPR_SNR_SCALE, _views
 from views import inputs
 from world_map import MIN_CELL, azimuth_map_figure
 
@@ -109,8 +109,11 @@ def _session_report_view(spots, locs, home, units, noun, band_choice):
 
 
 def spots_page():
-    st.title("\U0001F4E1 FarField Lab")
-    st.markdown('<p class="subtitle">Explore propagation. Compare antennas. Map the Reverse Beacon Network and WSPR stations that heard you, and see how strong '
+    if BANNER.exists():
+        st.image(str(BANNER), width="stretch")
+    else:
+        st.title("FarField Lab")
+    st.markdown('<p class="subtitle">Map the Reverse Beacon Network and WSPR stations that heard you, and see how strong '
                 'your signal was and in which directions. To find out which of two antennas does better, open '
                 '<b>Compare antennas</b> in the menu.</p>', unsafe_allow_html=True)
 
@@ -126,11 +129,11 @@ def spots_page():
         where.load = inputs.take_autoload(ss, load)
         st.divider()
         view = inputs.view_controls(ss, cfg, pick, where.kind)
-        st.caption(f"\U0001F6F0\ufe0f {refresh_msg}")
+        st.caption(f":material/satellite_alt: {refresh_msg}")
     inputs.remember(ss, cfg, where, view)
     inputs.load_spots(ss, skimmers, where)
     if ss.raw is None:
-        st.info("\U0001F448 Enter your callsign and click **Load spots**. "
+        st.info(icon=":material/arrow_back:", body="Enter your callsign and click **Load spots**. "
                 "The map is centered on your callsign's registered location unless you enter a grid square. "
                 "Just looking around? Click **Try an example** to see real spots.")
         st.button("Try an example", key="hero_map", type="primary", on_click=inputs.start_example, args=("map",),
@@ -160,9 +163,9 @@ def spots_page():
         st.warning(ss.notice)
     inputs.example_banner(ss)
     if wspr and ss.loaded_at is not None:
-        st.caption(f"\U0001F552 Loaded at {ss.loaded_at:%H:%M} UTC. The newest transmission in it is at "
+        st.caption(f":material/schedule: Loaded at {ss.loaded_at:%H:%M} UTC. The newest transmission in it is at "
                    f"{ss.raw['time'].max():%H:%M} UTC. Sent something since? Click **Load spots** again.")
-    tab_map, tab_report = st.tabs(["\U0001F5FA\ufe0f Map & direction", "\U0001F4C5 Session report"])
+    tab_map, tab_report = st.tabs([":material/map: Map & direction", ":material/event_note: Session report"])
     with tab_map:
         stats = compute_stats(spots, locs, home)
         missing = {s for s in spots["spotter"].unique() if skimmer_location(s, locs) is None}
@@ -174,7 +177,7 @@ def spots_page():
         c[2].metric(f"Farthest ({units})", f"{stats['max_km'] / k:,.0f}", help=stats["farthest"])
         c[3].metric("Best SNR", f"{stats['max_snr']:.0f} dB")
         c[4].metric("Average SNR", f"{stats['avg_snr']:.1f} dB")
-        st.caption(f"📍 {who} · {label}"
+        st.caption(f":material/location_on: {who} · {label}"
                    + (f" · ⚠️ No location for {', '.join(sorted(missing)[:5])}"
                       f"{f' and {len(missing) - 5} more' if len(missing) > 5 else ''}"
                       f" (not in RBN's skimmer list), so not shown on the map" if missing else ""))
@@ -188,12 +191,12 @@ def spots_page():
         # so everything it needs is read here and captured.
         pdf_call, pdf_date, pdf_kind, pdf_all_bands = ss.callsign, ss.file_date, ss.kind, all_bands
         left, middle, csv_col, right = st.columns([1, 1, 1, 2])
-        left.download_button("⬇️ Download map", map_html, f"FarFieldLab_map_{ss.callsign}_{ss.file_date}.html",
+        left.download_button(":material/download: Download map", map_html, f"FarFieldLab_map_{ss.callsign}_{ss.file_date}.html",
                              "text/html", width="stretch")
-        csv_col.download_button("⬇️ Spots (CSV)", spots.sort_values("time").to_csv(index=False), 
+        csv_col.download_button(":material/download: Spots (CSV)", spots.sort_values("time").to_csv(index=False), 
                                 f"FarFieldLab_spots_{ss.callsign}_{ss.file_date}.csv", "text/csv", width="stretch",
                                 help="The spots on the map, with the band and time filters applied, for a spreadsheet.")
-        middle.download_button("\u2B07\ufe0f Download report (PDF)", width="stretch", mime="application/pdf",
+        middle.download_button(":material/download: Download report (PDF)", width="stretch", mime="application/pdf",
                                data=lambda: single_report_pdf(spots, locs, home, label, pdf_call, pdf_date, pdf_kind, noun,
                                                               units, scale, pdf_all_bands),
                                file_name=f"FarFieldLab_report_{pdf_call}_{pdf_date}.pdf")
