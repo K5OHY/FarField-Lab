@@ -182,7 +182,8 @@ def single_report_pdf(spots, locs, home, label, callsign, file_date, kind, noun,
     if len(pts):
         one_band = spots["band"].nunique() == 1
         blocks += [("heading", "World view from your station"),
-                   ("figure", azimuth_map_figure(home[0], home[1], pts, {"A": "", "B": ""}, callsign, units, MAX_KM,
+                   ("figure", azimuth_map_figure(home[0], home[1], pts, {"A": "", "B": ""}, callsign, units,
+                                                  fit_radius_km(pts, "snr" if one_band else "dots", include_points=not one_band),
                                                   "snr" if one_band else "dots", not one_band, scale, backdrop=MAP_BACKDROP), 5.6),
                    ("note", "You are at the centre; distance and angle from the centre are true distance and compass bearing. "
                             + ("Cells show the average SNR by direction and distance." if one_band else

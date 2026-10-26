@@ -10,7 +10,7 @@ from maps import _single_points, build_map, compute_stats
 from pdfs import single_report_pdf
 from ui_common import BANNER, BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, WSPR_SNR_SCALE, _views
 from views import inputs
-from world_map import MIN_CELL, azimuth_map_figure
+from world_map import MAX_KM, MIN_CELL, azimuth_map_figure, fit_radius_km
 
 
 def _azimuth_single_section(spots, locs, home, callsign, noun, units, scale):
@@ -31,7 +31,8 @@ def _azimuth_single_section(spots, locs, home, callsign, noun, units, scale):
             c1.radio("Colour the map by", ["Average signal strength", f"{noun.capitalize()}s heard"], horizontal=True,
                      key="azmap_single_layer")]
     show_dots = c2.checkbox("Show the receivers", value=bands > 1, key="azmap_single_dots") or layer == "dots"
-    choice = st.radio("How much of the world", list(views), index=1, horizontal=True, key="azmap_single_view")
+    views = {"Fit to the data": min(fit_radius_km(pts, layer, include_points=show_dots), MAX_KM), **views}  # the default
+    choice = st.radio("How much of the world", list(views), index=0, horizontal=True, key="azmap_single_view")
     radius = views[choice]
     map_col, info_col = st.columns([3, 2])
     map_col.pyplot(azimuth_map_figure(home[0], home[1], pts, {"A": "", "B": ""}, callsign, units, radius, layer, show_dots, scale,
@@ -39,7 +40,9 @@ def _azimuth_single_section(spots, locs, home, callsign, noun, units, scale):
                    width="stretch")
     k = KM_PER_MILE if units == "mi" else 1
     far = pts.loc[pts["km"].idxmax()]
-    info_col.markdown(f"**{len(pts)}** {noun}s heard you. Farthest: **{far['km'] / k:,.0f} {units}**.")
+    beyond = int((pts["km"] > radius).sum())
+    info_col.markdown(f"**{len(pts)}** {noun}s heard you. Farthest: **{far['km'] / k:,.0f} {units}**."
+                      + (f" {beyond} beyond this view." if beyond else ""))
     info_col.caption(
         "You are at the centre. Distance from the centre is true distance and the angle is true compass bearing, so a straight "
         f"line from the centre is the path your signal takes. Each cell is one direction (30\u00b0) and distance band with at least "
