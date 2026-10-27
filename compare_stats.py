@@ -153,6 +153,20 @@ def station_gains(spots_a, spots_b, locs, home, method="snr", min_spots=1, offse
     return t
 
 
+ENOUGH_RECEIVERS = 10   # a default report minimum should leave at least this many receivers on the table
+
+
+def default_min_reports(spots_a, spots_b, locs, home, long_test, offset=0.0, floor=None, min_km=0.0, weak_pct=0):
+    """The 'at least this many reports on each antenna' setting a test opens with: the strictest of a short list that still
+    leaves ENOUGH_RECEIVERS receivers. A short test tries 2 (so a single lucky report cannot set the result); a long test
+    tries 20, then 10, 5 and 2. When even the mildest leaves too few, it is 1 and every receiver that heard both is shown."""
+    method = "linear" if long_test else "snr"
+    for m in ((DALE_MIN_SPOTS, 10, 5, 2) if long_test else (2,)):
+        if len(station_gains(spots_a, spots_b, locs, home, method, m, offset, floor, min_km, weak_pct)) >= ENOUGH_RECEIVERS:
+            return m
+    return 1
+
+
 def mean_interval(values):
     """(mean, low, high) of a set of numbers, with a 95% range on the mean (NaN when there are fewer than two numbers)."""
     g = np.asarray(values, dtype=float)

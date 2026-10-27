@@ -84,6 +84,35 @@ class RelativeGain(unittest.TestCase):
         self.assertEqual(pm["n"], 2)
 
 
+class DefaultMinimumReports(unittest.TestCase):
+    """The 'at least this many reports on each antenna' slider opens as strict as it can while leaving enough receivers."""
+
+    def test_a_short_test_opens_at_two_when_enough_receivers_have_two_reports(self):
+        calls = [f"R{n}" for n in range(12)]
+        a, b = spots({c: [-20, -21] for c in calls}), spots({c: [-15, -16] for c in calls})
+        self.assertEqual(cs.default_min_reports(a, b, places(*calls), HOME, long_test=False), 2)
+
+    def test_a_very_short_test_falls_back_to_one_instead_of_an_empty_table(self):
+        calls = [f"R{n}" for n in range(12)]
+        a, b = spots({c: [-20] for c in calls}), spots({c: [-15] for c in calls})  # one report each, as in 2 transmissions
+        self.assertEqual(cs.default_min_reports(a, b, places(*calls), HOME, long_test=False), 1)
+
+    def test_too_few_receivers_with_two_reports_falls_back_to_one(self):
+        calls = [f"R{n}" for n in range(12)]
+        a = spots({c: [-20, -21] if n < 5 else [-20] for n, c in enumerate(calls)})
+        b = spots({c: [-15, -16] for c in calls})
+        self.assertEqual(cs.default_min_reports(a, b, places(*calls), HOME, long_test=False), 1)
+
+    def test_a_long_test_steps_down_from_twenty_until_enough_receivers_are_left(self):
+        calls = [f"R{n}" for n in range(12)]
+        many = spots({c: [-20] * 25 for c in calls})
+        self.assertEqual(cs.default_min_reports(many, many, places(*calls), HOME, long_test=True), 20)
+        some = spots({c: [-20] * 6 for c in calls})
+        self.assertEqual(cs.default_min_reports(some, some, places(*calls), HOME, long_test=True), 5)
+        few = spots({c: [-20] * 1 for c in calls})
+        self.assertEqual(cs.default_min_reports(few, few, places(*calls), HOME, long_test=True), 1)
+
+
 class Intervals(unittest.TestCase):
     def test_student_t_values(self):
         self.assertAlmostEqual(cs.t_crit(10), 2.228, places=2)

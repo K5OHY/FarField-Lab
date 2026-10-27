@@ -303,7 +303,7 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(at.session_state["test_mode"], "In long blocks")
         self.assertEqual(at.session_state["rx_min_reports_blk"], 40)
         self.assertIn("Dale, N3HXZ", " ".join(i.value for i in at.info))
-        self.assertTrue(any("receivers with at least 40 reports" in c.value for c in at.caption))
+        self.assertTrue(any("with 40 or more reports on each" in c.value for c in at.caption))
         self.assertTrue(any("getting out better" in m.value for m in at.markdown))
 
     def test_comparison_filters_run(self):
@@ -346,6 +346,28 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(errors(again), [])
         self.assertEqual(again.session_state["rx_min_reports_blk"], 40)
         self.assertTrue(any("getting out better" in m.value for m in again.markdown))
+
+    def test_the_receiver_minimum_opens_at_two_and_says_how_many_receivers_that_leaves(self):
+        at = page("compare_page").run()
+        click(at, "Try an example")
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["rx_min_reports_pair"], 2)
+        notes = [c.value for c in at.main.caption if c.value.startswith("Showing ")]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("with 2 or more reports on each", notes[0])
+        slider = [s for s in at.main.slider if s.key == "rx_min_reports_pair"][0]
+        slider.set_value(1)
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertTrue(any(c.value.startswith("Showing all") for c in at.main.caption))
+
+    def test_a_long_example_says_why_the_minimum_is_where_it_is(self):
+        at = page("compare_page").run()
+        click(at, "Try a long-test example")
+        self.assertEqual(errors(at), [])
+        notes = [c.value for c in at.main.caption if c.value.startswith("Showing ")]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("40 or more reports", notes[0])
 
     def test_a_loaded_example_carries_over_to_my_spots(self):
         """What you load on one page is there on the other, so you do not have to enter it twice."""

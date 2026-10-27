@@ -34,6 +34,7 @@ from compare_stats import (
     BIN_MIN_SHARED,
     FAR_KM,
     DALE_MIN_SPOTS,
+    default_min_reports,
     DALE_SITE_MIN,
     station_gains,
     gain_by_window,
@@ -561,6 +562,37 @@ def _shared_counts_note(an, noun):
     return text
 
 
+def _auto_min_reports(spots_a, spots_b, locs, home, long_test, offset, floor, min_km, weak_pct):
+    """default_min_reports, remembered until the spots or the averaging settings change (it works out every receiver several times)."""
+    sig = (len(spots_a), len(spots_b), long_test, offset, floor, round(min_km), weak_pct)
+    cached = st.session_state.get("_auto_min")
+    if cached and cached[0] == sig:
+        return cached[1]
+    value = default_min_reports(spots_a, spots_b, locs, home, long_test, offset, floor, min_km, weak_pct)
+    st.session_state["_auto_min"] = (sig, value)
+    return value
+
+
+def _min_reports_caption(noun, chosen, auto, long_test, shown, total):
+    """One line under the 'at least this many reports' slider: how many receivers are on the table out of how many heard both
+    antennas, and why the slider sits where it does."""
+    if chosen == 1:
+        text = f"Showing all {shown} {noun}s that heard both antennas."
+        if auto == 1:
+            return text + f" Too few {noun}s have more than one report on each antenna to filter this test, so none are left out."
+        return text + f" A {noun} heard once on an antenna can swing the biggest gain; raise the slider for steadier averages."
+    text = f"Showing {shown} of {total} {noun}s that heard both antennas: those with {chosen} or more reports on each."
+    if chosen > auto:
+        return text + f" That is above where it opens ({auto}): fewer {noun}s, steadier averages."
+    if chosen < auto:
+        return text + f" That is below where it opens ({auto}): more {noun}s, rougher averages."
+    if not long_test:
+        return text + " It opens at 2 so that one lucky report cannot set a result; move the slider to see more or fewer."
+    if chosen == DALE_MIN_SPOTS:
+        return text + f" A long test aims for {DALE_MIN_SPOTS} or more per antenna."
+    return text + f" A long test aims for {DALE_MIN_SPOTS}, but this one is shorter, so it opens at {chosen} to leave enough {noun}s."
+
+
 def _linear_average_view(spots_a, spots_b, an, names, noun, locs, home, kind, callsign, paired=None, floor=None, min_km=0.0,
                          weak_pct=0, default_min=1):
     """The SNR average (the standard comparison) next to the same comparison worked out by averaging power instead of dB,
@@ -1049,6 +1081,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         avg_note = ", ".join(([f"reports at or below {WSPR_FLOOR_DB} dB left out"] if floor_on else [])
                              + ([f"receivers closer than {near:g} {units} left out"] if near else [])
                              + ([f"stations with more than {weak_pct}% of their reports at the floor left out"] if weak_pct else []))
+    auto_min = _auto_min_reports(spots_a, spots_b, locs, home, bool(sep.get("blocks")), an["power"]["offset"], avg_floor, avg_min_km,
+                                 weak_pct)
 
     with top:
         st.markdown(_headline_html(names, ", ".join(sorted(set(map_a["band"]) | set(map_b["band"])))), unsafe_allow_html=True)
@@ -1190,12 +1224,17 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                          "time and suits a long test with many reports per station; the dB middle is steadier when a station "
                          "has only a few reports.")
                 min_key = f"rx_min_reports_{'blk' if blocks_mode else 'pair'}"
-                st.session_state.setdefault(min_key, DALE_MIN_SPOTS if blocks_mode else 1)
+                # Opens at the strictest setting that still leaves enough receivers, and follows the data until you move it
+                auto_key = min_key + "_auto"
+                if min_key not in st.session_state or st.session_state.get(min_key) == st.session_state.get(auto_key):
+                    st.session_state[min_key] = auto_min
+                st.session_state[auto_key] = auto_min
                 min_reports = int(ctrl_min.slider(
                     f"Only {noun}s with at least this many reports on each antenna", 1, 60,
                     key=min_key,
                     help="Raising this drops stations with few reports. The far, weak ones go first, but each station left has a "
                          "steadier average, and the answer settling as you raise it is a sign it can be trusted."))
+                method_key = "linear" if method_label == "Linear power" else "snr"
                 plain = method_label == "SNR (dB)" and min_reports == 1 and avg_floor is None and not avg_min_km and not weak_pct
                 if avg_note:
                     st.caption("Averages here have " + avg_note + ".")
@@ -1204,9 +1243,13 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 if plain:
                     every, scatter_src = an["shared_all"], an["shared"]
                 else:
-                    every = station_gains(spots_a, spots_b, locs, home, "linear" if method_label == "Linear power" else "snr",
+                    every = station_gains(spots_a, spots_b, locs, home, method_key,
                                           min_reports, an["power"]["offset"], avg_floor, avg_min_km, weak_pct)
                     scatter_src = every
+                ctrl_min.caption(_min_reports_caption(
+                    noun, min_reports, auto_min, blocks_mode, len(every),
+                    station_gains(spots_a, spots_b, locs, home, method_key, 1, an["power"]["offset"], avg_floor, avg_min_km, weak_pct).shape[0]
+                    if min_reports > 1 else len(every)))
                 if every.empty:
                     st.info(f"No {noun} has {min_reports} or more reports on both antennas. Lower the number above.")
                 else:
@@ -1229,8 +1272,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                           f"{noun}'s spots. Click a column heading to sort.")
                     else:
                         wins_a, wins_b = int((every["gap"] > 0).sum()), int((every["gap"] < 0).sum())
-                        table_col.caption(f"{len(every)} {noun}s with at least {min_reports} report{'s' if min_reports != 1 else ''} on each antenna. "
-                                          f"\U0001F535 A was stronger at {wins_a}, \U0001F7E0 B at {wins_b}, tied at "
+                        table_col.caption(f"\U0001F535 A was stronger at {wins_a},\U0001F7E0 B at {wins_b}, tied at "
                                           f"{len(every) - wins_a - wins_b}. Each SNR is the "
                                           f"{'average power, in dB,' if method_label == 'Linear power' else 'median'} of that "
                                           f"{noun}'s spots. Click a column heading to sort.")
@@ -1360,7 +1402,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         with tab_method:
             _linear_average_view(map_a, map_b, an, names, noun, locs, home, kind, callsign, paired=(spots_a, spots_b),
                                  floor=avg_floor, min_km=avg_min_km, weak_pct=weak_pct,
-                                 default_min=DALE_MIN_SPOTS if sep.get("blocks") else 1)
+                                 default_min=auto_min)
 
         with tab_maps:
             st.caption("Both maps use the same view, the same SNR scale and the same dot sizes.")
