@@ -76,6 +76,23 @@ class MySpotsPage(unittest.TestCase):
         at.run()
         self.assertEqual(at.session_state["src_in"], "Paste from RBN site")  # it remembers your last RBN choice
 
+    def test_switching_to_wspr_moves_the_date_from_yesterday_to_today(self):
+        at = page("spots_page").run()
+        yesterday = at.session_state["day_in"]
+        [r for r in at.sidebar.radio if r.key == "net_in"][0].set_value("WSPR")
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual((at.session_state["day_in"] - yesterday).days, 1)
+        [r for r in at.sidebar.radio if r.key == "net_in"][0].set_value("RBN")
+        at.run()
+        self.assertEqual(at.session_state["day_in"], yesterday)  # RBN has no file for today, so it steps back
+
+    def test_a_day_you_picked_stays_when_you_switch_source(self):
+        at = page("spots_page", call="K5OHY", src="rbn", date="2024-03-01").run()
+        [r for r in at.sidebar.radio if r.key == "net_in"][0].set_value("WSPR")
+        at.run()
+        self.assertEqual(at.session_state["day_in"], date(2024, 3, 1))
+
     def test_a_date_range_is_picked_on_one_calendar(self):
         at = page("spots_page", call="K5OHY", src="rbn", date="2024-03-01..2024-03-03").run()
         self.assertEqual(errors(at), [])

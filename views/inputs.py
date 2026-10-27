@@ -250,9 +250,17 @@ def where_inputs(ss, cfg, second_call=False):
         ss.setdefault("day_in", last_day)
         ss.setdefault("from_in", last_day - timedelta(days=MAX_DAYS - 1))
         ss.setdefault("to_in", last_day)
+        before = ss.get("_last_day")  # the latest day the other source offered; a date left on it moves with the switch
+        if before and before < last_day:
+            if ss["to_in"] == before:  # a range ending on the old latest day keeps its length
+                ss["from_in"] += last_day - before
+            for key in ("day_in", "to_in"):
+                if ss[key] == before:
+                    ss[key] = last_day
         for key in ("day_in", "from_in", "to_in"):  # a date from the other source, or a link, may be past the last day
             if ss[key] > last_day:
                 ss[key] = last_day
+        ss["_last_day"] = last_day
         span = st.radio("Period", ["Single day", "Date range"], horizontal=True, key="span_in")
         if span == "Single day":
             days = [st.date_input("Date (UTC)", key="day_in", max_value=last_day)]
