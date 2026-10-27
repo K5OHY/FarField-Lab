@@ -420,9 +420,13 @@ def _breakdown(ta, tb, shared, bin_a, bin_b, bin_shared, labels, widen=0.0, allo
             lo, hi = bootstrap_mean_ci(sh["delta"].to_numpy(), n_boot=1500, alpha=BIN_ALPHA)
             if lo - widen > 0 or hi + widen < 0:  # about 14 bins are checked at once, so each must hold up at a stricter level
                 call, basis = ("A" if delta > 0 else "B"), "stronger"
-        if not call and allow_counts and abs(na - nb) >= max(3, 0.3 * max(na, nb)):
-            call, basis = ("A" if na > nb else "B"), "more receivers"
-        rows.append({"label": label, "a": na, "b": nb, "shared": len(sh), "delta": delta, "call": call, "basis": basis})
+        hint = ""  # a clear difference in how many receivers heard each side, which a short test cannot call: worth a look
+        if not call and abs(na - nb) >= max(3, 0.3 * max(na, nb)):
+            if allow_counts:
+                call, basis = ("A" if na > nb else "B"), "more receivers"
+            else:
+                hint = "A" if na > nb else "B"
+        rows.append({"label": label, "a": na, "b": nb, "shared": len(sh), "delta": delta, "call": call, "basis": basis, "hint": hint})
     return pd.DataFrame(rows)
 
 
@@ -697,6 +701,18 @@ def _dirs(analysis, side):
     return [r["label"] for _, r in d.iterrows() if r["call"] == side]
 
 
+def _hint_text(breakdown, names, receiver_word, where):
+    """'A was heard by 11 receivers at 3,000-6,000 km against 2', for each range a short test could not call."""
+    if "hint" not in breakdown:
+        return ""
+    bits = []
+    for _, row in breakdown.iterrows():
+        if row["hint"]:
+            more, fewer = (row["a"], row["b"]) if row["hint"] == "A" else (row["b"], row["a"])
+            bits.append(f"{names[row['hint']]} was heard by {more} {receiver_word}s {where}{row['label']} against {fewer}")
+    return "; ".join(bits)
+
+
 def build_verdict(an, names, exposure=None, rounds=None, receiver_word="receiver", sequential=False, n_pairs=None):
     """Plain-English result. Returns {'level', 'winner', 'headline', 'points', 'caveats'}.
     `names` = {'A': ..., 'B': ...}; `exposure` = (minutes_a, minutes_b) when the sides were separated in time;
@@ -878,7 +894,10 @@ def build_verdict(an, names, exposure=None, rounds=None, receiver_word="receiver
         if notes:
             points.append(("\U0001F4CF", "**By distance:** " + "; ".join(notes) + "."))
         else:
-            points.append(("\U0001F4CF", "**By distance:** no distance range stands out."))
+            hints = _hint_text(dist, names, receiver_word, "at ")
+            points.append(("\U0001F4CF", "**By distance:** " + (
+                f"no distance range can be called in a test this short, but {hints}. That is only a hint, so check the maps."
+                if hints else "no distance range stands out.")))
 
     dir_bits = []
     for side in ("A", "B"):
@@ -888,7 +907,10 @@ def build_verdict(an, names, exposure=None, rounds=None, receiver_word="receiver
     if dir_bits:
         points.append(("\U0001F9ED", "**By direction:** " + "; ".join(dir_bits) + "."))
     else:
-        points.append(("\U0001F9ED", "**By direction:** no direction stands out."))
+        hints = _hint_text(an["direction"], names, receiver_word, "toward ")
+        points.append(("\U0001F9ED", "**By direction:** " + (
+            f"no direction can be called in a test this short, but {hints}. That is only a hint, so check the maps."
+            if hints else "no direction stands out.")))
 
     if rounds is not None and len(rounds) >= 3:
         a_rounds, b_rounds = int((rounds["delta"] > 0).sum()), int((rounds["delta"] < 0).sum())

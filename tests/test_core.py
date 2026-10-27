@@ -113,6 +113,33 @@ class DefaultMinimumReports(unittest.TestCase):
         self.assertEqual(cs.default_min_reports(few, few, places(*calls), HOME, long_test=True), 1)
 
 
+class HintsForShortTests(unittest.TestCase):
+    """A short test cannot call a difference in how many receivers heard each side, but it should still point at one."""
+
+    def setUp(self):
+        self.ta = pd.DataFrame({"km": [800.0] * 3 + [4000.0] * 11, "bearing": [10.0] * 14})
+        self.tb = pd.DataFrame({"km": [800.0] * 3 + [4000.0] * 2, "bearing": [10.0] * 5})
+        self.shared = pd.DataFrame({"km_a": [800.0] * 2, "bearing_a": [10.0] * 2, "delta": [0.0, 0.0]})
+        self.names = {"A": "Loop", "B": "Vertical"}
+
+    def test_a_long_enough_test_calls_it(self):
+        rows = cs.distance_breakdown(self.ta, self.tb, self.shared, "km", allow_counts=True)
+        far = rows[rows["label"] == "3,000–6,000 km"].iloc[0] if (rows["label"] == "3,000–6,000 km").any() else rows.iloc[3]
+        self.assertEqual((far["call"], far["basis"], far["hint"]), ("A", "more receivers", ""))
+
+    def test_a_short_test_leaves_it_uncalled_but_hints(self):
+        rows = cs.distance_breakdown(self.ta, self.tb, self.shared, "km", allow_counts=False)
+        self.assertEqual(list(rows["call"].unique()), [""])
+        text = cs._hint_text(rows, self.names, "receiver", "at ")
+        self.assertIn("Loop was heard by 11 receivers at", text)
+        self.assertIn("against 2", text)
+
+    def test_no_hint_when_the_counts_are_close(self):
+        tb = pd.DataFrame({"km": [800.0] * 3 + [4000.0] * 10, "bearing": [10.0] * 13})
+        rows = cs.distance_breakdown(self.ta, tb, self.shared, "km", allow_counts=False)
+        self.assertEqual(cs._hint_text(rows, self.names, "receiver", "at "), "")
+
+
 class Intervals(unittest.TestCase):
     def test_student_t_values(self):
         self.assertAlmostEqual(cs.t_crit(10), 2.228, places=2)
