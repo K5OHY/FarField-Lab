@@ -98,7 +98,9 @@ CSS = """
 <style>
   .block-container { padding-top: 4rem; max-width: 1400px; }
   h1 { font-weight: 700; letter-spacing: -0.5px; margin-bottom: 0; }
-  .subtitle { color: #8a8f98; margin: 0 0 1.2rem 0; }
+  .subtitle { color: inherit; opacity: .78; margin: 0 0 1.2rem 0; }
+  [data-testid="stCaptionContainer"] { color: inherit; opacity: .86; }
+  [data-testid="stCaptionContainer"] p { color: inherit; }
   div[data-testid="stMetric"] {
       background: rgba(128,128,128,.10); border-radius: 10px; padding: 12px 16px;
   }

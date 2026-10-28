@@ -88,7 +88,7 @@ def _load_saved(which):
     ss.tx_call_b = meta.get("tx_call_b")
     ss.locs = (receiver_locations(spots) if len(spots) else {}) if meta["kind"] == "WSPR" else None
     ss.file_date, ss.home, ss.notice, ss.loaded_at = meta["file_date"], tuple(meta["home"]), None, None
-    ss["setup_ok"] = True
+    ss["setup_ok"] = which in COMPARE_KEYS  # the My spots example is not a test: Compare asks you to check it
     return True
 
 
@@ -105,6 +105,7 @@ COMPARE_EXAMPLES = (
     ("dxc40", "Each antenna has its own callsign", "Vertical vs delta loop, 40m (DX Commander)",
      "The same day on 40m. A is the antenna that sent first, as in his log."),
 )
+COMPARE_KEYS = tuple(key for key, _, _, _ in COMPARE_EXAMPLES)
 EXAMPLE_TITLES = {key: title for key, _, title, _ in COMPARE_EXAMPLES}
 
 
@@ -447,7 +448,7 @@ def load_spots(ss, skimmers, where):
         ss.notice = notice
         ss.loaded_at = datetime.now(timezone.utc)
         # An example, or a link that carries the test's setup, needs no checking. Your own spots do: the page has guessed.
-        ss["setup_ok"] = bool(ss.get("_example")) or bool(ss.pop("_setup_given", False))
+        ss["setup_ok"] = ss.get("_example") in COMPARE_KEYS or bool(ss.pop("_setup_given", False))
         st.rerun()  # redraw the sidebar, so the time window and the link to this view follow the spots just loaded
     except Exception as e:
         ss.raw = None

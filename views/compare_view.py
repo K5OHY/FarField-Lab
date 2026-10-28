@@ -132,7 +132,7 @@ def _separate_by_frequency(spots, gap_khz):
         st.warning("Pick two different frequencies to compare.")
         return None
     (fa, spots_a), (fb, spots_b) = groups[ia], groups[ib]
-    return {"a": spots_a, "b": spots_b, "default": {"A": f"A ({fa:.1f} kHz)", "B": f"B ({fb:.1f} kHz)"}}
+    return {"a": spots_a, "b": spots_b, "bands": (spots_a["band"].mode().iat[0], spots_b["band"].mode().iat[0]), "default": {"A": f"A ({fa:.1f} kHz)", "B": f"B ({fb:.1f} kHz)"}}
 
 
 def _without_ghost_cycles(spots):
@@ -531,6 +531,9 @@ def _azimuth_map_section(points, an, names, noun, units, home, callsign, scale):
     info_col.markdown(
         f"**{int(counts.get('both', 0))}** {noun}s heard both \u00b7 **{int(counts.get('only_a', 0))}** only {names['A']} \u00b7 "
         f"**{int(counts.get('only_b', 0))}** only {names['B']}" + (f" \u00b7 {outside} beyond this view" if outside else ""))
+    if int(counts.get("both", 0)) != an["reach"]["both"]:
+        info_col.caption(f"This map counts every {noun} with a known position that was heard in the test. The result leaves some "
+                         f"out (see **Data used**), so it counts {an['reach']['both']} that heard both.")
     for side in ("a", "b"):
         far = an["dx"][side]
         if far:
@@ -567,7 +570,7 @@ def _sector_detail(shared, adv, label, width_deg, names, noun):
 def _shared_counts_note(an, noun):
     """Why 'heard both' and 'compared' are different numbers: pairing, and counting one place once."""
     both, every, n = an["reach"]["both"], len(an["shared_all"]), an["strength"]["n"]
-    text = f"**{both} {noun}s heard both sides.**"
+    text = f"**{both} {noun}s heard both sides in the comparison.**"
     if an["paired"] and every != both:
         text += (f" {every} of them heard both in the same pair of neighbouring transmissions, which is what the strength "
                  "comparison needs.")
@@ -795,8 +798,12 @@ def _data_used(all_spots, spots, map_a, map_b, spots_a, spots_b, an, ta_all, tb_
         rows["Transmissions"] = [n(map_a["time"].nunique()), n(map_b["time"].nunique())]
     lines = [f"{n(len(all_spots))} spots were loaded; {n(len(spots))} remain after your filters; {n(in_test)} are in the test and "
              f"{n(compared)} were used in the comparison.",
-             f"{len(heard_a)} {noun}s heard A and {len(heard_b)} heard B; {len(both_all)} heard both. {len(shared)} of those have a "
-             f"known position and were compared.",
+             f"{len(heard_a)} {noun}s heard A and {len(heard_b)} heard B; {len(both_all)} heard both in the test."
+             + (f" {an['reach']['both']} still counted as hearing both once the {noun}s left out below were removed."
+                if an["reach"]["both"] != len(both_all) else "")
+             + f" {len(shared)} {'of those ' if len(shared) != len(both_all) else ''}have a known position"
+             + (" and heard both in the same pair of transmissions" if an["paired"] and len(shared) != an["reach"]["both"] else "")
+             + " and were compared.",
              f"With at least 5, 20 and 40 reports on each antenna: {enough[5]}, {enough[20]} and {enough[40]} {noun}s."
              + (f" A long test aims for {DALE_MIN_SPOTS} or more, and the published method keeps {DALE_SITE_MIN}."
                 if sep.get("blocks") else "")]
@@ -946,6 +953,10 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         if sep is None:
             return
         spots_a, spots_b = sep["a"], sep["b"]
+        if len(set(sep.get("bands", ()))) > 1:  # shown above the result, which is where a reader looks
+            notes.warning(f"A is on {sep['bands'][0]} and B is on {sep['bands'][1]}. That compares two bands, not two antennas: "
+                          "the bands open and close differently, so a winner here says little about the antennas. For an antenna "
+                          "test, use the same band for both.")
         if spots_a.empty or spots_b.empty:
             st.warning("One side has no spots. Adjust the selection above, or the filters in the sidebar.")
             return
@@ -1297,7 +1308,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     m2.metric("Smallest gain", signed_db(gr["smallest"]),
                               help="The smallest of the average gains for the eight directions, as in the direction table "
                                    f"further down. A direction with fewer than {BIN_MIN_SHARED} {noun}s is not used.")
-                    readout.caption("Relative gain is B minus A in dB: above zero, B was stronger.")
+                    readout.caption("Relative gain is B minus A in dB: above zero, B was stronger. Typical gain is the middle receiver "
+                                    "at this slider setting, so it can differ from the averages on the Linear average tab.")
                     if gr["n"] < ENOUGH_RECEIVERS:
                         readout.caption(f":orange[Only {gr['n']} {noun}s left. With fewer than {ENOUGH_RECEIVERS}, a handful of "
                                         "stations decide the answer.]")
@@ -1455,7 +1467,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
 
         with tab_maps:
             st.caption(f"Where the {noun}s are, one map for each antenna. Both use the same view, the same SNR scale and the same "
-                       "dot sizes.")
+                       "dot sizes. Zoom with the + and − buttons or a double-click; the mouse wheel scrolls the page.")
             both = pd.concat([map_a, map_b])
             col_a, col_b = st.columns(2)
             for col, side, group in ((col_a, "A", map_a), (col_b, "B", map_b)):

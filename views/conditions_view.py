@@ -337,7 +337,9 @@ def conditions_page():
             ss["cond_mode"] = q["mode"]
         if q.get("window", "").isdigit() and int(q["window"]) in (30, 60, 120):
             ss["cond_window"] = int(q["window"])
-    ss.setdefault("cond_call", ss.get("callsign_in", saved.get("callsign", "")))
+    # The callsign you typed on another page carries over, but an example's callsign belongs to the example, not to you.
+    own_call = saved.get("callsign", "") if ss.get("_example") else ss.get("callsign_in", saved.get("callsign", ""))
+    ss.setdefault("cond_call", own_call)
     ss.setdefault("cond_grid", saved.get("grid", ""))
     ss.setdefault("cond_units", saved.get("units", "mi"))
     ss.setdefault("cond_power", 100.0)
@@ -367,7 +369,7 @@ def conditions_page():
                                "sends each band only now and then, so a look-back of an hour or two gives it more to go on.")
         ref_call = ""
         if source == "One transmitter":
-            ref_call = st.text_input("Transmitter callsign", value=st.session_state.get("callsign_in", saved.get("callsign", "")),
+            ref_call = st.text_input("Transmitter callsign", value=own_call,
                                      key="cond_ref_call", help="The callsign it sends in WSPR.").strip().upper()
         units = st.radio("Distance units", ["mi", "km"], horizontal=True, key="cond_units")
         if source == "One transmitter":

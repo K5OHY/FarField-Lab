@@ -41,7 +41,9 @@ def _azimuth_single_section(spots, locs, home, callsign, noun, units, scale):
     k = KM_PER_MILE if units == "mi" else 1
     far = pts.loc[pts["km"].idxmax()]
     beyond = int((pts["km"] > radius).sum())
-    info_col.markdown(f"**{len(pts)}** {noun}s heard you. Farthest: **{far['km'] / k:,.0f} {units}**."
+    heard = (f"**{len(pts)}** dots, one for each {noun} on each band it heard you on ({spots['spotter'].nunique()} different {noun}s)."
+             if bands > 1 else f"**{len(pts)}** {noun}s heard you.")
+    info_col.markdown(f"{heard} Farthest: **{far['km'] / k:,.0f} {units}**."
                       + (f" {beyond} beyond this view." if beyond else ""))
     info_col.caption(
         "You are at the centre. Distance from the centre is true distance and the angle is true compass bearing, so a straight "

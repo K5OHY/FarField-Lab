@@ -19,7 +19,7 @@ from matplotlib.patches import Wedge
 EARTH_KM = 6371.0
 MAX_KM = math.pi * EARTH_KM  # the far side of the world is at this distance
 OCEAN, LAND, COAST = np.array([11, 17, 25]) / 255, np.array([32, 43, 58]) / 255, np.array([86, 106, 132]) / 255
-INK, DIM = "#cbd2dc", "#7b8596"
+INK, DIM = "#d7dde6", "#a3adbf"
 CELL_EDGES_KM = [0, 1000, 2000, 3500, 5500, 8000, 11000, 15000, 20100]  # narrow near the station, where most receivers are
 MIN_CELL = 3  # a cell needs at least this many receivers to be drawn
 COL_A, COL_B = "#4f8cff", "#ff9a3c"
@@ -227,7 +227,7 @@ def azimuth_map_figure(lat0, lon0, points, names, callsign, units="mi", radius_k
             mid_r, ang = (c["r0"] + c["r1"]) / 2, math.radians((c["b0"] + c["b1"]) / 2)
             if c["n"] >= label_min and (c["r1"] - c["r0"]) > R * 0.07:
                 label = f"{abs(v):.1f}" if layer == "advantage" else f"{v:.0f}"
-                ax.text(mid_r * math.sin(ang), mid_r * math.cos(ang), label, fontsize=6.5,
+                ax.text(mid_r * math.sin(ang), mid_r * math.cos(ang), label, fontsize=7.5,
                         color=text_color_on(color, alpha) if layer != "advantage" else "white", ha="center", va="center",
                         zorder=6, fontweight="bold")
     # distance rings, labelled in the user's units
@@ -235,7 +235,7 @@ def azimuth_map_figure(lat0, lon0, points, names, callsign, units="mi", radius_k
     for d in np.arange(step, R / km_per_unit * 0.999, step):
         r = d * km_per_unit
         ax.plot(r * np.sin(theta), r * np.cos(theta), color=INK, linewidth=0.6, linestyle=(0, (3, 4)), alpha=0.35, zorder=4)
-        ax.text(r * 0.03, r + R * 0.012, f"{d:,.0f} {units}", fontsize=7, color=INK, alpha=0.8, ha="left", va="bottom", zorder=7)
+        ax.text(r * 0.03, r + R * 0.012, f"{d:,.0f} {units}", fontsize=8.5, color=INK, alpha=1.0, ha="left", va="bottom", zorder=7)
     ax.plot(R * np.sin(theta), R * np.cos(theta), color=DIM, linewidth=1.2, zorder=4)
     for deg in range(0, 360, 30):
         a = math.radians(deg)
@@ -251,11 +251,11 @@ def azimuth_map_figure(lat0, lon0, points, names, callsign, units="mi", radius_k
     for deg in range(30, 360, 30):
         if deg % 90:
             a = math.radians(deg)
-            ax.text(R * 1.07 * math.sin(a), R * 1.07 * math.cos(a), f"{deg}\u00b0", ha="center", va="center", fontsize=7.5, color=DIM)
+            ax.text(R * 1.07 * math.sin(a), R * 1.07 * math.cos(a), f"{deg}\u00b0", ha="center", va="center", fontsize=9, color=DIM)
     for label, la, lo in REGIONS:
         d, az = _forward(lat0, lon0, la, lo)
         if 0.05 * R < d < 0.94 * R:
-            ax.text(float(d * np.sin(az)), float(d * np.cos(az)), label, fontsize=7.5, color=INK, alpha=0.5, ha="center", va="center",
+            ax.text(float(d * np.sin(az)), float(d * np.cos(az)), label, fontsize=9, color=INK, alpha=0.8, ha="center", va="center",
                     style="italic", zorder=5)
     # the receivers
     shown = points[points["km"] <= R] if len(points) else points
@@ -303,10 +303,10 @@ def azimuth_map_figure(lat0, lon0, points, names, callsign, units="mi", radius_k
             cax.imshow(grad, aspect="auto", cmap=REACH_CMAP if kind == "reach" else SNR_CMAP)
             text_l, text_r, text_m = (("few", "many", "") if kind == "reach" else (f"{lo:.0f} dB", f"{hi:.0f} dB", ""))
         cax.set_axis_off()
-        fig.text(0.27, 0.105, text_l, ha="right", va="center", fontsize=7.5, color=INK)
-        fig.text(0.73, 0.105, text_r, ha="left", va="center", fontsize=7.5, color=INK)
+        fig.text(0.27, 0.105, text_l, ha="right", va="center", fontsize=9, color=INK)
+        fig.text(0.73, 0.105, text_r, ha="left", va="center", fontsize=9, color=INK)
         fig.text(0.5, 0.062, {"advantage": f"dB stronger, up to {hi:g}", "reach": "stations heard in the cell",
-                              "snr": "average SNR in the cell"}[kind], ha="center", va="top", fontsize=7, color=DIM)
+                              "snr": "average SNR in the cell"}[kind], ha="center", va="top", fontsize=8.5, color=DIM)
     if show_dots and not single:
         handles = [Line2D([], [], marker="o", linestyle="", color=COL_A, markersize=6, label=f"Both heard it, {names['A']} stronger"),
                    Line2D([], [], marker="o", linestyle="", color=COL_B, markersize=6, label=f"Both heard it, {names['B']} stronger"),
@@ -314,7 +314,7 @@ def azimuth_map_figure(lat0, lon0, points, names, callsign, units="mi", radius_k
                           label=f"Only {names['A']} heard it"),
                    Line2D([], [], marker="o", linestyle="", markerfacecolor="none", markeredgecolor=COL_B, markersize=6,
                           label=f"Only {names['B']} heard it")]
-        leg = fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False, fontsize=7.5, bbox_to_anchor=(0.5, -0.01))
+        leg = fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.01))
         for text in leg.get_texts():
             text.set_color(INK)
     ax.set_xlim(-R * 1.12, R * 1.12)

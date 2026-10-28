@@ -625,7 +625,7 @@ def analyze(spots_a, spots_b, locs, home, power_a=None, power_b=None, normalize=
 
 def round_consistency(spots_a, spots_b, locs, home, offset_db=0.0):
     """For alternating blocks: the A-minus-B difference within each round (one A block and the B block after it).
-    Returns a DataFrame(round, shared, delta). If B wins most rounds, drifting propagation isn't the explanation."""
+    Returns a DataFrame(round, shared, delta). If B wins most rounds, that is a consistent advantage, which is more convincing than one average."""
     rows = []
     for r in sorted(set(spots_a["round"].dropna()) & set(spots_b["round"].dropna())):
         ta = receiver_table(spots_a[spots_a["round"] == r], locs, home)
@@ -767,7 +767,7 @@ def build_verdict(an, names, exposure=None, rounds=None, receiver_word="receiver
         reach_lean = (f"reach leans {names[r_lead]}, heard by {more} {receiver_word}s against {fewer}, "
                       "but not enough to call")
 
-    clearly = "did clearly better in this test" if sequential else "is clearly getting out better"
+    clearly = "came out ahead in this test" if sequential else "looks to be getting out better"
     stronger = "was stronger in this test" if sequential else "has the stronger signal"
     winner, level = None, "info"
     if r["a"] == 0 and r["b"] == 0:
@@ -931,7 +931,7 @@ def build_verdict(an, names, exposure=None, rounds=None, receiver_word="receiver
         if n_r < 3:
             round_text = "Too few rounds to judge consistency."
         elif mcnemar_exact(a_rounds, b_rounds) < ALPHA:
-            round_text = "One side winning round after round means changing propagation isn't the explanation."
+            round_text = "One side winning round after round makes a consistent advantage more convincing; repeating the test on another day is the real check."
         elif lead >= 0.75 * n_r:
             round_text = "Suggestive, but too few rounds to be sure; a longer test would settle it."
         else:

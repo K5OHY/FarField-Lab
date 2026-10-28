@@ -209,8 +209,8 @@ def spot_popup_html(spotter, g, dist, units, scale=RBN_SNR_SCALE):
 def base_map(home, tiles):
     base, labels = TILE_STYLES[tiles]
     if base == "OpenStreetMap":
-        return folium.Map(location=home, zoom_start=3, tiles=base, control_scale=True)
-    m = folium.Map(location=home, zoom_start=3, tiles=None, control_scale=True)
+        return folium.Map(location=home, zoom_start=3, tiles=base, control_scale=True, scroll_wheel_zoom=False)
+    m = folium.Map(location=home, zoom_start=3, tiles=None, control_scale=True, scroll_wheel_zoom=False)
     folium.TileLayer(base, attr=_ESRI_ATTR, name=tiles, max_zoom=16).add_to(m)
     if labels:
         folium.TileLayer(labels, attr=_ESRI_ATTR, name="Labels", overlay=True, max_zoom=16).add_to(m)

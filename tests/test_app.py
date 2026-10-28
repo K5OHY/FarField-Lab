@@ -46,6 +46,17 @@ def open_example(at, key):
     at.run()
 
 
+def page_after_example(function, key):
+    """A page opened right after an example's own button was pressed on another page: the example's spots and settings are
+    already in the session, the way they are when a visitor moves between pages."""
+    runner = os.path.join(tempfile.gettempdir(), f"rbn_{function}_after_{key}_runner.py")
+    lines = ["import sys", "sys.path.insert(0, r'%s')" % HERE, "import streamlit as st", "import web", "from views import inputs",
+             "if 'started' not in st.session_state:", "    st.session_state['started'] = True", "    inputs.start_example(%r)" % key,
+             "web.%s()" % function]
+    with open(runner, "w", encoding="utf-8") as f:
+        f.write(chr(10).join(lines) + chr(10))
+    return AppTest.from_file(runner, default_timeout=600)
+
 class MySpotsPage(unittest.TestCase):
     def test_opens_with_the_load_and_example_buttons(self):
         at = page("spots_page").run()
@@ -338,6 +349,27 @@ class ComparePage(unittest.TestCase):
         shared = page("compare_page", call="K5OHY", src="wspr", date="2026-10-04", band="20m", go="1", n="12", ord="abba").run()
         self.assertTrue(shared.session_state["setup_ok"])
 
+    def test_the_my_spots_example_is_not_a_confirmed_test_when_you_open_compare(self):
+        at = page_after_example("compare_page", "map").run()
+        self.assertEqual(errors(at), [])
+        self.assertFalse(at.session_state["setup_ok"])
+        self.assertNotIn("Signal advantage", " ".join(m.value for m in at.markdown))  # no winner before you check the setup
+        self.assertEqual(len([b for b in at.main.button if b.label.startswith("This matches what I did")]), 1)
+
+    def test_a_result_across_two_bands_is_called_a_band_comparison(self):
+        at = page_after_example("compare_page", "map").run()
+        [b for b in at.main.button if b.label.startswith("This matches what I did")][0].click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        warnings = " ".join(w.value for w in at.warning)
+        self.assertIn("compares two bands, not two antennas", warnings)
+
+    def test_the_compare_examples_still_need_no_confirming(self):
+        for key in ("quick", "dxc20"):
+            at = page_after_example("compare_page", key).run()
+            self.assertEqual(errors(at), [], key)
+            self.assertTrue(at.session_state["setup_ok"], key)
+
     def test_the_rbn_example_compares_the_loop_and_the_dipole_by_frequency(self):
         at = page("compare_page").run()
         open_example(at, "rbn")
@@ -479,6 +511,11 @@ class BandConditionsPage(unittest.TestCase):
         at = page("conditions_page", call="K5OHY").run()
         self.assertEqual(errors(at), [])
         self.assertEqual([x.label for x in at.selectbox if x.label == "Mode"], ["Mode"])
+
+    @needs_network
+    def test_an_examples_callsign_does_not_become_yours(self):
+        at = page_after_example("conditions_page", "dxc20").run()
+        self.assertEqual(at.session_state["cond_call"], "")
 
     @needs_network
     def test_every_mode_works(self):
