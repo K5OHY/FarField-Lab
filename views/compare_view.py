@@ -76,6 +76,18 @@ def frequency_groups(spots, gap_khz):
     return [(g["freq"].median(), g) for _, g in ordered.groupby(group_id)]
 
 
+# The tabs under the verdict hold most of the detail, so they are drawn as a boxed bar with a filled active tab
+_TABS_CSS = """<style>
+  [data-testid="stTabs"] [role="tablist"] { gap: 6px; padding: 6px; height: auto; border: 1px solid rgba(128,128,128,.35);
+                                            border-radius: 12px; background: rgba(128,128,128,.10); }
+  [data-testid="stTab"] { padding: 10px 16px; border-radius: 8px; height: auto; border-bottom: none; }
+  [data-testid="stTab"]::after { display: none; }
+  [data-testid="stTab"] p { font-size: 1.05rem; font-weight: 600; }
+  [data-testid="stTab"][aria-selected="true"] { background: rgba(128,128,128,.28); }
+  [data-testid="stTab"]:hover { background: rgba(128,128,128,.18); }
+</style>"""
+
+
 @contextmanager
 def _box(title, **_):
     """A titled box for the setup. The setup lives inside one expander, and Streamlit cannot put an expander in an expander."""
@@ -890,7 +902,11 @@ def _headline_html(names, bands):
 def _setup_line(sep, names, kind):
     """One line saying what the comparison assumed, so a wrong guess is spotted without opening anything."""
     if sep.get("blocks"):
-        how = f"switched in long blocks ({sep['n_blocks']} blocks of about {sep['block_min']} minutes)"
+        sides = [a for _, a, _, _, _ in sep["schedule"]]
+        span = (f"{sep['t0']:%H:%M} to {sep['t_end']:%H:%M} UTC" if sep["t0"].date() == sep["t_end"].date()
+                else f"{sep['t0']:%d %b %H:%M} to {sep['t_end']:%d %b %H:%M} UTC")
+        how = (f"switched in long blocks (these results use {sep['n_blocks']} blocks of about {sep['block_min']} minutes, "
+               f"{sides.count('A')} on A and {sides.count('B')} on B, from {span})")
     elif sep.get("labeled"):
         log = sep["log"]
         how = (f"switched after every transmission ({len(log)} transmissions from {log[0][0]:%H:%M} UTC, order "
@@ -1091,6 +1107,13 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         st.markdown(verdict_card_html(verdict), unsafe_allow_html=True)
 
     with details:
+        st.markdown(_TABS_CSS, unsafe_allow_html=True)
+        st.markdown(
+            "**Dig into the details below.** "
+            ":material/explore: **Direction & distance** shows where each antenna was stronger. "
+            ":material/table_rows: **Receiver by receiver** lists every station and has the reports slider. "
+            ":material/functions: **Linear average** cross-checks the answer. "
+            ":material/map: **Maps** shows where the receivers are.")
         tab_result, tab_where, tab_each, tab_method, tab_maps = st.tabs(
             [":material/bar_chart: Result", ":material/explore: Direction & distance", ":material/table_rows: Receiver by receiver",
              ":material/functions: Linear average", ":material/map: Maps"])
@@ -1233,7 +1256,10 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     f"Only {noun}s with at least this many reports on each antenna", 1, 60,
                     key=min_key,
                     help="Raising this drops stations with few reports. The far, weak ones go first, but each station left has a "
-                         "steadier average, and the answer settling as you raise it is a sign it can be trusted."))
+                         "steadier average. To see whether the relative gain has settled, raise it a step at a time and watch the "
+                         "biggest and smallest gain: when they stop moving, the result has converged. Keep at least 5 to 10 "
+                         "receivers, because with fewer a handful of stations decide the answer. About 5 or more reports on each "
+                         "antenna is typical, but how many it takes depends on the test."))
                 method_key = "linear" if method_label == "Linear power" else "snr"
                 plain = method_label == "SNR (dB)" and min_reports == 1 and avg_floor is None and not avg_min_km and not weak_pct
                 if avg_note:
@@ -1250,6 +1276,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     noun, min_reports, auto_min, blocks_mode, len(every),
                     station_gains(spots_a, spots_b, locs, home, method_key, 1, an["power"]["offset"], avg_floor, avg_min_km, weak_pct).shape[0]
                     if min_reports > 1 else len(every)))
+                ctrl_min.caption("Has it settled? Raise the slider a step at a time and watch the biggest and smallest gain. When they "
+                                 "stop moving the result has converged, as long as at least 5 to 10 receivers are left.")
                 if every.empty:
                     st.info(f"No {noun} has {min_reports} or more reports on both antennas. Lower the number above.")
                 else:

@@ -369,6 +369,20 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(len(notes), 1)
         self.assertIn("40 or more reports", notes[0])
 
+    def test_the_slider_says_how_to_tell_when_the_result_has_settled(self):
+        at = page("compare_page").run()
+        click(at, "Try a long-test example")
+        self.assertEqual(errors(at), [])
+        self.assertTrue(any(c.value.startswith("Has it settled?") and "5 to 10 receivers" in c.value for c in at.main.caption))
+
+    def test_the_setup_line_says_which_blocks_the_results_use(self):
+        at = page("compare_page").run()
+        click(at, "Try a long-test example")
+        self.assertEqual(errors(at), [])
+        line = [c.value for c in at.main.caption if c.value.startswith("Assumed setup")]
+        self.assertEqual(len(line), 1)
+        self.assertIn("these results use 20 blocks of about 30 minutes, 10 on A and 10 on B, from 12:00 to 22:00 UTC", line[0])
+
     def test_a_loaded_example_carries_over_to_my_spots(self):
         """What you load on one page is there on the other, so you do not have to enter it twice."""
         at = page("compare_page").run()
