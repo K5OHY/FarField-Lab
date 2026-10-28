@@ -40,6 +40,8 @@ from compare_stats import (
     gain_by_window,
     DIRECTION_EDGE_DB,
     gain_summary,
+    gain_readout,
+    ENOUGH_RECEIVERS,
     WSPR_FLOOR_DB,
     EQUAL_DB,
     SLOT_NOISE_DB,
@@ -1108,17 +1110,14 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
 
     with details:
         st.markdown(_TABS_CSS, unsafe_allow_html=True)
-        st.markdown(
-            "**Dig into the details below.** "
-            ":material/explore: **Direction & distance** shows where each antenna was stronger. "
-            ":material/table_rows: **Receiver by receiver** lists every station and has the reports slider. "
-            ":material/functions: **Linear average** cross-checks the answer. "
-            ":material/map: **Maps** shows where the receivers are.")
+        st.markdown("#### Explore the results")
+        st.caption("Each tab answers a different question.")
         tab_result, tab_where, tab_each, tab_method, tab_maps = st.tabs(
             [":material/bar_chart: Result", ":material/explore: Direction & distance", ":material/table_rows: Receiver by receiver",
              ":material/functions: Linear average", ":material/map: Maps"])
 
         with tab_result:
+            st.caption("The scoreboard for each side, who heard you, and a timeline of every spot in the order it happened.")
             snr_note = f"at the {s_['n']} {noun}s that heard both" if s_["n"] else f"no {noun} heard both"
             avg_a = f"{an['shared']['snr_a'].mean():.1f} dB" if s_["n"] else "—"
             avg_b = f"{an['shared']['snr_b'].mean():.1f} dB" if s_["n"] else "—"
@@ -1182,6 +1181,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                f"round: {_lead_text(names, float(rounds['delta'].median()))}.")
 
         with tab_where:
+            st.caption("Where each antenna was stronger, by compass direction and by how far away the receiver was.")
             az_points = _azimuth_points(ta_all, tb_all, an)
             if len(az_points):
                 st.subheader("Where each antenna reached")
@@ -1236,6 +1236,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                   "other wins far out, that's the signature of high-angle versus low-angle performance.")
 
         with tab_each:
+            st.caption(f"Every {noun} that heard both antennas, side by side. Use the slider to leave out {noun}s with only a few "
+                       "reports.")
             if s_["n"]:
                 blocks_mode = bool(sep.get("blocks"))
                 ctrl_method, ctrl_min = st.columns([2, 3])
@@ -1246,6 +1248,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                          "averages the power and turns it back into dB. Linear is the proper average of signal power over "
                          "time and suits a long test with many reports per station; the dB middle is steadier when a station "
                          "has only a few reports.")
+                readout = ctrl_method.container()  # filled in below, once the receivers for this slider setting are known
                 min_key = f"rx_min_reports_{'blk' if blocks_mode else 'pair'}"
                 # Opens at the strictest setting that still leaves enough receivers, and follows the data until you move it
                 auto_key = min_key + "_auto"
@@ -1281,6 +1284,23 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 if every.empty:
                     st.info(f"No {noun} has {min_reports} or more reports on both antennas. Lower the number above.")
                 else:
+                    gr = gain_readout(every)
+                    signed_db = lambda v: "–" if v is None or pd.isna(v) else f"{v:+.1f} dB"  # noqa: E731
+                    m1, m2 = readout.columns(2)
+                    m1.metric("Typical gain", signed_db(gr["typical"]),
+                              help=f"The middle relative gain of the {gr['n']} {noun}s counted. Above zero, B was stronger.")
+                    m2.metric(f"{noun.capitalize()}s", gr["n"],
+                              help=f"How many {noun}s are left at this slider setting.")
+                    m1.metric("Biggest gain", signed_db(gr["biggest"]),
+                              help="The largest of the average gains for the eight directions, as in the direction table "
+                                   f"further down. A direction with fewer than {BIN_MIN_SHARED} {noun}s is not used.")
+                    m2.metric("Smallest gain", signed_db(gr["smallest"]),
+                              help="The smallest of the average gains for the eight directions, as in the direction table "
+                                   f"further down. A direction with fewer than {BIN_MIN_SHARED} {noun}s is not used.")
+                    readout.caption("Relative gain is B minus A in dB: above zero, B was stronger.")
+                    if gr["n"] < ENOUGH_RECEIVERS:
+                        readout.caption(f":orange[Only {gr['n']} {noun}s left. With fewer than {ENOUGH_RECEIVERS}, a handful of "
+                                        "stations decide the answer.]")
                     pdf_ctx["every"], pdf_ctx["scatter_src"] = every, scatter_src
                     pdf_ctx["settings"] = (
                         f"Settings for this section: each {noun}'s reports are averaged by "
@@ -1428,12 +1448,14 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 st.info(f"No {noun} heard both sides, so there is nothing to compare receiver by receiver.")
 
         with tab_method:
+            st.caption("The same comparison worked out a second way, as a cross-check.")
             _linear_average_view(map_a, map_b, an, names, noun, locs, home, kind, callsign, paired=(spots_a, spots_b),
                                  floor=avg_floor, min_km=avg_min_km, weak_pct=weak_pct,
                                  default_min=auto_min)
 
         with tab_maps:
-            st.caption("Both maps use the same view, the same SNR scale and the same dot sizes.")
+            st.caption(f"Where the {noun}s are, one map for each antenna. Both use the same view, the same SNR scale and the same "
+                       "dot sizes.")
             both = pd.concat([map_a, map_b])
             col_a, col_b = st.columns(2)
             for col, side, group in ((col_a, "A", map_a), (col_b, "B", map_b)):

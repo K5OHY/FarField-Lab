@@ -288,6 +288,19 @@ def gain_summary(every, by="octant", edges_km=None, labels=None):
     return pd.DataFrame(rows)
 
 
+def gain_readout(every):
+    """The few numbers worth watching while the minimum-reports slider moves: how many receivers are left, their typical relative
+    gain (B minus A, the middle of the receivers), and the biggest and smallest average gain of the eight direction groups, as in
+    the direction table. A group with fewer than BIN_MIN_SHARED receivers is a hint, not a number, so it is left out of the
+    biggest and smallest (None when fewer than two groups qualify)."""
+    gains = -every["gap"].to_numpy(float)
+    summary = gain_summary(every, "octant")
+    means = summary.loc[summary["receivers"] >= BIN_MIN_SHARED, "mean"].dropna()
+    return {"n": int(len(every)), "typical": float(np.median(gains)) if len(gains) else math.nan,
+            "biggest": float(means.max()) if len(means) >= 2 else None,
+            "smallest": float(means.min()) if len(means) >= 2 else None}
+
+
 def direction_advantage(shared, width_deg=45):
     """Which side is stronger in each direction sector, at the stations that heard both: one row per sector with the number
     of stations and the average A-minus-B difference (positive = A stronger). `width_deg` is 45, 30 or 15."""

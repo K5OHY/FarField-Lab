@@ -375,6 +375,21 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         self.assertTrue(any(c.value.startswith("Has it settled?") and "5 to 10 receivers" in c.value for c in at.main.caption))
 
+    def test_the_receiver_tab_shows_the_gain_numbers_beside_the_slider(self):
+        at = page("compare_page").run()
+        click(at, "Try a long-test example")
+        self.assertEqual(errors(at), [])
+        shown = {m.label: m.value for m in at.main.metric}
+        self.assertIn("Typical gain", shown)
+        self.assertIn("Biggest gain", shown)
+        self.assertIn("Smallest gain", shown)
+        self.assertEqual(shown["Receivers"], "31")
+        slider = [s for s in at.main.slider if s.key == "rx_min_reports_blk"][0]
+        slider.set_value(20)
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertGreater(int({m.label: m.value for m in at.main.metric}["Receivers"]), 31)
+
     def test_the_setup_line_says_which_blocks_the_results_use(self):
         at = page("compare_page").run()
         click(at, "Try a long-test example")

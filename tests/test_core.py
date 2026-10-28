@@ -140,6 +140,29 @@ class HintsForShortTests(unittest.TestCase):
         self.assertEqual(cs._hint_text(rows, self.names, "receiver", "at "), "")
 
 
+class GainReadout(unittest.TestCase):
+    """The numbers shown beside the minimum-reports slider."""
+
+    @staticmethod
+    def table(groups):
+        rows = [(gap, bearing, 1000.0) for gap, bearing, count in groups for _ in range(count)]
+        return pd.DataFrame(rows, columns=["gap", "bearing_a", "km_a"])
+
+    def test_typical_biggest_and_smallest(self):
+        # gap is A minus B, so a gap of -3 is B stronger by 3 dB. East has only 2 receivers, too few to count as a direction.
+        every = self.table([(-3.0, 0.0, 5), (1.0, 180.0, 5), (-10.0, 90.0, 2)])
+        out = cs.gain_readout(every)
+        self.assertEqual(out["n"], 12)
+        self.assertEqual(out["typical"], 3.0)
+        self.assertEqual((out["biggest"], out["smallest"]), (3.0, -1.0))
+
+    def test_one_direction_is_not_enough_to_call_biggest_and_smallest(self):
+        out = cs.gain_readout(self.table([(-2.0, 0.0, 6)]))
+        self.assertEqual(out["typical"], 2.0)
+        self.assertIsNone(out["biggest"])
+        self.assertIsNone(out["smallest"])
+
+
 class Intervals(unittest.TestCase):
     def test_student_t_values(self):
         self.assertAlmostEqual(cs.t_crit(10), 2.228, places=2)
