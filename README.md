@@ -36,9 +36,12 @@ See where your signal is heard, how strong it is, and how conditions change. Map
 
 ## Quick start
 
-**Just looking? Click Try an example** in the sidebar. It loads a real WSPR antenna test (a 40m loop against a 20m dipole) and shows the result, so you can see what the program does before you use your own data. **Try a long-test example** loads a nine-and-a-half-hour test by Dale, N3HXZ, a Performer (tuned elevated quarter-wave) against a 17 ft whip on a 5:1 unun at ground level, switched every 30 minutes. **Try an RBN example** loads a quick CW check on the Reverse Beacon Network, a 40m loop on 14069.5 kHz against a 20m dipole on 14070.5 kHz, told apart by frequency.
+**Just looking? Open an example.** The Compare page opens with five real tests, each set up the way it was run and each labelled with how its antennas were switched:
 
-**Tests by other people.** Callum McCormick (M0MCX, DX Commander) ran short WSPR tests on 14 January 2026 of a delta loop against a vertical, each antenna sent under its own callsign: [20m](https://farfieldlab.streamlit.app/compare?call=M0MCX&cb=M0XXT&grid=IO92di&src=wspr&units=mi&date=2026-01-14&band=20m&go=1&na=Delta+loop&nb=Vertical&n=6&ts=13%3A38&mr=1) and [40m](https://farfieldlab.streamlit.app/compare?call=M0XXT&cb=M0MCX&grid=IO92di&src=wspr&units=mi&date=2026-01-14&band=40m&go=1&na=Vertical&nb=Delta+loop&n=6&ts=21%3A34&mr=1). A is the antenna that sent first, as in his log: the delta loop (M0MCX) on 20m and the vertical (M0XXT) on 40m. Each is only three pairs of transmissions, so treat them as a demonstration of how the page works, not a ruling on the antennas.
+- **Switched after every transmission:** a 40m loop against a 20m dipole, 12 transmissions (K5OHY).
+- **Long alternating blocks:** Dale's (N3HXZ) nine-and-a-half-hour test of a Performer (tuned elevated quarter-wave) against a 17 ft whip on a 5:1 unun, switched every 30 minutes.
+- **Told apart by frequency:** a quick CW check on the Reverse Beacon Network, the same loop and dipole on 14069.5 and 14070.5 kHz (K5OHY).
+- **Each antenna has its own callsign:** two short WSPR tests by Callum (M0MCX, DX Commander) on 14 January 2026, a delta loop against a vertical, on 20m and on 40m. A is the antenna that sent first, as in his log: the delta loop (M0MCX) on 20m and the vertical (M0XXT) on 40m. Each is only three pairs of transmissions, so treat them as a demonstration of how the page works and what a short test can and cannot say, not a ruling on the antennas.
 
 **With your own data:**
 
@@ -238,7 +241,7 @@ Dale, N3HXZ, published a long WSPR test of two vertical antennas, "Comparing Per
 - The average over 500 to 1,500 miles was 3.87 dB here against 3.86 dB in his table.
 - The program also counted four more stations that met the 40-spot rule (ON5KQ, W0AY, WA3TTS and WA7LNW), so the 1,500 to 2,500 mile averages first differed (5.81 dB here against 6.06 dB). His updated paper includes those stations and agrees with this program on which ones qualify.
 
-Click **Try a long-test example** in the app to see it. The automated check in `tests/test_dale_study.py` repeats the comparison against the 27 stations of the first version of his table. His article also works out the expected gain by hand from antenna measurements and compares it with the WSPR result, which is worth reading on his site, [n3hxz.net](https://www.n3hxz.net/).
+Open the **Long alternating blocks** example in the app to see it. The automated check in `tests/test_dale_study.py` repeats the comparison against the 27 stations of the first version of his table. His article also works out the expected gain by hand from antenna measurements and compares it with the WSPR result, which is worth reading on his site, [n3hxz.net](https://www.n3hxz.net/).
 
 ## Run it locally
 
@@ -321,7 +324,7 @@ The **Help and README** page in the app shows this README, so the instructions a
 | `dashboard.py` | The HTML for the Band conditions dashboard: band tiles, sun strip, region grids and highlights |
 | `space_weather.py` | Current space weather from NOAA and a short plain reading of it |
 | `ionosphere.py` | MUF and foF2 near you from the nearest working ionosondes (GIRO data via KC2G) |
-| `example_data.py`, `examples/`, `build_examples.py` | The example buttons open saved copies of the real data (spots, where the station is, and for WSPR who was listening), so they appear at once; `build_examples.py` refreshes them from the internet |
+| `example_data.py`, `examples/`, `build_examples.py` | The examples open saved copies of the real data (spots, where the station is, and for WSPR who was listening), so they appear at once; `build_examples.py` refreshes them from the internet |
 | `world_land.npz`, `build_world_mask.py` | The land/ocean grid the map is drawn from, and the one-off script that built it |
 | `spotter_coords.csv` | Cached skimmer locations (updated automatically) |
 | `cty.dat` | Country prefixes from [country-files.com](https://www.country-files.com), for the approximate-location fallback |

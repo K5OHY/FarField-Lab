@@ -1,0 +1,18 @@
+{
+ "callsign": "M0XXT",
+ "kind": "WSPR",
+ "file_date": "20260114",
+ "tx_call": "M0XXT",
+ "tx_call_b": "M0MCX",
+ "listening": {
+  "band": "40m",
+  "start": "2026-01-14 21:34:00",
+  "end": "2026-01-14 21:46:00"
+ },
+ "home": [
+  52.35417,
+  -1.70833,
+  "IO92di (manual)"
+ ],
+ "fetched": "2026-10-28"
+}

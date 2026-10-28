@@ -56,6 +56,28 @@ def _how_to_test():
         "apart by frequency. WSPR is better for a careful test.")
 
 
+CARDS_CSS = """<style>
+  [class*="st-key-excard_"] { min-height: 16.5rem; }
+  [class*="st-key-hero_"] { margin-top: auto; }
+</style>"""
+
+
+def _example_cards():
+    """Real tests to look at, each one open with a click and labelled with how its antennas were switched."""
+    st.markdown(CARDS_CSS, unsafe_allow_html=True)
+    st.markdown("#### Look at a real test first")
+    st.caption("Each is a real test, set up the way it was run. Open one to see what a result looks like.")
+    cards = inputs.COMPARE_EXAMPLES
+    for row in (cards[:3], cards[3:]):
+        for col, (key, how, title, blurb) in zip(st.columns(3), row):
+            with col, st.container(border=True, key=f"excard_{key}"):
+                st.caption(f":material/swap_horiz: {how}")
+                st.markdown(f"**{title}**")
+                st.caption(blurb)
+                st.button("Open this example", key=f"hero_{key}", type="primary" if key == "quick" else "secondary", width="stretch",
+                          on_click=inputs.start_example, args=(key,))
+
+
 def compare_page():
     brand_strip()
     st.title(":material/balance: Compare antennas")
@@ -68,14 +90,6 @@ def compare_page():
     with st.sidebar:
         where = inputs.where_inputs(ss, cfg, second_call=True)
         load = st.button("Load spots", type="primary", width="stretch")
-        st.button("Try an example", width="stretch", on_click=inputs.start_example, args=("quick",),
-                  help="Loads a real WSPR antenna test, a 40m loop against a 20m dipole, so you can see what the results look like.")
-        st.button("Try an RBN example", width="stretch", on_click=inputs.start_example, args=("rbn",),
-                  help="Loads a quick CW check on the Reverse Beacon Network: a 40m loop on 14069.5 kHz against a 20m dipole "
-                       "on 14070.5 kHz, told apart by frequency.")
-        st.button("Try a long-test example", width="stretch", on_click=inputs.start_example, args=("long",),
-                  help="Loads Dale's long WSPR test of 26 August 2026: a Performer (tuned elevated quarter-wave) against a 17 ft whip on a 5:1 unun, "
-                       "switched every 30 minutes for nine and a half hours.")
         st.button("Start over", type="tertiary", on_click=inputs.start_over, kwargs={"source": WSPR_SOURCE},
                   help="Clears everything: the callsigns, grid, dates, loaded spots and test setup.")
         where.load = inputs.take_autoload(ss, load)
@@ -94,16 +108,10 @@ def _result(ss, skimmers, where, view):
     if not (loaded and ss.get("setup_ok")):  # once the setup is confirmed the strip has done its job; the result gets the room
         _steps(loaded, comparing_rbn=where.kind == "RBN")
     if ss.raw is None:
-        quick, rbn, long_ = st.columns(3)
-        quick.button("Try the quick example", key="hero_quick", type="primary", width="stretch", on_click=inputs.start_example,
-                     args=("quick",), help="A real WSPR test: a 40m loop against a 20m dipole, switched after every transmission.")
-        rbn.button("Try the RBN example", key="hero_rbn", width="stretch", on_click=inputs.start_example, args=("rbn",),
-                   help="A quick CW check on the Reverse Beacon Network: the same loop and dipole, on two frequencies.")
-        long_.button("Try the long-test example", key="hero_long", width="stretch", on_click=inputs.start_example, args=("long",),
-                     help="Dale's long WSPR test: a Performer (tuned elevated quarter-wave) against a 17 ft whip on a 5:1 unun, switched every 30 minutes.")
+        _example_cards()
         _how_to_test()
         return
-    if inputs.nothing_found_message(ss):
+    if inputs.nothing_found_message(ss, "**Start over** in the sidebar brings back the examples, which show"):
         return
 
     wspr = ss.kind == "WSPR"

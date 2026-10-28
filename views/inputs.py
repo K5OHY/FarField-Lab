@@ -85,20 +85,46 @@ def _load_saved(which):
     meta, spots = saved
     ss = st.session_state
     ss.raw, ss.callsign, ss.kind, ss.tx_call = spots, meta["callsign"], meta["kind"], meta["tx_call"]
+    ss.tx_call_b = meta.get("tx_call_b")
     ss.locs = (receiver_locations(spots) if len(spots) else {}) if meta["kind"] == "WSPR" else None
     ss.file_date, ss.home, ss.notice, ss.loaded_at = meta["file_date"], tuple(meta["home"]), None, None
     ss["setup_ok"] = True
     return True
 
 
+# The examples on the Compare page, in the order they are shown: key, how the antennas were switched, a title, and what it shows.
+COMPARE_EXAMPLES = (
+    ("quick", "Switched after every transmission", "Loop vs dipole, 12 transmissions (K5OHY)",
+     "WSPR, 20m, 4 Oct 2026. A 40m loop and a 20m dipole took turns, one on each two-minute transmission."),
+    ("long", "Long alternating blocks", "Performer vs 17 ft whip, 9½ hours (Dale, N3HXZ)",
+     "WSPR, 20m, 26 Aug 2026. Switched every 30 minutes, and judged on receivers with 40 or more reports on each antenna."),
+    ("rbn", "Told apart by frequency", "Loop vs dipole on CW (K5OHY, RBN)",
+     "Reverse Beacon Network, 27 Sep 2026. Two CQs on nearby frequencies. A quick check; WSPR is the better test."),
+    ("dxc20", "Each antenna has its own callsign", "Delta loop vs vertical, 20m (DX Commander)",
+     "WSPR, 14 Jan 2026, by Callum (M0MCX). Only three pairs, so it shows what a short test can and cannot say."),
+    ("dxc40", "Each antenna has its own callsign", "Vertical vs delta loop, 40m (DX Commander)",
+     "The same day on 40m. A is the antenna that sent first, as in his log."),
+)
+EXAMPLE_TITLES = {key: title for key, _, title, _ in COMPARE_EXAMPLES}
+
+
 def start_example(which):
     """The example buttons, each set up and loaded so the result shows straight away. 'map' is K5OHY's Reverse Beacon Network
     spots of 23 Oct 2025 on the My spots page. On the Compare page, 'rbn' is a quick CW check by frequency (27 Sep 2026, loop on 14069.5 against dipole on 14070.5), 'quick' is the same day's test of 12 transmissions alternating a 40m loop and a
-    20m dipole, and 'long' is Dale N3HXZ's test of 26 Aug 2026: a Performer (tuned elevated quarter-wave) against an untuned 17 ft whip on a 5:1 unun at ground level,
+    20m dipole, 'dxc20' and 'dxc40' are Callum's (M0MCX, DX Commander) delta loop against a vertical, each sent under its own
+    callsign, on 14 Jan 2026, and 'long' is Dale N3HXZ's test of 26 Aug 2026: a Performer (tuned elevated quarter-wave) against an untuned 17 ft whip on a 5:1 unun at ground level,
     alternating 30 minute blocks from 12:00 to 21:30 UTC, judged on stations with 40 or more reports per antenna as in his
     write-up."""
     ss = st.session_state
-    if which == "long":
+    ss["callsign_b_in"] = ""  # only the two-callsign examples use a second callsign
+    if which in ("dxc20", "dxc40"):
+        twenty = which == "dxc20"
+        ss.update(callsign_in="M0MCX" if twenty else "M0XXT", callsign_b_in="M0XXT" if twenty else "M0MCX", grid_in="IO92di",
+                  src_in=WSPR_SOURCE, span_in="Single day", day_in=date(2026, 1, 14), band_choice="20m" if twenty else "40m",
+                  cmp_name_a="Delta loop" if twenty else "Vertical", cmp_name_b="Vertical" if twenty else "Delta loop",
+                  test_mode="After every transmission", test_cycles=6, test_start="13:38" if twenty else "21:34",
+                  test_order="A, B, A, B …", _example=which)
+    elif which == "long":
         ss.update(callsign_in="N3HXZ", grid_in="", src_in=WSPR_SOURCE, span_in="Single day", day_in=date(2026, 8, 26),
                   band_choice="20m", cmp_name_a="17 ft whip + 5:1 unun (ground)", cmp_name_b="Performer (tuned, elevated)",
                   test_mode="In long blocks", rx_min_reports_blk=40, _example="long")
@@ -141,33 +167,32 @@ def start_over(source=None):
 
 
 def example_banner(ss):
-    """A note above the results explaining a loaded example, or nothing."""
+    """A short note above the results saying what a loaded example is, and a button that closes it."""
     which = ss.get("_example")
     if which == "long":
-        st.info("This is an example: a real long WSPR test by Dale, N3HXZ, on 26 August 2026, at 1 W on 20m. A "
-                "Performer, a tuned elevated quarter-wave with two raised radials (B), and an untuned 17 ft whip on a 5:1 matching unit, ground-mounted "
-                "with two radials (A), took "
-                "turns in 30 minute blocks from 12:00 to 21:30 UTC. As in his write-up, only stations with 40 or more reports on "
-                "each antenna are used (the slider on the Receiver by receiver tab). It was set up as 30 minute blocks from 12:00 UTC, "
-                "A first. Dale publishes the study on his site, [n3hxz.net](https://www.n3hxz.net/). To try your own, enter your "
-                "callsign and a date and click Load spots.")
+        st.info("This is an example: a real long WSPR test by Dale, N3HXZ (20m, 26 August 2026). A Performer (B) and a 17 ft whip "
+                "on a 5:1 unun (A) took turns in 30 minute blocks from 12:00 UTC. As in his write-up at "
+                "[n3hxz.net](https://www.n3hxz.net/), only receivers with 40 or more reports on each antenna are used.")
     elif which == "quick":
-        st.info("This is an example: a real WSPR test from K5OHY on 4 October 2026. A 40m loop (A) and a 20m dipole (B) "
-                "took turns on 12 two-minute transmissions, and the result says which got out better. It was set up as 12 transmissions "
-                "from 18:00 UTC in the order A, B, B, A. To try your own, enter your callsign and a date and click Load spots.")
+        st.info("This is an example: a real WSPR test from K5OHY on 4 October 2026. A 40m loop (A) and a 20m dipole (B) took turns "
+                "on 12 two-minute transmissions from 18:00 UTC, in the order A, B, B, A.")
     elif which == "rbn":
-        st.info("This is an example: a quick CW check from K5OHY on 27 September 2026, on the Reverse Beacon Network. A 40m loop "
-                "at 20 ft (A) called CQ on 14069.5 kHz and a 20m dipole at 40 ft (B) on 14070.5 kHz, back to back, and the "
-                "skimmers that heard each are compared. RBN can only tell the two apart by frequency, so WSPR is the better test. "
-                "To try your own, enter your callsign and a date and click Load spots.")
+        st.info("This is an example: a quick CW check from K5OHY on 27 September 2026, on the Reverse Beacon Network. A 40m loop (A) "
+                "called CQ on 14069.5 kHz and a 20m dipole (B) on 14070.5 kHz, so the two are told apart by frequency.")
+    elif which in ("dxc20", "dxc40"):
+        st.info("This is an example: a real WSPR test by Callum (M0MCX, DX Commander) on 14 January 2026, a delta loop against a "
+                "vertical on " + ("20m" if which == "dxc20" else "40m") + ", each sent under its own callsign. A is the antenna that "
+                "sent first (the " + ("delta loop" if which == "dxc20" else "vertical") + "). Only three pairs of transmissions, so "
+                "it shows what a short test can and cannot say.")
     elif which == "map":
         st.info("This is an example: the Reverse Beacon Network stations that heard K5OHY's CW calls on 23 October 2025. To see "
                 "your own, enter your callsign and a date and click Load spots.")
     if which and example_data.available(which):
         st.caption("Opened from a saved copy of the real data, so it appears at once. Your own spots are downloaded live.")
-    if which:
-        st.button("Use my own data instead", key="banner_own", on_click=start_over,
-                  help="Clears the example and the callsign and dates it filled in, so you can enter your own.")
+    if which == "map":
+        st.button("Use my own data instead", key="banner_own", on_click=start_over)
+    elif which:  # on the Compare page this goes back to the list of examples, with WSPR chosen as on a fresh visit
+        st.button("Close example and see the others", key="banner_own", on_click=start_over, kwargs={"source": WSPR_SOURCE})
 
 
 def begin(default_source=None):
@@ -429,14 +454,14 @@ def load_spots(ss, skimmers, where):
         st.error(str(e))
 
 
-def nothing_found_message(ss):
+def nothing_found_message(ss, example_hint="**Try an example** in the sidebar shows"):
     """If the loaded spots are empty, says so with a next step and returns True."""
     if ss.raw is None or not ss.raw.empty:
         return False
     if ss.kind == "WSPR":
         st.warning(f"There are no WSPR spots from {ss.tx_call} in that time range. Next steps: check that the callsign is "
                    "exactly what your WSPR software sends, wait a few minutes if you have only just transmitted, or try a "
-                   "wider range of dates. **Try an example** in the sidebar shows what a result looks like.")
+                   f"wider range of dates. {example_hint} what a result looks like.")
     else:
         st.warning(f"RBN has no spots of {ss.callsign} for that date. Next steps: check the callsign, try another day, "
                    "or, for today, copy your spots from reversebeacon.net and choose **Paste from RBN site** (the daily "

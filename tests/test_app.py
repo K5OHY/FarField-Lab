@@ -40,6 +40,12 @@ def click(at, label):
     at.run()
 
 
+def open_example(at, key):
+    """Opens an example on the Compare page the way a visitor does: click its card."""
+    [b for b in at.main.button if b.key == f"hero_{key}"][0].click()
+    at.run()
+
+
 class MySpotsPage(unittest.TestCase):
     def test_opens_with_the_load_and_example_buttons(self):
         at = page("spots_page").run()
@@ -171,17 +177,66 @@ class MySpotsPage(unittest.TestCase):
 
 
 class ComparePage(unittest.TestCase):
-    def test_opens_with_the_steps_and_the_three_buttons(self):
+    def test_opens_with_the_steps_and_just_the_load_and_start_over_buttons(self):
         at = page("compare_page").run()
         self.assertEqual(errors(at), [])
-        self.assertEqual([b.label for b in at.sidebar.button], ["Load spots", "Try an example", "Try an RBN example", "Try a long-test example", "Start over"])
+        self.assertEqual([b.label for b in at.sidebar.button], ["Load spots", "Start over"])
+        self.assertEqual([s.key for s in at.sidebar.selectbox if s.key == "example_pick"], [])
         text = " ".join(m.value for m in at.markdown)
         self.assertIn("With WSPR, the best way", text)
         self.assertIn("With RBN, for a quick CW check", text)
 
-    def test_the_empty_page_has_both_examples_on_the_main_stage(self):
+    def test_the_empty_page_shows_every_example_as_a_labelled_card(self):
+        from views import inputs
         at = page("compare_page").run()
-        self.assertEqual([b.label for b in at.main.button], ["Try the quick example", "Try the RBN example", "Try the long-test example"])
+        self.assertEqual([b.key for b in at.main.button], [f"hero_{key}" for key, _, _, _ in inputs.COMPARE_EXAMPLES])
+        text = " ".join(c.value for c in at.main.caption) + " " + " ".join(m.value for m in at.main.markdown)
+        for _, how, title, _ in inputs.COMPARE_EXAMPLES:
+            self.assertIn(how, text)
+            self.assertIn(title, text)
+
+    def test_every_example_opens_from_its_card(self):
+        from views import inputs
+        for key, _, _, _ in inputs.COMPARE_EXAMPLES:
+            at = page("compare_page").run()
+            [b for b in at.main.button if b.key == f"hero_{key}"][0].click()
+            at.run()
+            self.assertEqual(errors(at), [], key)
+            self.assertEqual(at.session_state["_example"], key)
+            self.assertTrue(any("This is an example" in i.value for i in at.info), key)
+
+    def test_the_dx_commander_examples_use_two_callsigns_and_the_saved_data(self):
+        for key, call, other, band, first in (("dxc20", "M0MCX", "M0XXT", "20m", "Delta loop"),
+                                              ("dxc40", "M0XXT", "M0MCX", "40m", "Vertical")):
+            at = page("compare_page").run()
+            open_example(at, key)
+            self.assertEqual(errors(at), [], key)
+            ss = at.session_state
+            self.assertEqual((ss["callsign_in"], ss["callsign_b_in"], ss["band_choice"], ss["cmp_name_a"]), (call, other, band, first))
+            self.assertEqual((ss["tx_call"], ss["tx_call_b"]), (call, other))
+            self.assertTrue(any("Delta loop" in m.value or "Vertical" in m.value for m in at.markdown))
+            self.assertTrue(any("Opened from a saved copy" in c.value for c in at.main.caption), key)
+
+    def test_closing_an_example_goes_back_to_the_cards_on_wspr_with_no_second_callsign(self):
+        at = page("compare_page").run()
+        open_example(at, "dxc20")
+        self.assertEqual(at.session_state["callsign_b_in"], "M0XXT")
+        [b for b in at.main.button if b.label == "Close example and see the others"][0].click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["src_in"], "WSPR")
+        self.assertEqual(at.session_state["callsign_b_in"], "")
+        open_example(at, "quick")
+        self.assertEqual(errors(at), [])
+        self.assertIsNone(at.session_state["tx_call_b"])
+
+    def test_example_notes_are_short(self):
+        from views import inputs
+        for key, _, _, _ in inputs.COMPARE_EXAMPLES:
+            at = page("compare_page").run()
+            open_example(at, key)
+            note = [i.value for i in at.info if i.value.startswith("This is an example")][0]
+            self.assertLess(len(note), 420, key)
 
     def test_it_starts_on_wspr(self):
         at = page("compare_page").run()
@@ -193,7 +248,7 @@ class ComparePage(unittest.TestCase):
 
     def test_the_quick_example_shows_a_verdict(self):
         at = page("compare_page").run()
-        click(at, "Try an example")
+        open_example(at, "quick")
         self.assertEqual(errors(at), [])
         text = " ".join(m.value for m in at.markdown) + " " + " ".join(i.value for i in at.info)
         self.assertIn("This is an example", text)
@@ -247,7 +302,7 @@ class ComparePage(unittest.TestCase):
         cut_off = (rows, True)  # the saved listening list, reported as having hit its row limit
         with mock.patch.object(compare_view, "load_listening", return_value=cut_off):
             at = page("compare_page").run()
-            click(at, "Try an example")
+            open_example(at, "quick")
         self.assertEqual(errors(at), [])
         self.assertTrue(any("cut off at its row limit" in w.value for w in at.warning))
 
@@ -278,14 +333,14 @@ class ComparePage(unittest.TestCase):
     @needs_network
     def test_examples_and_shared_tests_need_no_confirming(self):
         at = page("compare_page").run()
-        click(at, "Try an example")
+        open_example(at, "quick")
         self.assertTrue(at.session_state["setup_ok"])
         shared = page("compare_page", call="K5OHY", src="wspr", date="2026-10-04", band="20m", go="1", n="12", ord="abba").run()
         self.assertTrue(shared.session_state["setup_ok"])
 
     def test_the_rbn_example_compares_the_loop_and_the_dipole_by_frequency(self):
         at = page("compare_page").run()
-        click(at, "Try an RBN example")
+        open_example(at, "rbn")
         self.assertEqual(errors(at), [])
         self.assertEqual(at.session_state["kind"], "RBN")
         self.assertEqual(at.session_state["cmp_name_b"], "20m dipole, 40 ft")
@@ -297,7 +352,7 @@ class ComparePage(unittest.TestCase):
 
     def test_the_long_test_example_uses_dales_schedule_and_40_reports(self):
         at = page("compare_page").run()
-        click(at, "Try a long-test example")
+        open_example(at, "long")
         self.assertEqual(errors(at), [])
         self.assertEqual(at.session_state["callsign_in"], "N3HXZ")
         self.assertEqual(at.session_state["test_mode"], "In long blocks")
@@ -308,7 +363,7 @@ class ComparePage(unittest.TestCase):
 
     def test_comparison_filters_run(self):
         at = page("compare_page").run()
-        click(at, "Try a long-test example")
+        open_example(at, "long")
         weak = [n for n in at.number_input if n.key == "avg_weak"]
         self.assertTrue(weak)
         weak[0].set_value(25)
@@ -336,7 +391,7 @@ class ComparePage(unittest.TestCase):
     @needs_network
     def test_the_link_box_holds_the_whole_test_and_reopens_it(self):
         at = page("compare_page").run()
-        click(at, "Try a long-test example")
+        open_example(at, "long")
         link = [c.value for c in at.sidebar.code if "call=N3HXZ" in c.value][0]
         for part in ("sw=blocks", "bl=30", "bn=", "bs=12%3A00", "mr=40", "na=17+ft"):
             self.assertIn(part, link)
@@ -349,7 +404,7 @@ class ComparePage(unittest.TestCase):
 
     def test_the_receiver_minimum_opens_at_two_and_says_how_many_receivers_that_leaves(self):
         at = page("compare_page").run()
-        click(at, "Try an example")
+        open_example(at, "quick")
         self.assertEqual(errors(at), [])
         self.assertEqual(at.session_state["rx_min_reports_pair"], 2)
         notes = [c.value for c in at.main.caption if c.value.startswith("Showing ")]
@@ -363,7 +418,7 @@ class ComparePage(unittest.TestCase):
 
     def test_a_long_example_says_why_the_minimum_is_where_it_is(self):
         at = page("compare_page").run()
-        click(at, "Try a long-test example")
+        open_example(at, "long")
         self.assertEqual(errors(at), [])
         notes = [c.value for c in at.main.caption if c.value.startswith("Showing ")]
         self.assertEqual(len(notes), 1)
@@ -371,13 +426,13 @@ class ComparePage(unittest.TestCase):
 
     def test_the_slider_says_how_to_tell_when_the_result_has_settled(self):
         at = page("compare_page").run()
-        click(at, "Try a long-test example")
+        open_example(at, "long")
         self.assertEqual(errors(at), [])
         self.assertTrue(any(c.value.startswith("Has it settled?") and "5 to 10 receivers" in c.value for c in at.main.caption))
 
     def test_the_receiver_tab_shows_the_gain_numbers_beside_the_slider(self):
         at = page("compare_page").run()
-        click(at, "Try a long-test example")
+        open_example(at, "long")
         self.assertEqual(errors(at), [])
         shown = {m.label: m.value for m in at.main.metric}
         self.assertIn("Typical gain", shown)
@@ -392,7 +447,7 @@ class ComparePage(unittest.TestCase):
 
     def test_the_setup_line_says_which_blocks_the_results_use(self):
         at = page("compare_page").run()
-        click(at, "Try a long-test example")
+        open_example(at, "long")
         self.assertEqual(errors(at), [])
         line = [c.value for c in at.main.caption if c.value.startswith("Assumed setup")]
         self.assertEqual(len(line), 1)
@@ -401,7 +456,7 @@ class ComparePage(unittest.TestCase):
     def test_a_loaded_example_carries_over_to_my_spots(self):
         """What you load on one page is there on the other, so you do not have to enter it twice."""
         at = page("compare_page").run()
-        click(at, "Try an example")
+        open_example(at, "quick")
         self.assertIsNotNone(at.session_state["raw"])
         self.assertEqual(at.session_state["callsign"], "K5OHY")
 
@@ -471,7 +526,8 @@ class HelpPage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         text = "\n".join(m.value for m in at.markdown)
         self.assertIn("Quick start", text)
-        self.assertIn("Try an example", text)
+        self.assertIn("Open an example", text)
+        self.assertIn("DX Commander", text)
         self.assertIn("/blob/main/docs/METHODOLOGY.md", text)  # the README's relative link, pointed at the repository
         self.assertNotIn("](docs/METHODOLOGY.md)", text)
         self.assertNotIn("farfield-banner", text)  # the banner is for GitHub, not the Help page
