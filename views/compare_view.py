@@ -881,8 +881,12 @@ def _summary_tiles_html(an, names, rounds, noun):
             big, sub, edge = f"{abs(s['mean']):.1f} dB", f"{who} (95% range {lo:.1f} to {hi:.1f} dB)", color[side]
     else:
         big, sub, edge = "—", f"no {noun} heard both, so strength can't be compared", COLOR_TIE
-    tiles = [("Signal advantage", big, sub, edge),
-             (f"{noun.capitalize()}s that heard both", f"{s['n']}", f"{r['only_a']} heard only A, {r['only_b']} heard only B", COLOR_TIE)]
+    only = f"{r['only_a']} heard only A, {r['only_b']} heard only B"
+    if r["both"] != s["n"]:  # some that heard both could not be paired or placed, so say which number this is
+        count_tile = (f"{noun.capitalize()}s compared", f"{s['n']}", f"of {r['both']} that heard both. {only}", COLOR_TIE)
+    else:
+        count_tile = (f"{noun.capitalize()}s that heard both", f"{s['n']}", only, COLOR_TIE)
+    tiles = [("Signal advantage", big, sub, edge), count_tile]
     if rounds is not None and len(rounds) >= 3:
         a_r, b_r = int((rounds["delta"] > 0).sum()), int((rounds["delta"] < 0).sum())
         tiles.append(("Rounds won", f"A {a_r} · B {b_r}", f"of {len(rounds)} rounds, an A transmission and the B one after it", COLOR_TIE))
@@ -1309,7 +1313,9 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                               help="The smallest of the average gains for the eight directions, as in the direction table "
                                    f"further down. A direction with fewer than {BIN_MIN_SHARED} {noun}s is not used.")
                     readout.caption("Relative gain is B minus A in dB: above zero, B was stronger. Typical gain is the middle receiver "
-                                    "at this slider setting, so it can differ from the averages on the Linear average tab.")
+                                    "among those left at this slider setting. The verdict's number is instead the average over every "
+                                    f"receiver compared{', taking each one pair by pair' if an['paired'] else ''}, so the two can differ, "
+                                    "most when a few receivers gain far more than the rest.")
                     if gr["n"] < ENOUGH_RECEIVERS:
                         readout.caption(f":orange[Only {gr['n']} {noun}s left. With fewer than {ENOUGH_RECEIVERS}, a handful of "
                                         "stations decide the answer.]")

@@ -370,6 +370,20 @@ class ComparePage(unittest.TestCase):
             self.assertEqual(errors(at), [], key)
             self.assertTrue(at.session_state["setup_ok"], key)
 
+    def test_the_count_card_says_which_number_it_is(self):
+        at = page("compare_page").run()
+        open_example(at, "quick")
+        self.assertEqual(errors(at), [])
+        text = " ".join(m.value for m in at.markdown)
+        self.assertIn("Receivers compared", text)  # 184 were compared, of 189 that heard both
+        self.assertIn("of 189 that heard both", text)
+
+    def test_the_gain_tiles_say_how_they_differ_from_the_verdict(self):
+        at = page("compare_page").run()
+        open_example(at, "quick")
+        text = " ".join(c.value for c in at.caption)
+        self.assertIn("The verdict's number is instead the average over every receiver compared, taking each one pair by pair", text)
+
     def test_the_rbn_example_compares_the_loop_and_the_dipole_by_frequency(self):
         at = page("compare_page").run()
         open_example(at, "rbn")
