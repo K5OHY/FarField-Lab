@@ -148,19 +148,35 @@ class GainReadout(unittest.TestCase):
         rows = [(gap, bearing, 1000.0) for gap, bearing, count in groups for _ in range(count)]
         return pd.DataFrame(rows, columns=["gap", "bearing_a", "km_a"])
 
-    def test_typical_biggest_and_smallest(self):
-        # gap is A minus B, so a gap of -3 is B stronger by 3 dB. East has only 2 receivers, too few to count as a direction.
+    def test_average_typical_biggest_and_smallest(self):
+        # gap is A minus B, so a gap of -3 is B stronger by 3 dB. The biggest and smallest are single receivers.
         every = self.table([(-3.0, 0.0, 5), (1.0, 180.0, 5), (-10.0, 90.0, 2)])
+        every.index = [f"RX{i}" for i in range(len(every))]
         out = cs.gain_readout(every)
         self.assertEqual(out["n"], 12)
         self.assertEqual(out["typical"], 3.0)
-        self.assertEqual((out["biggest"], out["smallest"]), (3.0, -1.0))
+        self.assertAlmostEqual(out["mean"], (15 - 5 + 20) / 12)
+        self.assertEqual((out["biggest"], out["smallest"]), (10.0, -1.0))
+        self.assertEqual((out["biggest_who"], out["smallest_who"]), ("RX10", "RX5"))
 
-    def test_one_direction_is_not_enough_to_call_biggest_and_smallest(self):
-        out = cs.gain_readout(self.table([(-2.0, 0.0, 6)]))
-        self.assertEqual(out["typical"], 2.0)
+    def test_nothing_left_gives_no_biggest_or_smallest(self):
+        out = cs.gain_readout(self.table([]))
+        self.assertEqual(out["n"], 0)
         self.assertIsNone(out["biggest"])
         self.assertIsNone(out["smallest"])
+
+    def test_one_direction_average(self):
+        every = self.table([(-3.0, 0.0, 5), (1.0, 180.0, 4), (-10.0, 90.0, 2)])
+        self.assertEqual(cs.direction_average(every, "N"), (5, 3.0))
+        self.assertEqual(cs.direction_average(every, "S"), (4, -1.0))
+        n, mean = cs.direction_average(every, "W")
+        self.assertEqual(n, 0)
+        self.assertTrue(math.isnan(mean))
+
+    def test_the_busiest_direction_is_the_one_to_watch(self):
+        every = self.table([(-3.0, 0.0, 5), (1.0, 180.0, 7), (-10.0, 90.0, 2)])
+        self.assertEqual(cs.busiest_direction(every), "S")
+        self.assertEqual(cs.busiest_direction(self.table([])), "N")
 
 
 class Intervals(unittest.TestCase):

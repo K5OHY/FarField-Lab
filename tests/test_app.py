@@ -382,7 +382,31 @@ class ComparePage(unittest.TestCase):
         at = page("compare_page").run()
         open_example(at, "quick")
         text = " ".join(c.value for c in at.caption)
-        self.assertIn("The verdict's number is instead the average over every receiver compared, taking each one pair by pair", text)
+        self.assertIn("The verdict's number is the average over every receiver compared, taking each one pair by pair", text)
+
+    def test_the_dashboard_watches_one_direction_and_a_second_on_request(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        watched = at.session_state["dash_dir_a"]
+        self.assertIn(watched, ("N", "NE", "E", "SE", "S", "SW", "W", "NW"))
+        self.assertEqual(at.session_state["dash_dir_b"], "Off")
+        labels = [m.label for m in at.main.metric]
+        self.assertIn(f"{watched} average gain", labels)
+        other = "N" if watched != "N" else "S"
+        [s for s in at.main.selectbox if s.key == "dash_dir_b"][0].set_value(other)
+        at.run()
+        self.assertEqual(errors(at), [])
+        labels = [m.label for m in at.main.metric]
+        self.assertIn(f"{other} average gain", labels)
+        self.assertIn(f"{watched} average gain", labels)
+
+    def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        self.assertTrue(any("Leave out some reports or receivers" in m.value for m in at.main.markdown))
+        self.assertTrue(any(c.value.startswith("This changes the dashboard") for c in at.main.caption))
 
     def test_the_rbn_example_compares_the_loop_and_the_dipole_by_frequency(self):
         at = page("compare_page").run()
@@ -481,9 +505,9 @@ class ComparePage(unittest.TestCase):
         open_example(at, "long")
         self.assertEqual(errors(at), [])
         shown = {m.label: m.value for m in at.main.metric}
-        self.assertIn("Typical gain", shown)
-        self.assertIn("Biggest gain", shown)
-        self.assertIn("Smallest gain", shown)
+        for label in ("Typical gain", "Average gain", "Biggest gain", "Smallest gain"):
+            self.assertIn(label, shown)
+        self.assertEqual(len([s for s in at.main.selectbox if s.key == "dash_dir_a"]), 1)
         self.assertEqual(shown["Receivers"], "31")
         slider = [s for s in at.main.slider if s.key == "rx_min_reports_blk"][0]
         slider.set_value(20)
@@ -505,6 +529,34 @@ class ComparePage(unittest.TestCase):
         open_example(at, "quick")
         self.assertIsNotNone(at.session_state["raw"])
         self.assertEqual(at.session_state["callsign"], "K5OHY")
+
+
+class SkippedTransmissions(unittest.TestCase):
+    """A transmission you skipped can still show up as a slot a few receivers with wrong clocks reported."""
+
+    @staticmethod
+    def spots(counts):
+        import pandas as pd
+        rows = [(pd.Timestamp("2026-10-29 18:00") + pd.Timedelta(minutes=2 * slot), f"RX{i}")
+                for slot, n in enumerate(counts) for i in range(n)]
+        return pd.DataFrame(rows, columns=["time", "spotter"])
+
+    def test_a_skipped_slot_heard_by_a_few_receivers_is_not_a_transmission(self):
+        from views.compare_view import _without_ghost_cycles
+        # 18:16 was skipped (3 receivers logged it anyway) and 18:26 is an echo of the last one (4)
+        kept = _without_ghost_cycles(self.spots([131, 108, 83, 93, 95, 129, 133, 115, 3, 121, 121, 109, 125, 4]))
+        self.assertEqual(sorted(kept["time"].unique()).__len__(), 12)
+        self.assertEqual(sorted(kept["time"].dt.strftime("%H:%M").unique())[8], "18:18")
+
+    def test_a_weak_slot_that_is_still_a_real_share_of_the_usual_is_kept(self):
+        from views.compare_view import _without_ghost_cycles
+        kept = _without_ghost_cycles(self.spots([120, 110, 40, 115, 118, 112]))
+        self.assertEqual(kept["time"].nunique(), 6)
+
+    def test_a_quiet_band_throws_nothing_out(self):
+        from views.compare_view import _without_ghost_cycles
+        kept = _without_ghost_cycles(self.spots([6, 5, 3, 7, 6, 4]))
+        self.assertEqual(kept["time"].nunique(), 6)
 
 
 class SavedExamplesMatchTheLiveData(unittest.TestCase):

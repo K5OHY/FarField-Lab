@@ -40,7 +40,10 @@ from compare_stats import (
     gain_by_window,
     DIRECTION_EDGE_DB,
     gain_summary,
+    busiest_direction,
+    direction_average,
     gain_readout,
+    GAIN_OCTANTS,
     ENOUGH_RECEIVERS,
     WSPR_FLOOR_DB,
     EQUAL_DB,
@@ -136,21 +139,26 @@ def _separate_by_frequency(spots, gap_khz):
 
 
 def _without_ghost_cycles(spots):
-    """Throw out cycles that only one or two receivers reported when ordinary cycles are heard by many more. They are
-    nearly always one receiver with a wrong clock reporting your transmission under the next time slot, so they are
-    not real transmissions. On a weak band, where every cycle has few reports, nothing is thrown out."""
+    """Throw out cycles that only a handful of receivers reported when ordinary cycles are heard by many more: at most 2, or
+    5% of the typical count if that is more (so 5 when ordinary cycles are heard by 100). They are nearly always a few
+    receivers with a wrong clock reporting your transmission under the next time slot, for instance in the slot where you
+    skipped a transmission, so they are not real transmissions and would put every label after them out of step. On a weak
+    band, where every cycle has few reports, nothing is thrown out."""
     st.session_state["ghost_cycles"] = 0
     heard = spots.groupby("time")["spotter"].nunique()
     typical = heard[heard > GHOST_MAX].median()
     if pd.isna(typical) or typical < GHOST_MIN_TYPICAL:
         return spots
-    ghosts = heard[heard <= GHOST_MAX].index
+    limit = max(GHOST_MAX, int(typical * GHOST_SHARE))
+    ghosts = heard[heard <= limit].index
     if len(ghosts) == 0:
         return spots
     st.session_state["ghost_cycles"] = len(ghosts)
-    st.caption(f"Left out {len(ghosts)} cycle{'s' if len(ghosts) > 1 else ''} that {GHOST_MAX} or fewer receivers heard, "
+    when = ", ".join(f"{t:%H:%M}" for t in ghosts[:6]) + (" …" if len(ghosts) > 6 else "")
+    st.caption(f"Left out {len(ghosts)} cycle{'s' if len(ghosts) > 1 else ''} ({when} UTC) that {limit} or fewer receivers heard, "
                f"when typical cycles were heard by about {typical:.0f}. A cycle that thin says little about an antenna, and "
-               "it is often one receiver with a wrong clock reporting your signal under the wrong time slot.")
+               "it is often a few receivers with a wrong clock reporting your signal under the wrong time slot, such as "
+               "the slot where you skipped a transmission.")
     return spots[~spots["time"].isin(ghosts)]
 
 
@@ -811,7 +819,7 @@ def _data_used(all_spots, spots, map_a, map_b, spots_a, spots_b, an, ta_all, tb_
     if unpaired:
         left.append(f"{unpaired} transmission{'s' if unpaired != 1 else ''} with no partner on the other antenna")
     if ghosts:
-        left.append(f"{ghosts} cycle{'s' if ghosts != 1 else ''} heard by only 1 or 2 receivers")
+        left.append(f"{ghosts} cycle{'s' if ghosts != 1 else ''} heard by only a few receivers")
     if listening_note and listening_note["kept"] < listening_note["total"]:
         gone = listening_note["total"] - listening_note["kept"]
         left.append(f"{gone} {noun}{'s' if gone != 1 else ''} not listening during both sides")
@@ -930,6 +938,83 @@ def _setup_line(sep, names, kind):
         how = "separated by frequency"
     who = f"A is {names['A']} and B is {names['B']}, " if (names["A"], names["B"]) != ("A", "B") else ""
     return (f"Assumed setup: {who}{how}. If that is not what you did, open \"How this test was set up\" just below to change it.")
+
+
+def _leave_out_box(kind, units):
+    """The controls that leave reports or receivers out of the averages on the Receiver by receiver and Linear average tabs.
+    Returns (floor in dB or None, the nearest distance to keep in km, the share of floor reports that drops a station, and a
+    plain-words note of what is left out, empty when nothing is)."""
+    with _box("Leave out some reports or receivers"):
+        f1, f2, f3 = st.columns(3)
+        floor_on = kind == "WSPR" and f1.checkbox(
+            f"Ignore reports at or below {WSPR_FLOOR_DB} dB", key="avg_floor",
+            help="WSPR can only decode down to about -28 dB. A report at that edge is unreliable, and the weaker antenna's "
+                 "weakest reports are often missing altogether.")
+        near = float(f2.number_input(f"Leave out receivers closer than ({units})", 0, 5000, step=10, key=f"avg_near_{units}",
+                                     help="Close stations can hear you by ground wave, which says little about the antenna's "
+                                          "take-off angle. Leave at 0 to keep every receiver."))
+        weak_pct = int(f3.number_input("Drop a station if more than this % of its reports are at the floor", 0, 100, step=5,
+                                       key="avg_weak", disabled=kind != "WSPR",
+                                       help="Stations that only hear you at the very edge, below about -27 dB, give weak and "
+                                            "noisy numbers. Instead of ignoring just those reports, this removes the whole "
+                                            "station when more than this share of its reports (both antennas together) are at "
+                                            "the floor. Leave at 0 to keep every station."))
+        st.caption("This changes the dashboard and the charts and tables on this tab, and the linear average on the Linear "
+                   "average tab. The verdict, the SNR average and the other tabs are not changed.")
+    note = ", ".join(([f"reports at or below {WSPR_FLOOR_DB} dB left out"] if floor_on else [])
+                     + ([f"receivers closer than {near:g} {units} left out"] if near else [])
+                     + ([f"stations with more than {weak_pct}% of their reports at the floor left out"] if weak_pct else []))
+    return (WSPR_FLOOR_DB if floor_on else None), near * (KM_PER_MILE if units == "mi" else 1.0), weak_pct, note
+
+
+def _dashboard(every, reference, noun):
+    """The monitoring dashboard: the few numbers to watch as the slider moves, to see whether the result has settled.
+    `every` is the receivers left at this slider setting; `reference` is the receivers left where the slider opens, which is
+    what picks the direction to watch (so the choice does not hop about as the slider moves)."""
+    signed_db = lambda v: "–" if v is None or pd.isna(v) else f"{v:+.1f} dB"  # noqa: E731
+    gr = gain_readout(every)
+    ss = st.session_state
+    auto = busiest_direction(reference)  # follows the data until you pick a direction yourself
+    if "dash_dir_a" not in ss or ss["dash_dir_a"] == ss.get("dash_dir_a_auto"):
+        ss["dash_dir_a"] = auto
+    ss["dash_dir_a_auto"] = auto
+    with st.container(border=True):
+        st.markdown("**Monitoring dashboard**")
+        st.caption("Has it settled? Raise the slider a step at a time and watch these numbers. When they stop moving the result is "
+                   "steady, "
+                   f"as long as at least {ENOUGH_RECEIVERS // 2} to {ENOUGH_RECEIVERS} {noun}s are left. Relative gain is B minus A in dB: "
+                   "above zero, B was stronger.")
+        c_n, c_avg, c_typ, c_big, c_small = st.columns(5)
+        c_n.metric(f"{noun.capitalize()}s", gr["n"], help=f"How many {noun}s are left at this slider setting.")
+        c_avg.metric("Average gain", signed_db(gr["mean"]),
+                     help=f"The average relative gain of all {gr['n']} {noun}s left. For an antenna that radiates equally in "
+                          "every direction this is its overall gain. For a directional antenna it has no physical meaning "
+                          "by itself, but it still shows whether the result is settling.")
+        c_typ.metric("Typical gain", signed_db(gr["typical"]),
+                     help=f"The middle relative gain of the {gr['n']} {noun}s left: half were above it and half below.")
+        c_big.metric("Biggest gain", signed_db(gr["biggest"]), gr["biggest_who"] or None, delta_color="off", delta_arrow="off",
+                     help=f"The largest relative gain at any one {noun}, and which {noun} it was. A {noun} far out of line with "
+                          "the rest is an outlier, usually from too few reports. It tends to go away as the slider rises.")
+        c_small.metric("Smallest gain", signed_db(gr["smallest"]), gr["smallest_who"] or None, delta_color="off", delta_arrow="off",
+                       help=f"The smallest relative gain at any one {noun}, and which {noun} it was. A {noun} far out of line "
+                            "with the rest is an outlier, usually from too few reports.")
+        st.markdown("###### Watch a direction")
+        picks = st.columns(2)
+        for col, key, options in ((picks[0], "dash_dir_a", GAIN_OCTANTS), (picks[1], "dash_dir_b", ["Off"] + GAIN_OCTANTS)):
+            with col:
+                d = st.selectbox("Direction to watch" if key.endswith("a") else "A second direction (optional)", options,
+                                 key=key, help="The average relative gain of the receivers in this compass direction from "
+                                               "you, which is where a directional antenna's gain shows. It opens on the "
+                                               "direction with the most receivers.")
+                if d != "Off":
+                    n, mean = direction_average(every, d)
+                    st.metric(f"{d} average gain", signed_db(mean), f"{n} {noun}{'s' if n != 1 else ''}", delta_color="off",
+                              delta_arrow="off")
+                    if 0 < n < BIN_MIN_SHARED:
+                        st.caption(f":orange[Only {n} {noun}{'s' if n != 1 else ''} in this direction, a hint, not a number.]")
+        if gr["n"] < ENOUGH_RECEIVERS:
+            st.caption(f":orange[Only {gr['n']} {noun}s left. With fewer than {ENOUGH_RECEIVERS}, a handful of stations decide "
+                       "the answer.]")
 
 
 def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all, units, split, gap_khz,
@@ -1092,31 +1177,6 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         r, s_, dx = an["reach"], an["strength"], an["dx"]
         k = KM_PER_MILE if units == "mi" else 1
         means_a, means_b = sector_means(ta_all), sector_means(tb_all)
-        with _box("Leave out some reports or receivers (for the averages)"):
-            f1, f2, f3 = st.columns(3)
-            floor_on = kind == "WSPR" and f1.checkbox(
-                f"Ignore reports at or below {WSPR_FLOOR_DB} dB", key="avg_floor",
-                help="WSPR can only decode down to about -28 dB. A report at that edge is unreliable, and the weaker antenna's "
-                     "weakest reports are often missing altogether.")
-            near = float(f2.number_input(f"Leave out receivers closer than ({units})", 0, 5000, step=10, key=f"avg_near_{units}",
-                                         help="Close stations can hear you by ground wave, which says little about the antenna's "
-                                              "take-off angle. Leave at 0 to keep every receiver."))
-            weak_pct = int(f3.number_input("Drop a station if more than this % of its reports are at the floor", 0, 100, step=5,
-                                           key="avg_weak", disabled=kind != "WSPR",
-                                           help="Stations that only hear you at the very edge, below about -27 dB, give weak and "
-                                                "noisy numbers. Instead of ignoring just those reports, this removes the whole "
-                                                "station when more than this share of its reports (both antennas together) are at "
-                                                "the floor. Leave at 0 to keep every station."))
-            st.caption("This changes the averages on the Receiver by receiver tab and the linear average on the Linear average tab. "
-                       "The verdict, the SNR average and the other tabs are not changed.")
-        avg_floor = WSPR_FLOOR_DB if floor_on else None
-        avg_min_km = near * (KM_PER_MILE if units == "mi" else 1.0)
-        avg_note = ", ".join(([f"reports at or below {WSPR_FLOOR_DB} dB left out"] if floor_on else [])
-                             + ([f"receivers closer than {near:g} {units} left out"] if near else [])
-                             + ([f"stations with more than {weak_pct}% of their reports at the floor left out"] if weak_pct else []))
-    auto_min = _auto_min_reports(spots_a, spots_b, locs, home, bool(sep.get("blocks")), an["power"]["offset"], avg_floor, avg_min_km,
-                                 weak_pct)
-
     with top:
         st.markdown(_headline_html(names, ", ".join(sorted(set(map_a["band"]) | set(map_b["band"])))), unsafe_allow_html=True)
         st.markdown(_summary_tiles_html(an, names, rounds, noun), unsafe_allow_html=True)
@@ -1253,9 +1313,14 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         with tab_each:
             st.caption(f"Every {noun} that heard both antennas, side by side. Use the slider to leave out {noun}s with only a few "
                        "reports.")
+            controls, dash_slot, leave_slot = st.container(), st.container(), st.container()  # in the order they are read
+            with leave_slot:  # drawn first: what it leaves out decides everything the dashboard and the slider show
+                avg_floor, avg_min_km, weak_pct, avg_note = _leave_out_box(kind, units)
+            auto_min = _auto_min_reports(spots_a, spots_b, locs, home, bool(sep.get("blocks")), an["power"]["offset"], avg_floor,
+                                         avg_min_km, weak_pct)
             if s_["n"]:
                 blocks_mode = bool(sep.get("blocks"))
-                ctrl_method, ctrl_min = st.columns([2, 3])
+                ctrl_method, ctrl_min = controls.columns([2, 3])
                 method_label = ctrl_method.radio(
                     f"Average each {noun}'s reports by", ["SNR (dB)", "Linear power"], index=1 if blocks_mode else 0,
                     horizontal=True, key=f"rx_method_{'blk' if blocks_mode else 'pair'}",
@@ -1263,7 +1328,6 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                          "averages the power and turns it back into dB. Linear is the proper average of signal power over "
                          "time and suits a long test with many reports per station; the dB middle is steadier when a station "
                          "has only a few reports.")
-                readout = ctrl_method.container()  # filled in below, once the receivers for this slider setting are known
                 min_key = f"rx_min_reports_{'blk' if blocks_mode else 'pair'}"
                 # Opens at the strictest setting that still leaves enough receivers, and follows the data until you move it
                 auto_key = min_key + "_auto"
@@ -1290,35 +1354,19 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     every = station_gains(spots_a, spots_b, locs, home, method_key,
                                           min_reports, an["power"]["offset"], avg_floor, avg_min_km, weak_pct)
                     scatter_src = every
-                ctrl_min.caption(_min_reports_caption(
-                    noun, min_reports, auto_min, blocks_mode, len(every),
-                    station_gains(spots_a, spots_b, locs, home, method_key, 1, an["power"]["offset"], avg_floor, avg_min_km, weak_pct).shape[0]
-                    if min_reports > 1 else len(every)))
-                ctrl_min.caption("Has it settled? Raise the slider a step at a time and watch the biggest and smallest gain. When they "
-                                 "stop moving the result has converged, as long as at least 5 to 10 receivers are left.")
+                everyone = (station_gains(spots_a, spots_b, locs, home, method_key, 1, an["power"]["offset"], avg_floor, avg_min_km,
+                                          weak_pct) if min_reports > 1 else every)
+                ctrl_min.caption(_min_reports_caption(noun, min_reports, auto_min, blocks_mode, len(every), len(everyone)))
+                opening = every if min_reports == auto_min else station_gains(  # where the slider opens
+                    spots_a, spots_b, locs, home, method_key, auto_min, an["power"]["offset"], avg_floor, avg_min_km, weak_pct)
                 if every.empty:
                     st.info(f"No {noun} has {min_reports} or more reports on both antennas. Lower the number above.")
                 else:
-                    gr = gain_readout(every)
-                    signed_db = lambda v: "–" if v is None or pd.isna(v) else f"{v:+.1f} dB"  # noqa: E731
-                    m1, m2 = readout.columns(2)
-                    m1.metric("Typical gain", signed_db(gr["typical"]),
-                              help=f"The middle relative gain of the {gr['n']} {noun}s counted. Above zero, B was stronger.")
-                    m2.metric(f"{noun.capitalize()}s", gr["n"],
-                              help=f"How many {noun}s are left at this slider setting.")
-                    m1.metric("Biggest gain", signed_db(gr["biggest"]),
-                              help="The largest of the average gains for the eight directions, as in the direction table "
-                                   f"further down. A direction with fewer than {BIN_MIN_SHARED} {noun}s is not used.")
-                    m2.metric("Smallest gain", signed_db(gr["smallest"]),
-                              help="The smallest of the average gains for the eight directions, as in the direction table "
-                                   f"further down. A direction with fewer than {BIN_MIN_SHARED} {noun}s is not used.")
-                    readout.caption("Relative gain is B minus A in dB: above zero, B was stronger. Typical gain is the middle receiver "
-                                    "among those left at this slider setting. The verdict's number is instead the average over every "
-                                    f"receiver compared{', taking each one pair by pair' if an['paired'] else ''}, so the two can differ, "
-                                    "most when a few receivers gain far more than the rest.")
-                    if gr["n"] < ENOUGH_RECEIVERS:
-                        readout.caption(f":orange[Only {gr['n']} {noun}s left. With fewer than {ENOUGH_RECEIVERS}, a handful of "
-                                        "stations decide the answer.]")
+                    with dash_slot:
+                        _dashboard(every, opening, noun)
+                        st.caption("The verdict's number is the average over every receiver compared"
+                                   f"{', taking each one pair by pair' if an['paired'] else ''}, so it can differ from the "
+                                   "average and the typical gain here, most when a few receivers gain far more than the rest.")
                     pdf_ctx["every"], pdf_ctx["scatter_src"] = every, scatter_src
                     pdf_ctx["settings"] = (
                         f"Settings for this section: each {noun}'s reports are averaged by "
@@ -1492,7 +1540,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
 
     # wspr.live fills a slot in over several minutes: about 1 receiver at 2 minutes old, half by 3-4, complete by 6-8 (measured).
     # A transmission younger than this is left out of a comparison, since a half-filled slot makes its antenna look worse.
-GHOST_MAX, GHOST_MIN_TYPICAL = 2, 16  # see _without_ghost_cycles
+GHOST_MAX, GHOST_MIN_TYPICAL, GHOST_SHARE = 2, 16, 0.05  # see _without_ghost_cycles
 
 
 SIMULTANEOUS_MINUTES = 10  # A and B sent within this many minutes of each other count as the same conditions

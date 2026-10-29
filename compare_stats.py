@@ -289,16 +289,31 @@ def gain_summary(every, by="octant", edges_km=None, labels=None):
 
 
 def gain_readout(every):
-    """The few numbers worth watching while the minimum-reports slider moves: how many receivers are left, their typical relative
-    gain (B minus A, the middle of the receivers), and the biggest and smallest average gain of the eight direction groups, as in
-    the direction table. A group with fewer than BIN_MIN_SHARED receivers is a hint, not a number, so it is left out of the
-    biggest and smallest (None when fewer than two groups qualify)."""
+    """The numbers worth watching while the minimum-reports slider moves, over the receivers left on the table: how many there
+    are, the average relative gain (B minus A) of all of them, the typical one (the middle receiver), and the single biggest and
+    smallest gain with the receiver that gave it, so an outlier can be seen and named. The biggest and smallest are None when
+    nothing is left."""
     gains = -every["gap"].to_numpy(float)
-    summary = gain_summary(every, "octant")
-    means = summary.loc[summary["receivers"] >= BIN_MIN_SHARED, "mean"].dropna()
-    return {"n": int(len(every)), "typical": float(np.median(gains)) if len(gains) else math.nan,
-            "biggest": float(means.max()) if len(means) >= 2 else None,
-            "smallest": float(means.min()) if len(means) >= 2 else None}
+    out = {"n": int(len(gains)), "mean": math.nan, "typical": math.nan, "biggest": None, "smallest": None,
+           "biggest_who": "", "smallest_who": ""}
+    if len(gains):
+        out.update(mean=float(np.mean(gains)), typical=float(np.median(gains)),
+                   biggest=float(gains.max()), smallest=float(gains.min()),
+                   biggest_who=str(every.index[int(gains.argmax())]), smallest_who=str(every.index[int(gains.argmin())]))
+    return out
+
+
+def direction_average(every, direction):
+    """(receivers, average relative gain) of the receivers in one of the eight compass directions ('N', 'NE', ...), as in the
+    direction table. The average is NaN when no receiver is in that direction."""
+    row = gain_summary(every, "octant").set_index("group").loc[direction]
+    return int(row["receivers"]), float(row["mean"])
+
+
+def busiest_direction(every):
+    """The compass direction (of the eight) with the most receivers, the natural one to watch; 'N' when there are none."""
+    counts = gain_summary(every, "octant").set_index("group")["receivers"]
+    return str(counts.idxmax()) if len(every) else GAIN_OCTANTS[0]
 
 
 def direction_advantage(shared, width_deg=45):
