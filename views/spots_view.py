@@ -124,6 +124,7 @@ def spots_page():
 
     skimmers, refresh_msg = skimmer_data()
     ss, cfg, pick = inputs.begin()
+    inputs.leave_foreign_example(ss, ("map",))
     with st.sidebar:
         where = inputs.where_inputs(ss, cfg)
         load = st.button("Load spots", type="primary", width="stretch")

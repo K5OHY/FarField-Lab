@@ -46,13 +46,16 @@ def open_example(at, key):
     at.run()
 
 
-def page_after_example(function, key):
+def page_after_example(function, key, as_own_spots=False):
     """A page opened right after an example's own button was pressed on another page: the example's spots and settings are
-    already in the session, the way they are when a visitor moves between pages."""
+    already in the session, the way they are when a visitor moves between pages. With `as_own_spots` the spots are no longer
+    marked as an example, as if the visitor had loaded them themself."""
     runner = os.path.join(tempfile.gettempdir(), f"rbn_{function}_after_{key}_runner.py")
     lines = ["import sys", "sys.path.insert(0, r'%s')" % HERE, "import streamlit as st", "import web", "from views import inputs",
-             "if 'started' not in st.session_state:", "    st.session_state['started'] = True", "    inputs.start_example(%r)" % key,
-             "web.%s()" % function]
+             "if 'started' not in st.session_state:", "    st.session_state['started'] = True", "    inputs.start_example(%r)" % key]
+    if as_own_spots:
+        lines.append("    st.session_state['_example'] = False")
+    lines.append("web.%s()" % function)
     with open(runner, "w", encoding="utf-8") as f:
         f.write(chr(10).join(lines) + chr(10))
     return AppTest.from_file(runner, default_timeout=600)
@@ -349,15 +352,15 @@ class ComparePage(unittest.TestCase):
         shared = page("compare_page", call="K5OHY", src="wspr", date="2026-10-04", band="20m", go="1", n="12", ord="abba").run()
         self.assertTrue(shared.session_state["setup_ok"])
 
-    def test_the_my_spots_example_is_not_a_confirmed_test_when_you_open_compare(self):
-        at = page_after_example("compare_page", "map").run()
+    def test_your_own_spots_from_my_spots_are_not_a_confirmed_test_when_you_open_compare(self):
+        at = page_after_example("compare_page", "map", as_own_spots=True).run()
         self.assertEqual(errors(at), [])
         self.assertFalse(at.session_state["setup_ok"])
         self.assertNotIn("Signal advantage", " ".join(m.value for m in at.markdown))  # no winner before you check the setup
         self.assertEqual(len([b for b in at.main.button if b.label.startswith("This matches what I did")]), 1)
 
     def test_a_result_across_two_bands_is_called_a_band_comparison(self):
-        at = page_after_example("compare_page", "map").run()
+        at = page_after_example("compare_page", "map", as_own_spots=True).run()
         [b for b in at.main.button if b.label.startswith("This matches what I did")][0].click()
         at.run()
         self.assertEqual(errors(at), [])
@@ -523,12 +526,45 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(len(line), 1)
         self.assertIn("these results use 20 blocks of about 30 minutes, 10 on A and 10 on B, from 12:00 to 22:00 UTC", line[0])
 
-    def test_a_loaded_example_carries_over_to_my_spots(self):
+    def test_spots_you_loaded_yourself_carry_over_to_my_spots(self):
         """What you load on one page is there on the other, so you do not have to enter it twice."""
-        at = page("compare_page").run()
-        open_example(at, "quick")
+        at = page_after_example("spots_page", "quick", as_own_spots=True).run()
+        self.assertEqual(errors(at), [])
         self.assertIsNotNone(at.session_state["raw"])
         self.assertEqual(at.session_state["callsign"], "K5OHY")
+
+    def test_the_my_spots_example_does_not_follow_you_to_compare(self):
+        """An example belongs to the page that opened it: Compare shows its own examples, not the map's spots."""
+        at = page_after_example("compare_page", "map").run()
+        self.assertEqual(errors(at), [])
+        self.assertIsNone(at.session_state["raw"])
+        self.assertEqual(at.session_state["callsign_in"], "")
+        self.assertEqual(at.session_state["src_in"], "WSPR")
+        self.assertEqual(len([b for b in at.main.button if b.key.startswith("hero_")]), 5)
+
+    def test_a_compare_example_does_not_follow_you_to_my_spots(self):
+        at = page_after_example("spots_page", "quick").run()
+        self.assertEqual(errors(at), [])
+        self.assertIsNone(at.session_state["raw"])
+        self.assertEqual(at.session_state["callsign_in"], "")
+        self.assertEqual([b.label for b in at.main.button], ["Try an example"])
+
+    def test_choosing_another_source_closes_an_open_example(self):
+        for function, key, to_wspr in (("compare_page", "rbn", True), ("compare_page", "quick", False), ("spots_page", "map", True)):
+            at = page_after_example(function, key).run()
+            self.assertEqual(at.session_state["_example"], key)
+            [r for r in at.sidebar.radio if r.key == "net_in"][0].set_value("WSPR" if to_wspr else "RBN")
+            at.run()
+            self.assertEqual(errors(at), [], key)
+            self.assertIsNone(at.session_state["raw"], key)
+            self.assertEqual(at.session_state["callsign_in"], "", key)
+            self.assertEqual(at.session_state["src_in"], "WSPR" if to_wspr else "Download by date", key)
+
+    def test_choosing_another_source_keeps_spots_you_loaded_yourself(self):
+        at = page_after_example("compare_page", "quick", as_own_spots=True).run()
+        [r for r in at.sidebar.radio if r.key == "net_in"][0].set_value("RBN")
+        at.run()
+        self.assertIsNotNone(at.session_state["raw"])
 
 
 class SkippedTransmissions(unittest.TestCase):

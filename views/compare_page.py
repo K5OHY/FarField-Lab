@@ -86,6 +86,7 @@ def compare_page():
 
     skimmers, refresh_msg = skimmer_data()
     ss, cfg, pick = inputs.begin(default_source=WSPR_SOURCE)
+    inputs.leave_foreign_example(ss, inputs.COMPARE_KEYS, WSPR_SOURCE)
     test_link.read(ss, st.query_params)
     with st.sidebar:
         where = inputs.where_inputs(ss, cfg, second_call=True)

@@ -167,6 +167,24 @@ def start_over(source=None):
     st.query_params.clear()
 
 
+def leave_foreign_example(ss, own_examples, source=None):
+    """An example belongs to the page that opened it. On the other page it would show up as if it were your own test (or your own
+    map), so arriving there closes it and leaves the page as it is on a fresh visit. Your own loaded spots stay."""
+    if ss.get("_example") and ss["_example"] not in own_examples:
+        start_over(source)
+
+
+def _source_changed(ss):
+    """Choosing another source while an example is open means you are moving on to your own spots: close the example."""
+    if not ss.get("_example"):
+        return
+    if ss.get("net_in") == "WSPR":
+        start_over(WSPR_SOURCE)
+    else:
+        how = ss.get("how_in", ss.get("_how_last", HOW_OPTIONS[0]))
+        start_over(RBN_SOURCES[0] if how == HOW_OPTIONS[0] else "Paste from RBN site")
+
+
 def example_banner(ss):
     """A short note above the results saying what a loaded example is, and a button that closes it."""
     which = ss.get("_example")
@@ -239,14 +257,14 @@ def _source_choice(ss):
         ss["net_in"] = "WSPR" if now == WSPR_SOURCE else "RBN"
         if now != WSPR_SOURCE:
             ss["how_in"] = HOW_OPTIONS[1] if now == "Paste from RBN site" else HOW_OPTIONS[0]
-    net = st.radio("Spots from", ["RBN", "WSPR"], key="net_in", horizontal=True,
+    net = st.radio("Spots from", ["RBN", "WSPR"], key="net_in", horizontal=True, on_change=_source_changed, args=(ss,),
                    help="RBN: stations that decoded your CW/RTTY CQ. WSPR: stations that decoded your WSPR "
                         "beacon, handy for antenna tests because the power is fixed and known.")
     if net == "WSPR":
         source = WSPR_SOURCE
     else:
         ss.setdefault("how_in", ss.get("_how_last", HOW_OPTIONS[0]))
-        how = st.radio("How to get them", HOW_OPTIONS, key="how_in", horizontal=True,
+        how = st.radio("How to get them", HOW_OPTIONS, key="how_in", horizontal=True, on_change=_source_changed, args=(ss,),
                        help="Download needs the day to be over (UTC). Paste works for today: copy the spots from reversebeacon.net.")
         ss["_how_last"] = how
         source = "Paste from RBN site" if how == HOW_OPTIONS[1] else "Download by date"
