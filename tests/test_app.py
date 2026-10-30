@@ -416,8 +416,19 @@ class ComparePage(unittest.TestCase):
         at = page("compare_page").run()
         open_example(at, "long")
         self.assertEqual(errors(at), [])
-        self.assertTrue(any("Leave out some reports or receivers" in m.value for m in at.main.markdown))
+        box = [e for e in at.main.expander if e.label.startswith("Leave out some reports or receivers")]
+        self.assertEqual(len(box), 1)
+        self.assertEqual(box[0].label, "Leave out some reports or receivers")  # shut, and nothing is left out yet
+        self.assertFalse(box[0].proto.expanded)
         self.assertTrue(any(c.value.startswith("This changes the dashboard") for c in at.main.caption))
+
+    def test_the_leave_out_box_says_when_it_is_in_use(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        [n for n in at.main.number_input if n.key == "avg_weak"][0].set_value(25)
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertIn("Leave out some reports or receivers (in use)", [e.label for e in at.main.expander])
 
     def test_the_rbn_example_compares_the_loop_and_the_dipole_by_frequency(self):
         at = page("compare_page").run()

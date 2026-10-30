@@ -944,7 +944,9 @@ def _leave_out_box(kind, units):
     """The controls that leave reports or receivers out of the averages on the Receiver by receiver and Linear average tabs.
     Returns (floor in dB or None, the nearest distance to keep in km, the share of floor reports that drops a station, and a
     plain-words note of what is left out, empty when nothing is)."""
-    with _box("Leave out some reports or receivers"):
+    ss = st.session_state
+    in_use = bool(ss.get("avg_floor") or ss.get(f"avg_near_{units}") or ss.get("avg_weak"))  # shut by default, so say when it is doing something
+    with st.expander("Leave out some reports or receivers" + (" (in use)" if in_use else ""), key="leave_box"):
         f1, f2, f3 = st.columns(3)
         floor_on = kind == "WSPR" and f1.checkbox(
             f"Ignore reports at or below {WSPR_FLOOR_DB} dB", key="avg_floor",
