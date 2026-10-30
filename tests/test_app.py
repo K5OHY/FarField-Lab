@@ -404,6 +404,14 @@ class ComparePage(unittest.TestCase):
         self.assertIn(f"{other} average gain", labels)
         self.assertIn(f"{watched} average gain", labels)
 
+    def test_the_dashboard_is_shut_by_default_with_its_headline_in_the_title(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        box = [e for e in at.main.expander if e.label.startswith("Monitoring dashboard")]
+        self.assertEqual(len(box), 1)
+        self.assertRegex(box[0].label, r"^Monitoring dashboard: average gain [+-][0-9.]+ dB over [0-9]+ receivers$")
+        self.assertFalse(box[0].proto.expanded)
+
     def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
         at = page("compare_page").run()
         open_example(at, "long")

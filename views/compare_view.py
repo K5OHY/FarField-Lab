@@ -978,8 +978,10 @@ def _dashboard(every, reference, noun):
     if "dash_dir_a" not in ss or ss["dash_dir_a"] == ss.get("dash_dir_a_auto"):
         ss["dash_dir_a"] = auto
     ss["dash_dir_a_auto"] = auto
-    with st.container(border=True):
-        st.markdown("**Monitoring dashboard**")
+    title = "Monitoring dashboard"  # shut by default, so the charts below are what most people see; the headline stays in its title
+    if gr["n"] and not pd.isna(gr["mean"]):
+        title += f": average gain {signed_db(gr['mean'])} over {gr['n']} {noun}{'s' if gr['n'] != 1 else ''}"
+    with st.expander(title, key="dash_box"):
         st.caption("Has it settled? Raise the slider a step at a time and watch these numbers. When they stop moving the result is "
                    "steady, "
                    f"as long as at least {ENOUGH_RECEIVERS // 2} to {ENOUGH_RECEIVERS} {noun}s are left. Relative gain is B minus A in dB: "
