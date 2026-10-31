@@ -44,6 +44,7 @@ from compare_stats import (
     direction_average,
     gain_readout,
     GAIN_OCTANTS,
+    GAIN_QUADRANTS,
     ENOUGH_RECEIVERS,
     WSPR_FLOOR_DB,
     EQUAL_DB,
@@ -976,10 +977,14 @@ def _dashboard(every, reference, noun):
     signed_db = lambda v: "–" if v is None or pd.isna(v) else f"{v:+.1f} dB"  # noqa: E731
     gr = gain_readout(every)
     ss = st.session_state
-    auto = busiest_direction(reference)  # follows the data until you pick a direction yourself
-    if "dash_dir_a" not in ss or ss["dash_dir_a"] == ss.get("dash_dir_a_auto"):
+    by = "quadrant" if str(ss.get("gs_groups", "")).startswith("Quadrants") else "octant"  # follows "Group directions as" below
+    directions = GAIN_QUADRANTS if by == "quadrant" else GAIN_OCTANTS
+    auto = busiest_direction(reference, by)  # follows the data until you pick a direction yourself
+    if "dash_dir_a" not in ss or ss["dash_dir_a"] == ss.get("dash_dir_a_auto") or ss["dash_dir_a"] not in directions:
         ss["dash_dir_a"] = auto
     ss["dash_dir_a_auto"] = auto
+    if ss.get("dash_dir_b", "Off") not in ["Off"] + directions:  # a direction the other grouping does not have
+        ss["dash_dir_b"] = "Off"
     title = "Monitoring dashboard"  # shut by default, so the charts below are what most people see; the headline stays in its title
     if gr["n"] and not pd.isna(gr["mean"]):
         title += f": average gain {signed_db(gr['mean'])} over {gr['n']} {noun}{'s' if gr['n'] != 1 else ''}"
@@ -1004,14 +1009,15 @@ def _dashboard(every, reference, noun):
                             "with the rest is an outlier, usually from too few reports.")
         st.markdown("###### Watch a direction")
         picks = st.columns(2)
-        for col, key, options in ((picks[0], "dash_dir_a", GAIN_OCTANTS), (picks[1], "dash_dir_b", ["Off"] + GAIN_OCTANTS)):
+        for col, key, options in ((picks[0], "dash_dir_a", directions), (picks[1], "dash_dir_b", ["Off"] + directions)):
             with col:
                 d = st.selectbox("Direction to watch" if key.endswith("a") else "A second direction (optional)", options,
                                  key=key, help="The average relative gain of the receivers in this compass direction from "
                                                "you, which is where a directional antenna's gain shows. It opens on the "
-                                               "direction with the most receivers.")
+                                               "direction with the most receivers. The directions follow the Octants (8) or "
+                                               "Quadrants (4) choice under Average relative gain by direction and distance.")
                 if d != "Off":
-                    n, mean = direction_average(every, d)
+                    n, mean = direction_average(every, d, by)
                     st.metric(f"{d} average gain", signed_db(mean), f"{n} {noun}{'s' if n != 1 else ''}", delta_color="off",
                               delta_arrow="off")
                     if 0 < n < BIN_MIN_SHARED:
@@ -1458,14 +1464,20 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                               width="stretch")
                     one_a = fa[fa["spotter"] == pick]["snr"].to_numpy(float)
                     one_b = fb[fb["spotter"] == pick]["snr"].to_numpy(float) + offset
+                    linear = method_label == "Linear power"
+                    shown = (lambda v: round(_linear_db(v), 1)) if linear else (lambda v: round(float(np.median(v)), 1))  # as in the list
                     m_a, m_b, m_gain = st.columns(3)
                     for col, label, values in ((m_a, names["A"], one_a), (m_b, names["B"], one_b)):
-                        col.metric(label, f"{_linear_db(values):.1f} dB")
-                        col.caption(f"Linear average \u00b7 {len(values)} reports \u00b7 dB average {values.mean():.1f} \u00b7 middle {np.median(values):g} "
+                        col.metric(label, f"{shown(values):.1f} dB")
+                        col.caption(f"{'Linear average' if linear else 'Middle of the dB reports'} \u00b7 {len(values)} reports \u00b7 "
+                                    f"{'dB average' if linear else 'linear average'} {values.mean() if linear else _linear_db(values):.1f} "
+                                    f"\u00b7 {'middle' if linear else 'dB average'} "
+                                    f"{np.median(values) if linear else values.mean():.1f} "
                                     f"\u00b7 spread (std) {values.std(ddof=1) if len(values) > 1 else float('nan'):.1f} dB")
                     diff, lo, hi = _gain_interval(one_a, one_b)
-                    m_gain.metric("Relative gain B \u2212 A", f"{_linear_db(one_b) - _linear_db(one_a):+.1f} dB")
-                    m_gain.caption(f"Linear power. dB averages: {diff:+.1f} dB"
+                    m_gain.metric("Relative gain B \u2212 A", f"{round(shown(one_b) - shown(one_a), 1):+.1f} dB")
+                    m_gain.caption(f"{'Linear power' if linear else 'Middle of the dB reports'}, as in the list. "
+                                   f"dB averages: {diff:+.1f} dB"
                                    + (f", 95% range {lo:+.1f} to {hi:+.1f} dB" if not np.isnan(lo) else ", too few reports for a range"))
                     st.caption(f"Each dot is one report from this {noun}; the line is each antenna's average "
                                f"({'linear power' if method_label == 'Linear power' else 'middle of the dB reports'}). "

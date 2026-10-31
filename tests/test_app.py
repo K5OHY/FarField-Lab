@@ -404,6 +404,38 @@ class ComparePage(unittest.TestCase):
         self.assertIn(f"{other} average gain", labels)
         self.assertIn(f"{watched} average gain", labels)
 
+    def test_the_dashboard_follows_octants_or_quadrants(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        octants = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        picker = lambda: [s for s in at.main.selectbox if s.key == "dash_dir_a"][0]  # noqa: E731
+        self.assertEqual(tuple(picker().options), octants)
+        [r for r in at.main.radio if r.key == "gs_groups"][0].set_value("Quadrants (4)")
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(tuple(picker().options), ("N", "E", "S", "W"))
+        self.assertIn(at.session_state["dash_dir_a"], ("N", "E", "S", "W"))
+        self.assertIn(f"{at.session_state['dash_dir_a']} average gain", [m.label for m in at.main.metric])
+        [r for r in at.main.radio if r.key == "gs_groups"][0].set_value("Octants (8)")
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(tuple(picker().options), octants)
+
+    def test_one_receiver_numbers_follow_the_averaging_choice(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        method = [r for r in at.main.radio if r.key.startswith("rx_method_")][0]
+        method.set_value("SNR (dB)")
+        at.run()
+        self.assertEqual(errors(at), [])
+        text = " ".join(c.value for c in at.caption)
+        self.assertIn("Middle of the dB reports, as in the list", text)
+        [r for r in at.main.radio if r.key.startswith("rx_method_")][0].set_value("Linear power")
+        at.run()
+        self.assertEqual(errors(at), [])
+        text = " ".join(c.value for c in at.caption)
+        self.assertIn("Linear power, as in the list", text)
+
     def test_the_dashboard_is_shut_by_default_with_its_headline_in_the_title(self):
         at = page("compare_page").run()
         open_example(at, "long")

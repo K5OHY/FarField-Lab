@@ -303,16 +303,18 @@ def gain_readout(every):
     return out
 
 
-def direction_average(every, direction):
-    """(receivers, average relative gain) of the receivers in one of the eight compass directions ('N', 'NE', ...), as in the
-    direction table. The average is NaN when no receiver is in that direction."""
-    row = gain_summary(every, "octant").set_index("group").loc[direction]
+def direction_average(every, direction, by="octant"):
+    """(receivers, average relative gain) of the receivers in one compass direction, as in the direction table: one of the eight
+    ('N', 'NE', ...) or, with by='quadrant', one of the four ('N', 'E', 'S', 'W'). The average is NaN when no receiver is in
+    that direction."""
+    row = gain_summary(every, by).set_index("group").loc[direction]
     return int(row["receivers"]), float(row["mean"])
 
 
-def busiest_direction(every):
-    """The compass direction (of the eight) with the most receivers, the natural one to watch; 'N' when there are none."""
-    counts = gain_summary(every, "octant").set_index("group")["receivers"]
+def busiest_direction(every, by="octant"):
+    """The compass direction (of the eight, or of the four with by='quadrant') with the most receivers, the natural one to
+    watch; 'N' when there are none."""
+    counts = gain_summary(every, by).set_index("group")["receivers"]
     return str(counts.idxmax()) if len(every) else GAIN_OCTANTS[0]
 
 

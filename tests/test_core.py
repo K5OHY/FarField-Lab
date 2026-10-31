@@ -173,6 +173,12 @@ class GainReadout(unittest.TestCase):
         self.assertEqual(n, 0)
         self.assertTrue(math.isnan(mean))
 
+    def test_a_direction_average_by_quadrant(self):
+        every = self.table([(-3.0, 0.0, 3), (-1.0, 40.0, 2), (1.0, 180.0, 4)])  # 0 and 40 degrees are both in the N quadrant
+        self.assertEqual(cs.direction_average(every, "N", "quadrant"), (5, (9 + 2) / 5))
+        self.assertEqual(cs.direction_average(every, "NE"), (2, 1.0))  # the octant of the same 40 degrees
+        self.assertEqual(cs.busiest_direction(every, "quadrant"), "N")
+
     def test_the_busiest_direction_is_the_one_to_watch(self):
         every = self.table([(-3.0, 0.0, 5), (1.0, 180.0, 7), (-10.0, 90.0, 2)])
         self.assertEqual(cs.busiest_direction(every), "S")
