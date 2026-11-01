@@ -1,3 +1,0 @@
-streamlit>=1.56
-numpy
-matplotlib
