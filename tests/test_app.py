@@ -635,6 +635,13 @@ class SkippedTransmissions(unittest.TestCase):
         self.assertEqual(sorted(kept["time"].unique()).__len__(), 12)
         self.assertEqual(sorted(kept["time"].dt.strftime("%H:%M").unique())[8], "18:18")
 
+    def test_a_skipped_slot_heard_by_six_of_about_a_hundred_is_not_a_transmission(self):
+        from views.compare_view import _without_ghost_cycles
+        # 2026-11-01: 18:46 (4 receivers) and 18:58 (6) were slots the transmitter skipped; the last four cycles were heard by 15 to 22
+        kept = _without_ghost_cycles(self.spots([89, 112, 118, 103, 4, 117, 113, 115, 111, 6, 18, 22, 16, 15]))
+        self.assertEqual(kept["time"].nunique(), 12)
+        self.assertEqual(sorted(kept["time"].dt.strftime("%H:%M").unique())[4:6], ["18:10", "18:12"])  # the two ghosts are gone
+
     def test_a_weak_slot_that_is_still_a_real_share_of_the_usual_is_kept(self):
         from views.compare_view import _without_ghost_cycles
         kept = _without_ghost_cycles(self.spots([120, 110, 40, 115, 118, 112]))

@@ -141,7 +141,7 @@ def _separate_by_frequency(spots, gap_khz):
 
 def _without_ghost_cycles(spots):
     """Throw out cycles that only a handful of receivers reported when ordinary cycles are heard by many more: at most 2, or
-    5% of the typical count if that is more (so 5 when ordinary cycles are heard by 100). They are nearly always a few
+    10% of the typical count if that is more (so 10 when ordinary cycles are heard by 100). They are nearly always a few
     receivers with a wrong clock reporting your transmission under the next time slot, for instance in the slot where you
     skipped a transmission, so they are not real transmissions and would put every label after them out of step. On a weak
     band, where every cycle has few reports, nothing is thrown out."""
@@ -1556,7 +1556,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
 
     # wspr.live fills a slot in over several minutes: about 1 receiver at 2 minutes old, half by 3-4, complete by 6-8 (measured).
     # A transmission younger than this is left out of a comparison, since a half-filled slot makes its antenna look worse.
-GHOST_MAX, GHOST_MIN_TYPICAL, GHOST_SHARE = 2, 16, 0.05  # see _without_ghost_cycles
+GHOST_MAX, GHOST_MIN_TYPICAL, GHOST_SHARE = 2, 16, 0.10  # see _without_ghost_cycles
 
 
 SIMULTANEOUS_MINUTES = 10  # A and B sent within this many minutes of each other count as the same conditions
