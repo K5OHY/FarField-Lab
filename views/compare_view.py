@@ -45,6 +45,7 @@ from compare_stats import (
     gain_readout,
     GAIN_OCTANTS,
     GAIN_QUADRANTS,
+    direction_degrees,
     ENOUGH_RECEIVERS,
     WSPR_FLOOR_DB,
     EQUAL_DB,
@@ -551,8 +552,11 @@ def _azimuth_map_section(points, an, names, noun, units, home, callsign, scale):
         "The station is at the centre. Distance from the centre is true distance from you and the angle is true compass "
         "bearing, so a straight line from the centre is the path the signal takes. Each coloured cell is one direction "
         f"(30\u00b0) and distance band, shown only where at least {MIN_CELL} {noun}s were heard, with its number written in it from {3 if noun == 'skimmer' else 5}. "
+        f"(The direction tables and the verdict need {BIN_MIN_SHARED} {noun}s in a direction before it counts; fewer is a hint.) "
         + ("Blue cells are where A was stronger and orange where B was; a brighter colour is a bigger difference and a more solid "
-           "cell rests on more receivers." if layer == "advantage" else
+           "cell rests on more receivers. The number is how many dB stronger the winning antenna was, so it is always positive, and "
+           f"the colour says which one. It averages A minus B at the {noun}s that heard both antennas, so it will not equal the "
+           "difference between the two SNR layers, which also count a " + noun + " that heard only one." if layer == "advantage" else
            "The colour is the average SNR in the cell." if layer in ("snr_a", "snr_b") else
            "Filled dots heard both antennas, open rings only one.")
         + " Blank means nobody there heard it, which also happens wherever there are no receivers, such as over the oceans.")
@@ -767,8 +771,9 @@ def _gain_text(v):
     return "-" if pd.isna(v) or abs(v) < 0.05 else f"{'A' if v > 0 else 'B'} +{abs(v):.1f}"
 
 
-def _gain_summary_view(summary, first_col, noun):
-    """A gain_summary table as text for the screen and the PDF: the group, how many receivers, the average and its range."""
+def _gain_summary_view(summary, first_col, noun, by=None):
+    """A gain_summary table as text for the screen and the PDF: the group, how many receivers, the average and its range.
+    With `by` ('octant' or 'quadrant') each direction also says the compass range it covers."""
     def fmt(v):
         return "\u2013" if pd.isna(v) else f"{v:+.1f}"
 
@@ -776,7 +781,8 @@ def _gain_summary_view(summary, first_col, noun):
         return "\u2013" if pd.isna(row["low"]) else f"{row['low']:+.1f} to {row['high']:+.1f}"
 
     return pd.DataFrame({
-        first_col: summary["group"], f"{noun.capitalize()}s": summary["receivers"],
+        first_col: [g if by is None else f"{g} ({direction_degrees(g, by)})" for g in summary["group"]],
+        f"{noun.capitalize()}s": summary["receivers"],
         "Average gain B \u2212 A (dB)": [fmt(v) for v in summary["mean"]],
         "95% range": [rng(r) for _, r in summary.iterrows()],
         "Note": ["" if n >= BIN_MIN_SHARED else ("none" if n == 0 else f"only {n}, a hint") for n in summary["receivers"]]})
@@ -1012,7 +1018,7 @@ def _dashboard(every, reference, noun):
         for col, key, options in ((picks[0], "dash_dir_a", directions), (picks[1], "dash_dir_b", ["Off"] + directions)):
             with col:
                 d = st.selectbox("Direction to watch" if key.endswith("a") else "A second direction (optional)", options,
-                                 key=key, help="The average relative gain of the receivers in this compass direction from "
+                                 key=key, format_func=lambda o: o if o == "Off" else f"{o} ({direction_degrees(o, by)})", help="The average relative gain of the receivers in this compass direction from "
                                                "you, which is where a directional antenna's gain shows. It opens on the "
                                                "direction with the most receivers. The directions follow the Octants (8) or "
                                                "Quadrants (4) choice under Average relative gain by direction and distance.")
@@ -1292,7 +1298,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     "Note": ["only " + str(int(n)) + " - treat as a hint" if n < BIN_MIN_SHARED else "" for n in have["n"]]}),
                     width="stretch", hide_index=True, height=min(38 * (len(have) + 1), 420))
                 table_col.caption("The longer the bar, the more one side beat the other toward that direction; blue is A and orange "
-                                  "is B. A more solid bar rests on more receivers, and a hatched one on too few to trust. Unlike "
+                                  f"is B. A more solid bar rests on more receivers, and a hatched one on fewer than {BIN_MIN_SHARED}, too few to trust. Unlike "
                                   "the average-SNR chart below, there is nothing to subtract in your head.")
             if means_a.notna().any() or means_b.notna().any():
                 st.subheader("Average SNR by direction")
@@ -1338,6 +1344,10 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                          "averages the power and turns it back into dB. Linear is the proper average of signal power over "
                          "time and suits a long test with many reports per station; the dB middle is steadier when a station "
                          "has only a few reports.")
+                ctrl_method.caption("Opens on " + ("Linear power, because a long test gives each " + noun + " many reports, and the power average "
+                                                   "is then the proper time average." if blocks_mode else
+                                                   "SNR (dB), because a short test gives each " + noun + " only a few reports, and "
+                                                   "the middle of the dB reports is steadier than a power average pulled up by one strong one."))
                 min_key = f"rx_min_reports_{'blk' if blocks_mode else 'pair'}"
                 # Opens at the strictest setting that still leaves enough receivers, and follows the data until you move it
                 auto_key = min_key + "_auto"
@@ -1421,7 +1431,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     c_groups, c_short, c_medium = st.columns([2, 1, 1])
                     groups = c_groups.radio("Group directions as", ["Octants (8)", "Quadrants (4)"], horizontal=True, key="gs_groups",
                                             help="Each direction is centred on its compass point, like the direction charts: N covers "
-                                                 "337\u00b0 to 22\u00b0 for octants, and 315\u00b0 to 45\u00b0 for quadrants.")
+                                                 "337.5\u00b0 to 22.5\u00b0 for octants, and 315\u00b0 to 45\u00b0 for quadrants.")
                     kk_gs = KM_PER_MILE if units == "mi" else 1.0
                     short_max = float(c_short.number_input(f"Short ends at ({units})", min_value=50, max_value=20000,
                                                            value=1000 if units == "mi" else 1500, step=100, key=f"gs_short_{units}"))
@@ -1430,11 +1440,12 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     if medium_max <= short_max:
                         st.warning("Medium has to end beyond where Short ends. Using the two numbers in order.")
                         short_max, medium_max = sorted((short_max, medium_max))
-                    dir_sum = gain_summary(every, "octant" if groups.startswith("Octants") else "quadrant")
+                    dir_by = "octant" if groups.startswith("Octants") else "quadrant"
+                    dir_sum = gain_summary(every, dir_by)
                     dist_labels = [f"Short: under {short_max:,.0f} {units}", f"Medium: {short_max:,.0f} to {medium_max:,.0f} {units}",
                                    f"Long: over {medium_max:,.0f} {units}"]
                     dist_sum = gain_summary(every, "distance", [short_max * kk_gs, medium_max * kk_gs], dist_labels)
-                    gs_dir = _gain_summary_view(dir_sum, "Direction", noun)
+                    gs_dir = _gain_summary_view(dir_sum, "Direction", noun, dir_by)
                     gs_dist = _gain_summary_view(dist_sum, "Distance", noun)
                     pdf_ctx["gain_summary"] = {"direction": gs_dir, "distance": gs_dist}
                     t_dir, t_dist = st.columns(2)

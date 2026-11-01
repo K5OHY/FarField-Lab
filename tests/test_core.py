@@ -179,6 +179,12 @@ class GainReadout(unittest.TestCase):
         self.assertEqual(cs.direction_average(every, "NE"), (2, 1.0))  # the octant of the same 40 degrees
         self.assertEqual(cs.busiest_direction(every, "quadrant"), "N")
 
+    def test_a_direction_says_the_compass_range_it_covers(self):
+        self.assertEqual(cs.direction_degrees("W", "quadrant"), "225°–315°")
+        self.assertEqual(cs.direction_degrees("N", "quadrant"), "315°–45°")
+        self.assertEqual(cs.direction_degrees("N"), "337.5°–22.5°")
+        self.assertEqual(cs.direction_degrees("NE"), "22.5°–67.5°")
+
     def test_the_busiest_direction_is_the_one_to_watch(self):
         every = self.table([(-3.0, 0.0, 5), (1.0, 180.0, 7), (-10.0, 90.0, 2)])
         self.assertEqual(cs.busiest_direction(every), "S")

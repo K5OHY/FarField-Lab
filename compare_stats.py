@@ -288,6 +288,14 @@ def gain_summary(every, by="octant", edges_km=None, labels=None):
     return pd.DataFrame(rows)
 
 
+def direction_degrees(direction, by="octant"):
+    """The compass range a direction covers, such as '225\u00b0\u2013315\u00b0' for W by quadrant or '337.5\u00b0\u201322.5\u00b0' for N by octant. A direction is
+    centred on its compass point and is 45 (octant) or 90 (quadrant) degrees wide, as in gain_summary."""
+    names, width = (GAIN_OCTANTS, 45) if by == "octant" else (GAIN_QUADRANTS, 90)
+    centre = names.index(direction) * width
+    return f"{(centre - width / 2) % 360:g}\u00b0\u2013{(centre + width / 2) % 360:g}\u00b0"
+
+
 def gain_readout(every):
     """The numbers worth watching while the minimum-reports slider moves, over the receivers left on the table: how many there
     are, the average relative gain (B minus A) of all of them, the typical one (the middle receiver), and the single biggest and

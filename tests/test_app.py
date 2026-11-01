@@ -409,17 +409,37 @@ class ComparePage(unittest.TestCase):
         open_example(at, "long")
         octants = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
         picker = lambda: [s for s in at.main.selectbox if s.key == "dash_dir_a"][0]  # noqa: E731
-        self.assertEqual(tuple(picker().options), octants)
+        names = lambda: tuple(o.split(" ")[0] for o in picker().options)  # each option also says its degrees  # noqa: E731
+        self.assertEqual(names(), octants)
         [r for r in at.main.radio if r.key == "gs_groups"][0].set_value("Quadrants (4)")
         at.run()
         self.assertEqual(errors(at), [])
-        self.assertEqual(tuple(picker().options), ("N", "E", "S", "W"))
+        self.assertEqual(names(), ("N", "E", "S", "W"))
         self.assertIn(at.session_state["dash_dir_a"], ("N", "E", "S", "W"))
         self.assertIn(f"{at.session_state['dash_dir_a']} average gain", [m.label for m in at.main.metric])
         [r for r in at.main.radio if r.key == "gs_groups"][0].set_value("Octants (8)")
         at.run()
         self.assertEqual(errors(at), [])
-        self.assertEqual(tuple(picker().options), octants)
+        self.assertEqual(names(), octants)
+
+    def test_the_direction_table_and_the_watch_box_say_the_degrees(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        [r for r in at.main.radio if r.key == "gs_groups"][0].set_value("Quadrants (4)")
+        at.run()
+        self.assertEqual(errors(at), [])
+        tables = [d.value for d in at.main.dataframe if "Direction" in d.value.columns]
+        self.assertTrue(any("W (225°–315°)" in list(t["Direction"]) for t in tables))
+        self.assertTrue(any("(" in o for o in [s for s in at.main.selectbox if s.key == "dash_dir_a"][0].options))
+
+    def test_the_page_says_why_the_averaging_opens_where_it_does_and_what_the_rules_are(self):
+        long = page("compare_page").run()
+        open_example(long, "long")
+        self.assertIn("Opens on Linear power", " ".join(c.value for c in long.caption))
+        short = page("compare_page").run()
+        open_example(short, "quick")
+        self.assertIn("Opens on SNR (dB)", " ".join(c.value for c in short.caption))
 
     def test_one_receiver_numbers_follow_the_averaging_choice(self):
         at = page("compare_page").run()
