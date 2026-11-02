@@ -493,6 +493,32 @@ class ComparePage(unittest.TestCase):
         at.run()
         self.assertNotIn("The strength figures count only", text())
 
+    def test_data_used_steps_the_spots_and_the_receivers_down_in_one_place(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        self.assertEqual(len([e for e in at.main.expander if e.label.startswith("Data used")]), 1)
+        spots = [d.value for d in at.main.dataframe if list(d.value.columns) == ["Step", "Spots", "Dropped", "Why"]]
+        recv = [d.value for d in at.main.dataframe if list(d.value.columns)[:1] == ["Step"] and "Used for" in d.value.columns]
+        self.assertEqual((len(spots), len(recv)), (1, 1))
+        self.assertEqual(list(spots[0]["Step"]), ["Loaded", "After your sidebar filters", "In the test", "Used in the comparison"])
+        steps = list(recv[0]["Step"])
+        self.assertEqual(steps[0], "Heard both in the test")
+        self.assertIn("Used for the strength result", steps)
+
+    def test_the_settings_rows_say_whether_the_verdict_uses_them(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        table = lambda: [d.value for d in at.main.dataframe if "Used for" in d.value.columns][0]  # noqa: E731
+        row = table()[table()["Step"].str.startswith("40+ reports")]
+        self.assertEqual(list(row["Used for"]), ["Receiver tab only"])
+        [t for t in at.main.toggle if t.key == "leave_apply"][0].set_value(True)
+        at.run()
+        self.assertEqual(errors(at), [])
+        row = table()[table()["Step"].str.startswith("40+ reports")]
+        self.assertEqual(list(row["Used for"]), ["Verdict and all tabs"])
+        self.assertEqual(list(table()["Step"])[-1], "Used for the strength result")
+
     def test_the_switch_travels_in_a_link(self):
         at = page("compare_page", call="N3HXZ", src="wspr", date="2026-08-26", band="20m", sw="blocks", bl="30", mr="25",
                   uv="1", units="mi").run()

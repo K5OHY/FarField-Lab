@@ -795,14 +795,13 @@ def _card_lead(v):
     return f"{'A' if v > 0 else 'B'} +{abs(v):.1f} dB"
 
 
-def _data_used(all_spots, spots, map_a, map_b, spots_a, spots_b, an, ta_all, tb_all, noun, sep, unpaired, listening_note, ghosts):
-    """What went into a comparison and what was left out, as a short table and a few sentences, for the screen and the PDF."""
+def _data_used(spots, map_a, map_b, spots_a, spots_b, an, noun, sep):
+    """The per-side counts and a few notes on what went into a comparison, for the screen and the PDF. _data_flow adds the
+    step-by-step tables once the Receiver by receiver settings are known."""
     n = lambda x: f"{int(x):,}"  # noqa: E731
-    in_test, compared = len(map_a) + len(map_b), len(spots_a) + len(spots_b)
+    compared = len(spots_a) + len(spots_b)
     heard_a, heard_b = set(map_a["spotter"]), set(map_b["spotter"])
-    both_all = heard_a & heard_b
     shared = an["shared_all"]
-    unlocated = (heard_a | heard_b) - (set(ta_all.index) | set(tb_all.index))
     reports = pd.concat([spots_a.groupby("spotter").size().reindex(shared.index),
                          spots_b.groupby("spotter").size().reindex(shared.index)], axis=1).min(axis=1).fillna(0)
     enough = {t: int((reports >= t).sum()) for t in (5, 20, 40)}
@@ -811,41 +810,94 @@ def _data_used(all_spots, spots, map_a, map_b, spots_a, spots_b, an, ta_all, tb_
             f"{noun.capitalize()}s that heard it": [n(len(heard_a)), n(len(heard_b))]}
     if sep.get("time_based"):
         rows["Transmissions"] = [n(map_a["time"].nunique()), n(map_b["time"].nunique())]
-    lines = [f"{n(len(all_spots))} spots were loaded; {n(len(spots))} remain after your filters; {n(in_test)} are in the test and "
-             f"{n(compared)} were used in the comparison.",
-             f"{len(heard_a)} {noun}s heard A and {len(heard_b)} heard B; {len(both_all)} heard both in the test."
-             + (f" {an['reach']['both']} still counted as hearing both once the {noun}s left out below were removed."
-                if an["reach"]["both"] != len(both_all) else "")
-             + f" {len(shared)} {'of those ' if len(shared) != len(both_all) else ''}have a known position"
-             + (" and heard both in the same pair of transmissions" if an["paired"] and len(shared) != an["reach"]["both"] else "")
-             + " and were compared.",
-             f"With at least 5, 20 and 40 reports on each antenna: {enough[5]}, {enough[20]} and {enough[40]} {noun}s."
+    lines = [f"With at least 5, 20 and 40 reports on each antenna: {enough[5]}, {enough[20]} and {enough[40]} {noun}s."
              + (f" A long test aims for {DALE_MIN_SPOTS} or more, and the published method keeps {DALE_SITE_MIN}."
                 if sep.get("blocks") else "")]
-    left = []
-    if unpaired:
-        left.append(f"{unpaired} transmission{'s' if unpaired != 1 else ''} with no partner on the other antenna")
-    if ghosts:
-        left.append(f"{ghosts} cycle{'s' if ghosts != 1 else ''} heard by only a few receivers")
-    if listening_note and listening_note["kept"] < listening_note["total"]:
-        gone = listening_note["total"] - listening_note["kept"]
-        left.append(f"{gone} {noun}{'s' if gone != 1 else ''} not listening during both sides")
-    if unlocated:
-        left.append(f"{len(unlocated)} {noun}{'s' if len(unlocated) != 1 else ''} with no known position")
-    cut = an.get("leave_out")
-    if cut and cut["kept"] < cut["total"]:
-        left.append(f"{cut['total'] - cut['kept']} {noun}{'s' if cut['total'] - cut['kept'] != 1 else ''} from the strength figures "
-                    "by the Receiver by receiver settings")
-    if len(spots) - in_test > 0:
-        left.append(f"{n(len(spots) - in_test)} spots outside the test")
     total_tx, used_tx = spots["time"].nunique(), pd.concat([map_a["time"], map_b["time"]]).nunique()
     if sep.get("time_based") and not sep.get("blocks") and total_tx >= 20 and used_tx < total_tx / 2:
-        lines.insert(1, f"⚠ This quick test uses {used_tx} of the {total_tx} transmissions in the data. For a long test with "
+        lines.insert(0, f"\u26a0 This quick test uses {used_tx} of the {total_tx} transmissions in the data. For a long test with "
                         "one antenna at a time for 30 minutes or more, choose In long blocks.")
-    lines.append("Left out: " + "; ".join(left) + "." if left else "Nothing was left out.")
     label = (f"Data used: {n(compared)} spots from {len(set(spots_a['spotter']) | set(spots_b['spotter']))} {noun}s, "
              f"{len(shared)} compared")
     return {"label": label, "rows": rows, "lines": lines}
+
+
+def _data_flow(all_spots, spots, map_a, map_b, spots_a, spots_b, an, locs, home, noun, units, unpaired, listening_note,
+               ghosts, cfg):
+    """The data's journey in two short tables, so that every count on the page can be found in one place: the spots, from what
+    was loaded to what the comparison used, and the receivers, from everyone who heard both antennas to the ones the strength
+    result rests on. `cfg` holds the Receiver by receiver settings (floor, near_km, weak_pct, min_reports) and `applied`, whether
+    they also drive the verdict. Returns {"tables": {"spots": rows, "receivers": rows}, "notes": [...]}; the rows are lists of
+    strings, ready to show."""
+    n = lambda x: f"{int(x):,}"  # noqa: E731
+    cut = lambda k: "" if not k else f"-{n(k)}"  # noqa: E731
+    in_test, compared = len(map_a) + len(map_b), len(spots_a) + len(spots_b)
+    gone = (listening_note["total"] - listening_note["kept"]) if listening_note else 0
+
+    outside = len(spots) - in_test
+    used_why = "; ".join(([f"{gone} {noun}{'s' if gone != 1 else ''} not listening during both sides"] if gone else [])
+                         + ([f"{unpaired} unpaired transmission{'s' if unpaired != 1 else ''}"] if unpaired else []))
+    spot_rows = [
+        ["Loaded", n(len(all_spots)), "", "Everything fetched"],
+        ["After your sidebar filters", n(len(spots)), cut(len(all_spots) - len(spots)),
+         "Band and other filters" if len(all_spots) != len(spots) else "Nothing dropped"],
+        ["In the test", n(in_test), cut(outside),
+         ("Outside the test's transmissions" + (f", incl. {ghosts} skipped slot{'s' if ghosts != 1 else ''}" if ghosts else ""))
+         if outside else "Nothing dropped"],
+        ["Used in the comparison", n(compared), cut(in_test - compared), used_why if in_test != compared else "Nothing dropped"],
+    ]
+
+    heard_a, heard_b = set(map_a["spotter"]), set(map_b["spotter"])
+    both_test = len(heard_a & heard_b)
+    after_listen = len(set(spots_a["spotter"]) & set(spots_b["spotter"]))
+    gains = lambda m, **kw: len(station_gains(spots_a, spots_b, locs, home, "snr", m, 0.0, **kw))  # noqa: E731
+    located = gains(1)
+    floor, near_km, weak_pct, min_reports = cfg["floor"], cfg["near_km"], cfg["weak_pct"], cfg["min_reports"]
+    rows = []
+
+    def add(step, count, parent, why, used):
+        rows.append([step, n(count), "" if parent is None else cut(parent - count), why, used])
+
+    add("Heard both in the test", both_test, None, f"{len(heard_a)} heard A, {len(heard_b)} heard B", "")
+    parent = both_test
+    if after_listen != parent:
+        add("Listening during both sides", after_listen, parent,
+            f"{gone} in all were not listening" if gone else "", "Everything")
+        parent = after_listen
+    if located != parent:
+        add("With a known position", located, parent, "No position for the rest", "Everything")
+        parent = located
+
+    near = near_km / (KM_PER_MILE if units == "mi" else 1.0)
+    leave_on = floor is not None or bool(near_km) or bool(weak_pct)
+    after_leave = gains(1, floor=floor, min_km=near_km, weak_pct=weak_pct) if leave_on else located
+    after_min = gains(min_reports, floor=floor, min_km=near_km, weak_pct=weak_pct) if min_reports > 1 else after_leave
+    steps = []
+    if leave_on:
+        steps.append(("After leave-out settings", after_leave, located, "; ".join(
+            ([f"reports at or below {WSPR_FLOOR_DB} dB ignored"] if floor is not None else [])
+            + ([f"closer than {near:g} {units}"] if near_km else [])
+            + ([f"over {weak_pct}% of reports at the floor"] if weak_pct else []))))
+    if min_reports > 1:
+        steps.append((f"{min_reports}+ reports on each antenna", after_min, after_leave, "The slider setting"))
+    final = len(an["shared_all"])
+    final_why = "In the same pair of transmissions" if an["paired"] else "Heard both antennas"
+    tab_used = "Verdict and all tabs" if cfg["applied"] else "Receiver tab only"
+    if cfg["applied"]:
+        for step in steps:
+            add(*step, tab_used)
+        add("Used for the strength result", final, after_min, final_why, "Strength result")
+    else:
+        add("Used for the strength result", final, located, final_why, "Strength result")
+        for step in steps:
+            add(*step, tab_used)
+
+    notes = [f"Spots and {noun}s are counted separately: a {noun} that is left out takes all of its spots with it, so the two "
+             "tables do not add up to each other."]
+    if an["paired"]:
+        notes.append(f"The Receiver by receiver tab counts any {noun} that heard both antennas. The strength result also needs "
+                     f"the {noun} to hear both within the same pair of neighbouring transmissions, so it can use fewer.")
+    return {"tables": {"spots": spot_rows, "receivers": rows}, "notes": notes}
 
 
 def _thin_slots(listening, slots):
@@ -1269,8 +1321,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                  (best_direction(means_a), ""), (best_direction(means_b), ""), None),
             ]
             n_a, n_b = map_a["time"].nunique(), map_b["time"].nunique()
-            used = _data_used(all_spots, spots, map_a, map_b, spots_a, spots_b, an, ta_all, tb_all, noun, sep, unpaired,
-                              listening_note, st.session_state.get("ghost_cycles", 0))
+            used = _data_used(spots, map_a, map_b, spots_a, spots_b, an, noun, sep)
             pdf_ctx = dict(data_used=used,
                 setup=_test_setup(sep, names, kind, callsign, label, file_date, ", ".join(sorted(set(map_a["band"]) | set(map_b["band"]))),
                                   pa, pb, an["power"]["offset"]), 
@@ -1287,10 +1338,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
             st.download_button(":material/download: Download report (PDF)", data=lambda: compare_report_pdf(pdf_ctx),
                                file_name=f"FarFieldLab_compare_{callsign}_{file_date}.pdf", mime="application/pdf",
                                help="The verdict, scoreboard and every chart and table, as a PDF you can keep or share.")
-            with st.expander(used["label"]):
-                st.dataframe(pd.DataFrame(used["rows"], index=[names["A"], names["B"]]).T, width="stretch")
-                for line in used["lines"]:
-                    st.markdown(f"- {line}")
+            used_slot = st.container()  # filled below, once the Receiver by receiver settings are known
             st.markdown(scoreboard_html(names["A"], names["B"], score_rows), unsafe_allow_html=True)
 
             st.markdown(f"##### Who heard you on each {'side' if sep.get('time_based') else 'frequency'}?")
@@ -1382,6 +1430,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                    "change this tab. On, the verdict, the scoreboard's strength figures, the direction and distance "
                                    "tabs and the PDF use only the receivers these settings keep (the minimum reports, and anything "
                                    "left out below). How many receivers heard each side is not changed.")
+            flow_min = 1
             auto_min = _auto_min_reports(full_a, full_b, locs, home, bool(sep.get("blocks")), an["power"]["offset"], avg_floor,
                                          avg_min_km, weak_pct)
             if s_["n"]:
@@ -1412,6 +1461,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                          "biggest and smallest gain: when they stop moving, the result has converged. Keep at least 5 to 10 "
                          "receivers, because with fewer a handful of stations decide the answer. About 5 or more reports on each "
                          "antenna is typical, but how many it takes depends on the test."))
+                flow_min = min_reports
                 method_key = "linear" if method_label == "Linear power" else "snr"
                 plain = method_label == "SNR (dB)" and min_reports == 1 and avg_floor is None and not avg_min_km and not weak_pct
                 if avg_note:
@@ -1427,6 +1477,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 everyone = (station_gains(full_a, full_b, locs, home, method_key, 1, an["power"]["offset"], avg_floor, avg_min_km,
                                           weak_pct) if min_reports > 1 else every)
                 ctrl_min.caption(_min_reports_caption(noun, min_reports, auto_min, blocks_mode, len(every), len(everyone)))
+                ctrl_min.caption("Where these counts come from: **Data used**, on the Result tab.")
                 if st.session_state.get(_APPLY_KEY):
                     if min_reports != applied_min:  # the verdict above used an older setting (first visit from a link): redo it
                         st.rerun()
@@ -1600,6 +1651,23 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                        "whole test hides it. A band opening, for example Europe late in the day, shows up here.")
             else:
                 st.info(f"No {noun} heard both sides, so there is nothing to compare receiver by receiver.")
+
+        flow = _data_flow(all_spots, spots, map_a, map_b, spots_a, spots_b, an, locs, home, noun, units, unpaired, listening_note,
+                          st.session_state.get("ghost_cycles", 0),
+                          dict(floor=avg_floor, near_km=avg_min_km, weak_pct=weak_pct, min_reports=flow_min, applied=bool(leave_out)))
+        used["flow"], used["lines"] = flow["tables"], used["lines"] + flow["notes"]  # the PDF reads the same dict
+        with used_slot:
+            with st.expander(used["label"]):
+                st.markdown("**Spots** (single reports)")
+                st.dataframe(pd.DataFrame(used["flow"]["spots"], columns=["Step", "Spots", "Dropped", "Why"]),
+                             width="stretch", hide_index=True)
+                st.markdown(f"**{noun.capitalize()}s** (each counted once)")
+                st.dataframe(pd.DataFrame(used["flow"]["receivers"], columns=["Step", f"{noun.capitalize()}s", "Dropped", "Why",
+                                                                              "Used for"]), width="stretch", hide_index=True)
+                st.markdown("**By side**")
+                st.dataframe(pd.DataFrame(used["rows"], index=[names["A"], names["B"]]).T, width="stretch")
+                for line in used["lines"]:
+                    st.markdown(f"- {line}")
 
         with tab_method:
             st.caption("The same comparison worked out a second way, as a cross-check.")

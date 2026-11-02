@@ -56,9 +56,16 @@ def compare_report_pdf(ctx):
                [COLOR_A, "#6b7280", COLOR_B]),
               ("note", f"Each {noun} is counted once, however many times it spotted you."),
               ("paragraph", ctx["counts_note"]),
-              ("heading", "Data used"),
-              ("table", [""] + [names["A"], names["B"]], [[k] + v for k, v in ctx["data_used"]["rows"].items()], [0.5, 0.25, 0.25]),
-              ("bullets", ctx["data_used"]["lines"])]
+              ("heading", "Data used")]
+    flow = ctx["data_used"].get("flow")
+    if flow:
+        blocks += [("note", "Spots (single reports), from what was loaded to what the comparison used"),
+                   ("table", ["Step", "Spots", "Dropped", "Why"], flow["spots"], [0.28, 0.11, 0.11, 0.5]),
+                   ("note", f"{noun.capitalize()}s (each counted once), from everyone who heard both antennas to the strength result"),
+                   ("table", ["Step", noun.capitalize() + "s", "Dropped", "Why", "Used for"], flow["receivers"],
+                    [0.31, 0.09, 0.08, 0.31, 0.21])]
+    blocks += [("table", [""] + [names["A"], names["B"]], [[k] + v for k, v in ctx["data_used"]["rows"].items()], [0.5, 0.25, 0.25]),
+               ("bullets", ctx["data_used"]["lines"])]
     cols = ["", "A", "B", "Both", "Stronger by", "Better"]
     widths = [0.26, 0.09, 0.09, 0.09, 0.2, 0.27]
     if ctx["means_a"].notna().any() or ctx["means_b"].notna().any():
