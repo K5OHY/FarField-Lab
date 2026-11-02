@@ -474,6 +474,31 @@ class ComparePage(unittest.TestCase):
         self.assertFalse(box[0].proto.expanded)
         self.assertTrue(any(c.value.startswith("This changes the dashboard") for c in at.main.caption))
 
+    def test_the_switch_sends_the_receiver_settings_to_the_verdict(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        switch = [t for t in at.main.toggle if t.key == "leave_apply"]
+        self.assertEqual(len(switch), 1)
+        self.assertFalse(switch[0].value)
+        text = lambda: " ".join(m.value for m in at.markdown)  # noqa: E731
+        self.assertNotIn("The strength figures count only", text())
+        switch[0].set_value(True)
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertIn("The strength figures count only", text())
+        self.assertIn("at least 40 reports on each antenna", text())
+        self.assertTrue(any(c.value.startswith("On: the verdict and the other tabs use only") for c in at.main.caption))
+        [t for t in at.main.toggle if t.key == "leave_apply"][0].set_value(False)
+        at.run()
+        self.assertNotIn("The strength figures count only", text())
+
+    def test_the_switch_travels_in_a_link(self):
+        at = page("compare_page", call="N3HXZ", src="wspr", date="2026-08-26", band="20m", sw="blocks", bl="30", mr="25",
+                  uv="1", units="mi").run()
+        self.assertEqual(errors(at), [])
+        self.assertTrue(at.session_state["leave_apply"])
+
     def test_the_leave_out_box_says_when_it_is_in_use(self):
         at = page("compare_page").run()
         open_example(at, "long")

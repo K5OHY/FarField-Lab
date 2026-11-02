@@ -153,6 +153,18 @@ def station_gains(spots_a, spots_b, locs, home, method="snr", min_spots=1, offse
     return t
 
 
+def apply_leave_out(spots_a, spots_b, locs, home, min_spots=1, floor=None, min_km=0.0, weak_pct=0):
+    """spots_a and spots_b cut down to what the Receiver by receiver tab keeps: only receivers with at least `min_spots` reports
+    on each side, none closer than `min_km`, none that `weak_pct` drops, and no reports at or below `floor`. Returns
+    (spots_a, spots_b, how many receivers are kept)."""
+    kept = station_gains(spots_a, spots_b, locs, home, "snr", min_spots, 0.0, floor, min_km, weak_pct).index
+
+    def cut(spots):
+        spots = spots[spots["spotter"].isin(kept)]
+        return spots if floor is None else spots[spots["snr"] > floor]
+    return cut(spots_a), cut(spots_b), len(kept)
+
+
 ENOUGH_RECEIVERS = 10   # a default report minimum should leave at least this many receivers on the table
 
 
@@ -535,10 +547,12 @@ def _farthest(table):
     return {"km": float(table.loc[row, "km"]), "who": row, "p90": float(table["km"].quantile(0.9))}
 
 
-def analyze(spots_a, spots_b, locs, home, power_a=None, power_b=None, normalize=True, units="mi", exposure=None):
+def analyze(spots_a, spots_b, locs, home, power_a=None, power_b=None, normalize=True, units="mi", exposure=None, leave_out=None):
     """Compare two groups of spots. `power_a` / `power_b` are dBm (None = unknown); when both are known and
     `normalize` is true, B's SNR is shifted to A's power before comparing. `exposure` = (minutes_a, minutes_b) of
-    time on the air when the sides were separated in time; an unbalanced pair is thinned to equal exposure first."""
+    time on the air when the sides were separated in time; an unbalanced pair is thinned to equal exposure first.
+    `leave_out` (the keyword arguments of apply_leave_out) narrows the strength figures, and the direction and distance
+    comparisons that rest on them, to the receivers it keeps; how many receivers heard each side is not changed."""
     n_all_a, n_all_b = len(spots_a), len(spots_b)
     spots_a, spots_b, equalized = equalize_exposure(spots_a, spots_b, exposure)
     ta, tb = receiver_table(spots_a, locs, home), receiver_table(spots_b, locs, home)
@@ -546,10 +560,20 @@ def analyze(spots_a, spots_b, locs, home, power_a=None, power_b=None, normalize=
     tb = tb.assign(snr=tb["snr"] + offset)
     paired = "round" in spots_a.columns and "round" in spots_b.columns
     round_means = None
+    cut_a, cut_b, cut_info = spots_a, spots_b, None
+    ta_s, tb_s = ta, tb
+    if leave_out:
+        cut_a, cut_b, kept = apply_leave_out(spots_a, spots_b, locs, home, **leave_out)
+        cut_info = {"kept": kept, "total": len(station_gains(spots_a, spots_b, locs, home))}
+        if kept:
+            ta_s, tb_s = receiver_table(cut_a, locs, home), receiver_table(cut_b, locs, home)
+            tb_s = tb_s.assign(snr=tb_s["snr"] + offset)
+        else:  # nothing is left to compare, so the caller falls back to everything
+            cut_a, cut_b = spots_a, spots_b
     if paired:
-        shared, round_means = paired_shared(spots_a, spots_b, locs, home, offset)
+        shared, round_means = paired_shared(cut_a, cut_b, locs, home, offset)
     else:
-        shared = ta.join(tb, how="inner", lsuffix="_a", rsuffix="_b")
+        shared = ta_s.join(tb_s, how="inner", lsuffix="_a", rsuffix="_b")
         shared["delta"] = shared["snr_a"] - shared["snr_b"]
 
     shared_all = shared  # every skimmer that heard both; each one is its own station and counts on its own
@@ -642,7 +666,7 @@ def analyze(spots_a, spots_b, locs, home, power_a=None, power_b=None, normalize=
         "power": {"a": power_a, "b": power_b, "offset": offset,
                   "applied": bool(offset), "mismatch": power_a is not None and power_b is not None
                   and abs(power_a - power_b) >= 0.5, "normalize": normalize},
-        "units": units, "paired": paired,
+        "units": units, "paired": paired, "leave_out": cut_info,
     }
 
 

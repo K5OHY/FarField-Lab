@@ -832,6 +832,10 @@ def _data_used(all_spots, spots, map_a, map_b, spots_a, spots_b, an, ta_all, tb_
         left.append(f"{gone} {noun}{'s' if gone != 1 else ''} not listening during both sides")
     if unlocated:
         left.append(f"{len(unlocated)} {noun}{'s' if len(unlocated) != 1 else ''} with no known position")
+    cut = an.get("leave_out")
+    if cut and cut["kept"] < cut["total"]:
+        left.append(f"{cut['total'] - cut['kept']} {noun}{'s' if cut['total'] - cut['kept'] != 1 else ''} from the strength figures "
+                    "by the Receiver by receiver settings")
     if len(spots) - in_test > 0:
         left.append(f"{n(len(spots) - in_test)} spots outside the test")
     total_tx, used_tx = spots["time"].nunique(), pd.concat([map_a["time"], map_b["time"]]).nunique()
@@ -947,6 +951,27 @@ def _setup_line(sep, names, kind):
     return (f"Assumed setup: {who}{how}. If that is not what you did, open \"How this test was set up\" just below to change it.")
 
 
+_APPLY_KEY = "leave_apply"  # the switch on the Receiver by receiver tab that sends its settings to the verdict as well
+
+
+def _leave_out_note(floor_on, near, weak_pct, units):
+    """What the leave-out settings drop, in plain words, empty when nothing is dropped."""
+    return ", ".join(([f"reports at or below {WSPR_FLOOR_DB} dB left out"] if floor_on else [])
+                     + ([f"receivers closer than {near:g} {units} left out"] if near else [])
+                     + ([f"stations with more than {weak_pct}% of their reports at the floor left out"] if weak_pct else []))
+
+
+def _leave_out_choices(kind, units):
+    """The leave-out settings as the Receiver by receiver tab last held them (from the session, so they can be read before
+    that tab is drawn): (floor in dB or None, nearest distance to keep in km, share of floor reports that drops a station,
+    plain-words note). All off until the tab has been drawn once."""
+    ss = st.session_state
+    floor_on = kind == "WSPR" and bool(ss.get("avg_floor"))
+    near, weak_pct = float(ss.get(f"avg_near_{units}") or 0), int(ss.get("avg_weak") or 0)
+    return ((WSPR_FLOOR_DB if floor_on else None), near * (KM_PER_MILE if units == "mi" else 1.0), weak_pct,
+            _leave_out_note(floor_on, near, weak_pct, units))
+
+
 def _leave_out_box(kind, units):
     """The controls that leave reports or receivers out of the averages on the Receiver by receiver and Linear average tabs.
     Returns (floor in dB or None, the nearest distance to keep in km, the share of floor reports that drops a station, and a
@@ -969,10 +994,11 @@ def _leave_out_box(kind, units):
                                             "station when more than this share of its reports (both antennas together) are at "
                                             "the floor. Leave at 0 to keep every station."))
         st.caption("This changes the dashboard and the charts and tables on this tab, and the linear average on the Linear "
-                   "average tab. The verdict, the SNR average and the other tabs are not changed.")
-    note = ", ".join(([f"reports at or below {WSPR_FLOOR_DB} dB left out"] if floor_on else [])
-                     + ([f"receivers closer than {near:g} {units} left out"] if near else [])
-                     + ([f"stations with more than {weak_pct}% of their reports at the floor left out"] if weak_pct else []))
+                   "average tab. " + ("The verdict and the other tabs use it too, because the switch above is on."
+                                      if ss.get(_APPLY_KEY) else
+                                      "The verdict, the SNR average and the other tabs are not changed unless you switch on "
+                                      "\"Use these settings for the verdict and the other tabs too\" above."))
+    note = _leave_out_note(floor_on, near, weak_pct, units)
     return (WSPR_FLOOR_DB if floor_on else None), near * (KM_PER_MILE if units == "mi" else 1.0), weak_pct, note
 
 
@@ -1148,7 +1174,17 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 pa, pb = db_from_watts(watts_a), db_from_watts(watts_b)
                 normalize = True
 
-        an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"))
+        full_a, full_b = spots_a, spots_b  # the Receiver by receiver tab always starts from these
+        leave_out, leave_text, applied_min, leave_fallback = None, "", None, False
+        if st.session_state.get(_APPLY_KEY):  # the tab's settings narrow the verdict's strength figures too
+            floor_, near_km, weak_, leave_text = _leave_out_choices(kind, units)
+            applied_min = int(st.session_state.get("rx_min_reports_" + ("blk" if sep.get("blocks") else "pair")) or 1)
+            if applied_min > 1 or floor_ is not None or near_km or weak_:
+                leave_out = dict(min_spots=applied_min, floor=floor_, min_km=near_km, weak_pct=weak_)
+        an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"), leave_out=leave_out)
+        if leave_out and (not an["leave_out"]["kept"] or not an["strength"]["n"]):  # nothing left to compare: use everything
+            an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"))
+            leave_out, leave_fallback = None, True
         # Describe what was heard the way the maps do, from every receiver that heard each side. The fairness checks (listening
         # during both sides, real A/B pairs) decide who counts for the reach and strength verdict, but they would otherwise
         # hide a receiver from the "farthest" figure that the map plainly shows.
@@ -1189,6 +1225,14 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 f"Only receivers that were listening during both sides' transmissions are counted ({listening_note['kept']} "
                 f"of {listening_note['total']}). Many WSPR receivers hop between bands and only listen in some time slots, "
                 "which would otherwise look like one side reaching more.")
+
+        if leave_out and an["leave_out"]["kept"] < an["leave_out"]["total"]:
+            cut = an["leave_out"]
+            verdict["caveats"].append(
+                f"The strength figures count only {cut['kept']} of the {cut['total']} {noun}s that heard both, as set on the "
+                f"Receiver by receiver tab: " + "; ".join(
+                    ([f"at least {applied_min} reports on each antenna"] if applied_min > 1 else []) + ([leave_text] if leave_text else []))
+                + f". How many {noun}s heard each side is not changed.")
 
         r, s_, dx = an["reach"], an["strength"], an["dx"]
         k = KM_PER_MILE if units == "mi" else 1
@@ -1329,10 +1373,16 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         with tab_each:
             st.caption(f"Every {noun} that heard both antennas, side by side. Use the slider to leave out {noun}s with only a few "
                        "reports.")
-            controls, dash_slot, leave_slot = st.container(), st.container(), st.container()  # in the order they are read
+            controls, apply_slot, dash_slot, leave_slot = (st.container(), st.container(), st.container(),
+                                                           st.container())  # in the order they are read
             with leave_slot:  # drawn first: what it leaves out decides everything the dashboard and the slider show
                 avg_floor, avg_min_km, weak_pct, avg_note = _leave_out_box(kind, units)
-            auto_min = _auto_min_reports(spots_a, spots_b, locs, home, bool(sep.get("blocks")), an["power"]["offset"], avg_floor,
+            apply_slot.toggle("Use these settings for the verdict and the other tabs too", key=_APPLY_KEY,
+                              help="Off, the verdict counts every receiver that heard both antennas, and the settings here only "
+                                   "change this tab. On, the verdict, the scoreboard's strength figures, the direction and distance "
+                                   "tabs and the PDF use only the receivers these settings keep (the minimum reports, and anything "
+                                   "left out below). How many receivers heard each side is not changed.")
+            auto_min = _auto_min_reports(full_a, full_b, locs, home, bool(sep.get("blocks")), an["power"]["offset"], avg_floor,
                                          avg_min_km, weak_pct)
             if s_["n"]:
                 blocks_mode = bool(sep.get("blocks"))
@@ -1366,19 +1416,30 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 plain = method_label == "SNR (dB)" and min_reports == 1 and avg_floor is None and not avg_min_km and not weak_pct
                 if avg_note:
                     st.caption("Averages here have " + avg_note + ".")
-                fa = spots_a if avg_floor is None else spots_a[spots_a["snr"] > avg_floor]
-                fb = spots_b if avg_floor is None else spots_b[spots_b["snr"] > avg_floor]
+                fa = full_a if avg_floor is None else full_a[full_a["snr"] > avg_floor]
+                fb = full_b if avg_floor is None else full_b[full_b["snr"] > avg_floor]
                 if plain:
                     every, scatter_src = an["shared_all"], an["shared"]
                 else:
-                    every = station_gains(spots_a, spots_b, locs, home, method_key,
+                    every = station_gains(full_a, full_b, locs, home, method_key,
                                           min_reports, an["power"]["offset"], avg_floor, avg_min_km, weak_pct)
                     scatter_src = every
-                everyone = (station_gains(spots_a, spots_b, locs, home, method_key, 1, an["power"]["offset"], avg_floor, avg_min_km,
+                everyone = (station_gains(full_a, full_b, locs, home, method_key, 1, an["power"]["offset"], avg_floor, avg_min_km,
                                           weak_pct) if min_reports > 1 else every)
                 ctrl_min.caption(_min_reports_caption(noun, min_reports, auto_min, blocks_mode, len(every), len(everyone)))
+                if st.session_state.get(_APPLY_KEY):
+                    if min_reports != applied_min:  # the verdict above used an older setting (first visit from a link): redo it
+                        st.rerun()
+                    if leave_fallback:
+                        apply_slot.warning(f"These settings leave no {noun} that heard both, so the verdict still uses every one.")
+                    elif leave_out:
+                        apply_slot.caption(f"On: the verdict and the other tabs use only the {an['leave_out']['kept']} of "
+                                           f"{an['leave_out']['total']} {noun}s these settings keep. How many {noun}s heard each "
+                                           "side is not changed.")
+                    else:
+                        apply_slot.caption("On, but these settings leave out nothing, so the verdict is unchanged.")
                 opening = every if min_reports == auto_min else station_gains(  # where the slider opens
-                    spots_a, spots_b, locs, home, method_key, auto_min, an["power"]["offset"], avg_floor, avg_min_km, weak_pct)
+                    full_a, full_b, locs, home, method_key, auto_min, an["power"]["offset"], avg_floor, avg_min_km, weak_pct)
                 if every.empty:
                     st.info(f"No {noun} has {min_reports} or more reports on both antennas. Lower the number above.")
                 else:
@@ -1517,7 +1578,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                         while cursor < t_end:
                             windows.append((cursor, min(cursor + step, t_end)))
                             cursor += step
-                        over_time = gain_by_window(spots_a, spots_b, locs, home, windows,
+                        over_time = gain_by_window(full_a, full_b, locs, home, windows,
                                                    "linear" if method_label == "Linear power" else "snr", win_min, offset,
                                                    receiver=pick, floor=avg_floor, min_km=avg_min_km, weak_pct=weak_pct)
                         if over_time["n"].sum() == 0:

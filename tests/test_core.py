@@ -84,6 +84,46 @@ class RelativeGain(unittest.TestCase):
         self.assertEqual(pm["n"], 2)
 
 
+class LeaveOutForTheVerdict(unittest.TestCase):
+    """The Receiver by receiver settings can narrow the strength figures, but never the count of who heard each side."""
+
+    def setUp(self):
+        calls = [f"R{n}" for n in range(12)]
+        self.locs = places(*calls, "EDGE", "ONLYA")
+        self.a = spots({**{c: [-10, -11, -12] for c in calls}, "EDGE": [-29], "ONLYA": [-15, -15]})
+        self.b = spots({**{c: [-14, -15, -16] for c in calls}, "EDGE": [-29]})
+
+    def test_only_the_kept_receivers_count_for_strength(self):
+        every = cs.analyze(self.a, self.b, self.locs, HOME)
+        cut = cs.analyze(self.a, self.b, self.locs, HOME, leave_out=dict(min_spots=2))
+        self.assertEqual((every["strength"]["n"], cut["strength"]["n"]), (13, 12))
+        self.assertEqual(cut["leave_out"], {"kept": 12, "total": 13})
+        self.assertIsNone(every["leave_out"])
+
+    def test_who_heard_each_side_is_not_changed(self):
+        every = cs.analyze(self.a, self.b, self.locs, HOME)
+        cut = cs.analyze(self.a, self.b, self.locs, HOME, leave_out=dict(min_spots=2))
+        for key in ("a", "b", "only_a", "only_b", "both"):
+            self.assertEqual(cut["reach"][key], every["reach"][key])
+
+    def test_the_floor_drops_reports_before_the_averages(self):
+        cut = cs.analyze(self.a, self.b, self.locs, HOME, leave_out=dict(floor=cs.WSPR_FLOOR_DB))
+        self.assertNotIn("EDGE", cut["shared"].index)  # its only report was at the floor
+
+    def test_nothing_kept_leaves_the_comparison_as_it_was(self):
+        every = cs.analyze(self.a, self.b, self.locs, HOME)
+        cut = cs.analyze(self.a, self.b, self.locs, HOME, leave_out=dict(min_spots=99))
+        self.assertEqual(cut["leave_out"]["kept"], 0)
+        self.assertEqual(cut["strength"]["n"], every["strength"]["n"])
+
+    def test_alternating_rounds_are_cut_the_same_way(self):
+        rounds = lambda s: s.assign(round=[float(n % 3) for n in range(len(s))])  # noqa: E731
+        a, b = rounds(self.a), rounds(self.b)
+        cut = cs.analyze(a, b, self.locs, HOME, leave_out=dict(min_spots=2))
+        self.assertTrue(cut["paired"])
+        self.assertNotIn("EDGE", cut["shared"].index)
+
+
 class DefaultMinimumReports(unittest.TestCase):
     """The 'at least this many reports on each antenna' slider opens as strict as it can while leaving enough receivers."""
 

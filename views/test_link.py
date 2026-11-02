@@ -57,6 +57,8 @@ def read(ss, q):
         ss["rx_min_reports_blk" if blocks else "rx_min_reports_pair"] = reports
     if q.get("fl") == "1":
         ss["avg_floor"] = True
+    if q.get("uv") == "1":
+        ss["leave_apply"] = True
     near = _int(q.get("nr"), 1, 5000)
     if near:
         ss[f"avg_near_{ss.get('units_in', 'mi')}"] = near
@@ -136,6 +138,8 @@ def params(ss, units):
         out["mr"] = str(reports)
     if ss.get("avg_floor"):
         out["fl"] = "1"
+    if ss.get("leave_apply"):
+        out["uv"] = "1"
     if ss.get(f"avg_near_{units}"):
         out["nr"] = str(int(ss[f"avg_near_{units}"]))
     if ss.get("avg_weak"):

@@ -144,7 +144,7 @@ def start_example(which):
         ss["_autoload"] = True
 
 
-_SETUP_KEYS = ("cmp_name_a", "cmp_name_b", "test_mode", "test_cycles", "test_start", "test_order", "avg_floor", "avg_weak",
+_SETUP_KEYS = ("cmp_name_a", "cmp_name_b", "test_mode", "test_cycles", "test_start", "test_order", "avg_floor", "avg_weak", "leave_apply",
                "setup_ok", "callsign_b_in", "_setup_given", "_blk_pending", "_log_pending", "_log_base", "_example", "_autoload")
 _SETUP_PREFIXES = ("blk_", "antenna_log_", "avg_near_", "rx_min_reports_", "dash_dir_")
 
