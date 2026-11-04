@@ -800,6 +800,15 @@ class HelpPage(unittest.TestCase):
         self.assertNotIn("](docs/METHODOLOGY.md)", text)
         self.assertNotIn("farfield-banner", text)  # the banner is for GitHub, not the Help page
 
+    def test_the_help_page_shows_the_picture_and_the_test_length_guidance(self):
+        at = page("help_page").run()
+        self.assertEqual(errors(at), [])
+        text = "\n".join(m.value for m in at.markdown)
+        for heading in ("What happens to each receiver", "How long should my test be, and what does the slider do?"):
+            self.assertIn(heading, text)
+        self.assertEqual(len(at.get("image")), 2)  # the brand strip, and the README's picture of one pair of transmissions
+        self.assertTrue(os.path.exists(os.path.join(HERE, "images", "two-transmissions.png")))
+
 
 class WholeApp(unittest.TestCase):
     def test_the_menu_has_the_four_pages(self):

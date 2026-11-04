@@ -835,7 +835,7 @@ def _data_flow(all_spots, spots, map_a, map_b, spots_a, spots_b, an, locs, home,
     gone = (listening_note["total"] - listening_note["kept"]) if listening_note else 0
 
     outside = len(spots) - in_test
-    used_why = "; ".join(([f"{gone} {noun}{'s' if gone != 1 else ''} not listening during both sides"] if gone else [])
+    used_why = "; ".join(([f"{gone} {noun}{'s' if gone != 1 else ''} not on the band during both sides"] if gone else [])
                          + ([f"{unpaired} unpaired transmission{'s' if unpaired != 1 else ''}"] if unpaired else []))
     spot_rows = [
         ["Loaded", n(len(all_spots)), "", "Everything fetched"],
@@ -861,8 +861,8 @@ def _data_flow(all_spots, spots, map_a, map_b, spots_a, spots_b, an, locs, home,
     add("Heard both in the test", both_test, None, f"{len(heard_a)} heard A, {len(heard_b)} heard B", "")
     parent = both_test
     if after_listen != parent:
-        add("Listening during both sides", after_listen, parent,
-            f"{gone} in all were not listening" if gone else "", "Everything")
+        add("On the band during both sides", after_listen, parent,
+            f"{gone} in all were not on the band" if gone else "", "Everything")
         parent = after_listen
     if located != parent:
         add("With a known position", located, parent, "No position for the rest", "Everything")
@@ -1173,13 +1173,13 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
             if len(bands) == 1:
                 times = pd.concat([spots_a["time"], spots_b["time"]])
                 try:
-                    with st.spinner("Checking which receivers were listening\u2026"):
+                    with st.spinner("Checking which receivers were on the band\u2026"):
                         listening, truncated = load_listening(next(iter(bands)), times.min().to_pydatetime(),
                                                               (times.max() + pd.Timedelta(minutes=2)).to_pydatetime())
                     if truncated:
-                        # a cut-off list would leave out receivers that really were listening, so it is not used to drop anyone
-                        notes.warning("wspr.live's list of which receivers were listening was cut off at its row limit, so I "
-                                      "could not check who was listening during both sides' transmissions. Every receiver that "
+                        # a cut-off list would leave out receivers that really were on the band, so it is not used to drop anyone
+                        notes.warning("wspr.live's list of which receivers were on the band was cut off at its row limit, so I "
+                                      "could not check who was on the band during both sides' transmissions. Every receiver that "
                                       "heard you is counted, so a receiver that hops between bands can make one side look as if "
                                       "it reached more. A shorter test, on one band and one day, avoids this.")
                         eligible = set(spots_a["spotter"]) | set(spots_b["spotter"])
@@ -1197,10 +1197,10 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     spots_a = spots_a[spots_a["spotter"].isin(eligible)]
                     spots_b = spots_b[spots_b["spotter"].isin(eligible)]
                 except WsprError as exc:
-                    notes.warning(f"Couldn't check which receivers were listening ({exc}). Receivers that only listen in some "
+                    notes.warning(f"Couldn't check which receivers were on the band ({exc}). Receivers that are on the band only in some "
                                "time slots may make one side look like it reached more.")
                 if spots_a.empty or spots_b.empty:
-                    notes.warning("No receiver was listening during both sides' transmissions, so there is nothing fair to "
+                    notes.warning("No receiver was on the band during both sides' transmissions, so there is nothing fair to "
                                "compare. Try a longer test.")
                     return
         names = {"A": name_a or sep["default"]["A"], "B": name_b or sep["default"]["B"]}
@@ -1274,8 +1274,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 " of each other, so they saw the same band conditions and the time of day is not a concern here.")
         if listening_note and listening_note["kept"] < listening_note["total"]:
             verdict["caveats"].append(
-                f"Only receivers that were listening during both sides' transmissions are counted ({listening_note['kept']} "
-                f"of {listening_note['total']}). Many WSPR receivers hop between bands and only listen in some time slots, "
+                f"Only receivers that were on the band during both sides' transmissions are counted ({listening_note['kept']} "
+                f"of {listening_note['total']}): they decoded other stations in your transmission slots. Many WSPR receivers hop between bands and are on this band only in some time slots, "
                 "which would otherwise look like one side reaching more.")
 
         if leave_out and an["leave_out"]["kept"] < an["leave_out"]["total"]:
@@ -1311,7 +1311,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
             far = lambda d: (f"{d['km'] / k:,.0f} {units}", d["who"]) if d else ("—", "")  # noqa: E731
             typical = lambda t: (f"{t['km'].median() / k:,.0f} {units}", "") if len(t) else ("—", "")  # noqa: E731
             score_rows = [
-                (f"Unique {noun}s that heard you", ("equal time on the air, " if an["equalized"] else "") + ("listening during both, " if listening_note else "") + "each one counted once · more is better",
+                (f"Unique {noun}s that heard you", ("equal time on the air, " if an["equalized"] else "") + ("on the band during both, " if listening_note else "") + "each one counted once · more is better",
                  (r["a"], f"from {r['spots_a']:,} spots"), (r["b"], f"from {r['spots_b']:,} spots"),
                  r["call"] if r["call"] in ("A", "B") else None),
                 ("Average SNR", snr_note, (avg_a, ""), (avg_b, ""), s_["call"] if s_["call"] in ("A", "B") else None),

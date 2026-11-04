@@ -34,6 +34,14 @@ class Structure(unittest.TestCase):
         with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
             self.assertIn("# FarField Lab", f.read())
 
+    def test_receivers_are_described_as_on_the_band_not_listening(self):
+        """One word for the idea, everywhere a visitor reads it: a receiver that decoded something in your slots was 'on the band'."""
+        for name in ("views/compare_view.py", "README.md", "docs/METHODOLOGY.md"):
+            with open(os.path.join(HERE, *name.split("/")), encoding="utf-8") as f:
+                text = f.read()
+            for phrase in ("were listening", "not listening", "Listening during", "listening during", "Who was listening"):
+                self.assertNotIn(phrase, text, f"{name} still says {phrase!r}")
+
     def test_the_entry_point_stays_small(self):
         with open(os.path.join(HERE, "web.py"), encoding="utf-8") as f:
             self.assertLess(len(f.read().splitlines()), 60)

@@ -106,6 +106,27 @@ Call CQ with the first antenna on one frequency, then with the other antenna on 
 
 Send plenty of CQs on each side, at the same power and speed (or enter the power under **Power**).
 
+### What happens to each receiver
+
+![What happens to the receivers in one pair of transmissions](images/two-transmissions.png)
+
+The picture follows five receivers through one A transmission and the B transmission after it. A receiver that **heard both** antennas, enough times, is **used for strength**: the difference between its two reports is what the result is built from. A receiver that heard only one side counts for **reach** (which antenna was heard by more receivers) but not for strength. A receiver that was not **on the band** (it decoded nothing on this band in your slots) is not counted at all, because a miss from a receiver that was tuned elsewhere says nothing about your antennas. And a receiver that heard both only once is dropped by the **slider** (below), because one report is too thin to trust. A real test repeats this for every pair of transmissions.
+
+### How long should my test be, and what does the slider do?
+
+**The slider.** On the **Receiver by receiver** tab, *Only receivers with at least this many reports on each antenna* sets how many times a receiver must have heard each antenna to count. A receiver that heard you once can be swayed by one lucky report; one that heard you ten times gives a steadier answer. Raising the slider keeps fewer receivers but more trustworthy ones. It also helps with the weak-signal limit: reports near WSPR's decoding floor are never decoded for the weaker antenna, so receivers at the edge make the two antennas look closer together than they are. The switch *Use these settings for the verdict and the other tabs too* sends the same setting to the verdict and the other tabs.
+
+**Has it settled?** Raise the slider one step at a time and watch the average, biggest and smallest gain at the top of the tab. When they stop moving, the result has settled (it has *converged*) and you can trust it more. If they keep moving, the test is too short or too few receivers heard it. Keep at least 5 to 10 receivers: with fewer, a handful of stations decide the answer, and it can look settled only because almost nothing is left. The **Data used** box on the Result tab shows how many receivers each setting leaves.
+
+**How many transmissions?** Dale, N3HXZ, ran the same pair of antennas as 16, 12 and 8 transmissions. In his tests:
+
+- Shortening the test changed the average gain much more than the slider did: the shorter the run, the lower and less steady the gain.
+- For a small difference of 2 to 3 dB, plan on 16 transmissions or more. Dale has never got a relative gain more accurate than about 1 dB either way, so a difference that small is hard to pin down.
+- Keep the slider at or below about half of each antenna's transmissions. With 4 transmissions per antenna, a slider of 4 asks for a receiver that heard every one of them, and none did.
+- If the average keeps climbing as you raise the slider and the receivers drop away, it has not settled. More transmissions help more than a higher slider.
+
+**Every transmission, or long blocks?** Switching after every transmission shows one stretch of time; long blocks average over changes in the band, so the two can give different numbers on the same station. In another of Dale's tests, shortening the blocks moved the block result toward the every-transmission one. When the band is changing, which one you run, and when, can matter as much as the antennas.
+
 ### Reading the result
 
 - **The PDF report.** Under the verdict button, *Download report (PDF)* starts with a **Test setup** section: the transmitter, date and band, how the antennas were switched, the power, and the block table or the list of transmissions, so someone else can repeat the analysis from the report alone. The averaging settings and filters are stated beside the receiver results. The tables can also be downloaded as CSV.
@@ -123,7 +144,7 @@ This section is the short version. The [technical methodology](docs/METHODOLOGY.
 
 The idea is simple: ask the same receivers about both antennas, so everything that stays the same for both antennas drops out. A receiver in Germany has its own noise level and its own path to you, and those stable effects are the same for A and B. Conditions that change over time are not the same, which is why the antennas are alternated and why a result is worth repeating on another day. Subtract the receiver's report for A from its report for B and what is left is the difference between the antennas at that receiver. That is the **relative gain** (B minus A, in dB, so A is the reference and B the test; the program works with A minus B internally and shows who is ahead and by how much). Do it for every receiver that heard both and average the results, and you have one number for how much better or worse B is than A, with a 95% range showing how uncertain that number is. WSPR reports move dB for dB with your power as a good approximation, so a difference in transmit power is simply added or subtracted first.
 
-Only receivers that heard both antennas count, only receivers with evidence of listening during both antennas' transmissions (they decoded other stations in those slots), and every receiver counts on its own, even when several are at one place. The long-test method (relative gain at each receiver, linear-power averaging and long alternating blocks) comes from the work of [Dale, N3HXZ](https://www.n3hxz.net/), who compares antennas this way with WSPR. The quick paired test is this app's own.
+Only receivers that heard both antennas count, only receivers that were on the band during both antennas' transmissions (they decoded other stations in those slots), and every receiver counts on its own, even when several are at one place. The long-test method (relative gain at each receiver, linear-power averaging and long alternating blocks) comes from the work of [Dale, N3HXZ](https://www.n3hxz.net/), who compares antennas this way with WSPR. The quick paired test is this app's own.
 
 The one real choice is how to combine a receiver's several reports on the same antenna. There are two ways:
 
@@ -201,7 +222,7 @@ This gives equal weight to each receiver callsign, not to each place. Receivers 
 - **Too close to call** means the data aren't strong enough to separate the antennas. One may look ahead, but ordinary variation could explain the gap, and the verdict says how often a lead that size, in that direction, would still appear if the two truly reached equally (for example about 12% of the time). That is not the same as the antennas being equal, and it is not the probability that one is better. For RBN it also says how much more data would settle it.
 - **Direction and distance** are only called when at least 4 stations heard both sides there, the gap is at least 2 dB, and a stricter 99% range agrees. With this many sectors checked at once, treat a direction result as a lead to follow up, not a finding.
 - **Two ways of averaging.** The dB average and the linear (power) average are explained under *How the comparison works*, above. The **Linear average** tab shows both so you can check that they agree.
-- **Fairness.** For WSPR only receivers with evidence of listening during both sides' transmissions count, and cycles heard by 2 or fewer receivers, or by under 5% of the usual number, are ignored when normal cycles are heard by many more (usually a few receivers with a wrong clock, which also happens in a slot where you skipped a transmission). A cycle with no partner on the other antenna is left out. Power differences are corrected (WSPR carries the power). Every skimmer counts on its own, even several at one place. They see the same sky, so a place with many receivers weighs more in the average. If A and B were sent more than about 10 minutes apart, the verdict warns that the time of day could explain the difference.
+- **Fairness.** For WSPR only receivers that were on the band during both sides' transmissions count, and cycles heard by 2 or fewer receivers, or by under 5% of the usual number, are ignored when normal cycles are heard by many more (usually a few receivers with a wrong clock, which also happens in a slot where you skipped a transmission). A cycle with no partner on the other antenna is left out. Power differences are corrected (WSPR carries the power). Every skimmer counts on its own, even several at one place. They see the same sky, so a place with many receivers weighs more in the average. If A and B were sent more than about 10 minutes apart, the verdict warns that the time of day could explain the difference.
 
 ## Band conditions now
 
@@ -309,7 +330,7 @@ The **Help and README** page in the app shows this README, so the instructions a
 | `data_sources.py` | Getting spots: the RBN download and pasted rows, WSPR from wspr.live, the skimmer list |
 | `simulate_validation.py` | Simulated tests with a known antenna difference, run through the program's own analysis, to check how often the verdict is right, wrong and how often the 95% range holds the truth |
 | `docs/METHODOLOGY.md` | The technical methodology: every rule and number behind a verdict, how it was checked, and its limits |
-| `disk_cache.py` | Remembers days that are over (the RBN file, WSPR spots and who was listening), so each is fetched once and wspr.live's limit of 20 requests a minute is not used up on repeats |
+| `disk_cache.py` | Remembers days that are over (the RBN file, WSPR spots and who was on the band), so each is fetched once and wspr.live's limit of 20 requests a minute is not used up on repeats |
 | `maps.py` | The interactive map of who heard you |
 | `charts.py` | The charts and tables for comparisons and the session report |
 | `pdfs.py` | Builds the PDF reports from those charts and tables |
@@ -324,7 +345,7 @@ The **Help and README** page in the app shows this README, so the instructions a
 | `dashboard.py` | The HTML for the Band conditions dashboard: band tiles, sun strip, region grids and highlights |
 | `space_weather.py` | Current space weather from NOAA and a short plain reading of it |
 | `ionosphere.py` | MUF and foF2 near you from the nearest working ionosondes (GIRO data via KC2G) |
-| `example_data.py`, `examples/`, `build_examples.py` | The examples open saved copies of the real data (spots, where the station is, and for WSPR who was listening), so they appear at once; `build_examples.py` refreshes them from the internet |
+| `example_data.py`, `examples/`, `build_examples.py` | The examples open saved copies of the real data (spots, where the station is, and for WSPR who was on the band), so they appear at once; `build_examples.py` refreshes them from the internet |
 | `world_land.npz`, `build_world_mask.py` | The land/ocean grid the map is drawn from, and the one-off script that built it |
 | `spotter_coords.csv` | Cached skimmer locations (updated automatically) |
 | `cty.dat` | Country prefixes from [country-files.com](https://www.country-files.com), for the approximate-location fallback |

@@ -16,7 +16,7 @@ This is the detailed companion to the [README](../README.md). The README explain
 - Spots less than about 5 minutes old are flagged as possibly incomplete, because wspr.live fills a time slot in over several minutes.
 - A receiver's position comes from the spot itself (WSPR) or the skimmer list (RBN). A receiver with no position still counts for reach but cannot be placed on a map or in a direction.
 
-**Who was listening.** Many WSPR receivers hop between bands, and only listen to a band in some time slots. If A's transmissions land in a receiver's listening slots and B's do not, that receiver "only hears A" because of its schedule, not the antenna. So for a time-based WSPR test the program asks wspr.live which receivers decoded *anything* on that band in each slot, and keeps only receivers that were active in at least two of A's slots and at least two of B's. Two limits: decoding another station is evidence a receiver was listening, but not decoding anything is not proof it was not, and if wspr.live's list is cut off at its row limit the program says so and does not use it to drop anyone. The program also warns when a slot has far fewer active receivers than usual (below a quarter of the median, on a band with a median of at least 100), which is a known gap in some old wspr.live data.
+**On the band.** Many WSPR receivers hop between bands, and are on a given band only in some time slots. If A's transmissions land in a receiver's on-band slots and B's do not, that receiver "only hears A" because of its schedule, not the antenna. So for a time-based WSPR test the program asks wspr.live which receivers decoded *anything* on that band in each slot, and keeps only receivers that were active in at least two of A's slots and at least two of B's. Two limits: decoding another station is evidence a receiver was on the band, but not decoding anything is not proof it was not, and if wspr.live's list is cut off at its row limit the program says so and does not use it to drop anyone. The program also warns when a slot has far fewer active receivers than usual (below a quarter of the median, on a band with a median of at least 100), which is a known gap in some old wspr.live data.
 
 **Left out of the comparison**
 - A transmission heard by 2 or fewer receivers, or by under 5% of the usual number, when ordinary ones are heard by 16 or more is treated as a skipped cycle (usually a few receivers with a wrong clock, reporting your signal in the slot after).
@@ -152,7 +152,7 @@ and works out the **margin** over the mode's threshold (2,500 Hz reference bandw
 - The intervals have been checked against same-antenna data and against simulated tests, not calibrated over many independent real experiments.
 - Tests with very few blocks (especially 2) are the weakest, because the band can change between turns.
 - WSPR only reports what a receiver decoded, so a weaker antenna is decoded less often and a decoded-only comparison can look slightly better than the antenna is.
-- Whether a receiver was listening is inferred from it decoding other stations.
+- Whether a receiver was on the band is inferred from it decoding other stations.
 - The 1 dB threshold, the 25% and 1,000 km farthest-reach rule, and the 8 dB band-conditions spread are conventions, chosen and explained, not measured constants.
 
 ## 9. The numbers in one place

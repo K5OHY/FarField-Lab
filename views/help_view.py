@@ -38,6 +38,11 @@ def help_page():
             while i < len(lines) and not lines[i].startswith("## "):
                 i += 1
             continue
+        picture = re.match(r"!\[(.*)\]\((images/[^)]+)\)\s*$", line)
+        if picture:  # a picture from the README, shown from the app's own folder
+            flush()
+            st.image(str(path.parent / picture.group(2)), caption=picture.group(1))
+            continue
         if line.strip() == "<details>":  # a folded section: the first line inside is its <summary>
             end = next((k for k in range(i, len(lines)) if lines[k].strip() == "</details>"), len(lines))
             inside = lines[i:end]
