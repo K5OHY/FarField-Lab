@@ -1246,6 +1246,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
     notes = top.container()
     setup = st.container()
     details = st.container()
+    scroll_now = bool(st.session_state.pop("_scroll_top", False))  # the result is drawn above the setup: bring it into view
     confirmed = bool(st.session_state.get("setup_ok"))
     with setup:  # open until you say it is right, then it folds away and the result is all you see
         box = st.expander("How this test was set up" if confirmed else "Check how this test was set up", expanded=not confirmed)
@@ -1272,7 +1273,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
             return
         if not confirmed:
             st.button("This matches what I did: show the result", type="primary", key="confirm_setup",
-                      on_click=lambda: st.session_state.update(setup_ok=True))
+                      on_click=lambda: st.session_state.update(setup_ok=True, _scroll_top=True))
             return
         map_a, map_b = spots_a, spots_b  # the maps and timeline show everything that was heard
         unpaired = 0
@@ -1884,10 +1885,17 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     st.download_button(f":material/download: Download map {side}", html,
                                        f"FarFieldLab_map_{callsign}_{file_date}_{slug}.html", "text/html", key=f"dl_{side}")
 
+    if scroll_now:  # drawn last, once everything is on the page
+        st.html(_SCROLL_TOP, unsafe_allow_javascript=True)
+
 
     # wspr.live fills a slot in over several minutes: about 1 receiver at 2 minutes old, half by 3-4, complete by 6-8 (measured).
     # A transmission younger than this is left out of a comparison, since a half-filled slot makes its antenna look worse.
 GHOST_MAX, GHOST_MIN_TYPICAL, GHOST_SHARE = 2, 16, 0.10  # see _without_ghost_cycles
+
+# After "show the result" is clicked, the result sits above the setup box the visitor was working in, so the page scrolls back to the top.
+_SCROLL_TOP = ("<script>(function () { var main = document.querySelector('[data-testid=\"stMain\"]'); "
+               "if (main && main.scrollTo) { main.scrollTo({top: 0, behavior: 'smooth'}); } else { window.scrollTo(0, 0); } })();</script>")
 
 
 SIMULTANEOUS_MINUTES = 10  # A and B sent within this many minutes of each other count as the same conditions

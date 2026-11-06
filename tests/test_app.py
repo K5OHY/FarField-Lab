@@ -506,6 +506,28 @@ class ComparePage(unittest.TestCase):
         self.assertIn("2.7 dB", card)  # the summary: the receivers the slider keeps
         self.assertIn("2.1 dB", card)  # all receivers
 
+    @needs_network
+    def test_showing_the_result_scrolls_the_page_back_up_to_it_once(self):
+        """The result is drawn above the setup box, so after "show the result" is clicked the page has to be sent back to the top."""
+        scripts = lambda at: [e for e in at.get("html") if "scrollTo" in str(e.proto.body)]  # noqa: E731
+        at = page("compare_page", call="K5OHY", src="wspr", units="mi", date="2026-11-01", band="20m", go="1").run()
+        self.assertEqual(errors(at), [])
+        button = [b for b in at.main.button if b.key == "confirm_setup"]
+        self.assertEqual(len(button), 1)  # the setup is not confirmed yet
+        self.assertEqual(scripts(at), [])
+        button[0].click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(len(scripts(at)), 1)
+        at.run()  # any later change to the page (a slider, say) must not scroll it again
+        self.assertEqual(scripts(at), [])
+
+    def test_an_example_opens_without_scrolling(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        self.assertEqual([e for e in at.get("html") if "scrollTo" in str(e.proto.body)], [])
+
     def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
         at = page("compare_page").run()
         open_example(at, "long")
