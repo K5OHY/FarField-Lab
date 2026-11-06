@@ -238,6 +238,28 @@ class SettledSlider(unittest.TestCase):
         fig = charts.slider_trend_chart(t, chosen=2, opened=2)
         self.assertEqual(len(fig.axes), 2)
 
+    def test_the_settings_shown_scale_to_how_many_reports_receivers_have(self):
+        calls = [f"R{n}" for n in range(12)]
+        places_ = places(*calls)
+        short = spots({c: [-20] * 6 for c in calls})  # 6 reports each: every setting from 1 to 6
+        self.assertEqual(cs.trend_settings(short, short, places_, HOME), [1, 2, 3, 4, 5, 6])
+        long_ = spots({c: [-20] * 47 for c in calls})  # 47 reports each: steps of 5, and the slider's own settings are always in
+        self.assertEqual(cs.trend_settings(long_, long_, places_, HOME), [1, 5, 10, 15, 20, 25, 30, 35, 40, 45])
+        self.assertEqual(cs.trend_settings(long_, long_, places_, HOME, extra=(40, 37, 20)), [1, 5, 10, 15, 20, 25, 30, 35, 37, 40, 45])
+        t = cs.slider_trend(long_, long_, places_, HOME, settings=cs.trend_settings(long_, long_, places_, HOME))
+        self.assertEqual(list(t["reports"]), [1, 5, 10, 15, 20, 25, 30, 35, 40, 45])
+        self.assertTrue((t["receivers"] == 12).all())
+
+    def test_the_trend_chart_spaces_a_long_test_in_steps(self):
+        import charts
+        t = self.trend([40, 38, 30, 20, 9], [2.0, 2.1, 2.2, 2.3, 2.4])
+        t["reports"] = [1, 10, 20, 30, 40]
+        fig = charts.slider_trend_chart(t, chosen=40, opened=20)
+        top, strip = fig.axes
+        self.assertEqual(len(strip.patches), 5)
+        self.assertEqual(sorted(strip.get_xticks()), [1, 10, 20, 30, 40])  # a tick at each setting, not at 1, 2, 3 ...
+        self.assertGreater(top.get_xlim()[1], 40)
+
     def test_a_long_test_keeps_its_published_default(self):
         calls = [f"R{n}" for n in range(12)]
         many = spots({c: [-20] * 25 for c in calls})

@@ -185,14 +185,33 @@ SETTLED_DB = 0.25               # the result has settled when one more report on
 SETTLED_MIN_RECEIVERS = 30      # and the settled setting still leaves at least this many receivers on the table
 
 
-def slider_trend(spots_a, spots_b, locs, home, method="snr", offset=0.0, floor=None, min_km=0.0, weak_pct=0, top=12):
-    """The result at each setting of the 'at least this many reports on each antenna' slider, from 1 up: one row per setting with
-    the receivers left, the average and typical gain (B minus A), the biggest and smallest gain, and the signal advantage taken
-    pair by pair on those same receivers (NaN when the test has no pairs). Stops when fewer than 3 receivers are left."""
+def trend_settings(spots_a, spots_b, locs, home, method="snr", offset=0.0, floor=None, min_km=0.0, weak_pct=0, extra=()):
+    """The slider settings worth showing in the trend chart and table, scaled to the test: every setting from 1 while receivers have
+    12 or fewer reports on each antenna, then steps of 5 (10 beyond 100), up to the highest setting that still leaves 5 receivers. The
+    settings in `extra` (where the slider is, where it opened) are always included, so they can be marked."""
+    every = station_gains(spots_a, spots_b, locs, home, method, 1, offset, floor, min_km, weak_pct)
+    if every.empty:
+        return [1]
+    reports = np.minimum(every["n_a"], every["n_b"]).to_numpy(float)
+    top = int(np.sort(reports)[::-1][min(4, len(reports) - 1)])  # the highest setting that still leaves 5 receivers
+    top = max(top, 1)
+    if top <= 12:
+        base = list(range(1, top + 1))
+    else:
+        step = 5 if top <= 100 else 10
+        base = [1] + list(range(step, top + 1, step))
+    return sorted(set(base) | {int(m) for m in extra if m and 1 <= int(m) <= top})
+
+
+def slider_trend(spots_a, spots_b, locs, home, method="snr", offset=0.0, floor=None, min_km=0.0, weak_pct=0, top=12, settings=None):
+    """The result at each setting of the 'at least this many reports on each antenna' slider, from 1 up (or at the given `settings`,
+    see trend_settings): one row per setting with the receivers left, the average and typical gain (B minus A), the biggest and
+    smallest gain, and the signal advantage taken pair by pair on those same receivers (NaN when the test has no pairs). Stops
+    when fewer than 3 receivers are left."""
     fa = spots_a if floor is None else spots_a[spots_a["snr"] > floor]
     fb = spots_b if floor is None else spots_b[spots_b["snr"] > floor]
     rows = []
-    for m in range(1, top + 1):
+    for m in (settings if settings is not None else range(1, top + 1)):
         every = station_gains(spots_a, spots_b, locs, home, method, m, offset, floor, min_km, weak_pct)
         if len(every) < 3:
             break

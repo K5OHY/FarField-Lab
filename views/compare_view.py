@@ -38,6 +38,7 @@ from compare_stats import (
     DALE_MIN_SPOTS,
     min_reports_plan,
     slider_trend,
+    trend_settings,
     DALE_SITE_MIN,
     pair_by_pair_gain,
     station_gains,
@@ -1134,12 +1135,12 @@ def _leave_out_box(kind, units):
     return (WSPR_FLOOR_DB if floor_on else None), near * (KM_PER_MILE if units == "mi" else 1.0), weak_pct, note
 
 
-def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None, opened=None):
+def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None, opened=None, settled=False):
     """The monitoring dashboard: the few numbers to watch as the slider moves, to see whether the result has settled.
     `every` is the receivers left at this slider setting; `reference` is the receivers left where the slider opens, which is
     what picks the direction to watch (so the choice does not hop about as the slider moves). `pairwise` is (receivers, average
     gain) taken pair by pair, for a test that alternates; None when the test is not judged that way. `trend` is the result at each
-    slider setting (slider_trend), shown as a chart and a table with the setting `chosen` marked, and `opened` where the slider opened."""
+    slider setting (slider_trend), shown as a chart and a table with the setting `chosen` marked, and `opened` where the slider opened (`settled` when it opened there because the result settles, not on a fixed default)."""
     signed_db = lambda v: "–" if v is None or pd.isna(v) else f"{v:+.1f} dB"  # noqa: E731
     gr = gain_readout(every)
     ss = st.session_state
@@ -1196,8 +1197,13 @@ def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None, o
                         "ones are gone, and they are where reports near WSPR's floor (about \u221228 dB) are partly missing because "
                         "they cannot be decoded, which pulls the gap toward zero. So the gain reads higher.\n"
                         "- **The setting to trust** is where the grey band stops jumping and the lines flatten, with plenty of "
-                        f"{noun}s left. The slider opens there, as long as at least {SETTLED_MIN_RECEIVERS} are left. Keep at least 5 to "
-                        "10 whatever you pick.")
+                        f"{noun}s left. "
+                        + (f"The slider opens there, as long as at least {SETTLED_MIN_RECEIVERS} are left. " if settled else
+                           f"The slider opens at {opened} here: a long test aims for {DALE_MIN_SPOTS} reports on each antenna (Dale's "
+                           f"method), or the most that still leaves enough {noun}s. " if opened is not None and opened >= 5 else
+                           f"The slider opens at {opened} here, because no setting settled with at least {SETTLED_MIN_RECEIVERS} "
+                           f"{noun}s left. ")
+                        + "Keep at least 5 to 10 whatever you pick.")
                     st.pyplot(slider_trend_chart(shown, chosen, opened), width="stretch")
                     if chosen is not None:
                         st.caption(f"The summary and all the tabs use {chosen} or more reports ({len(every)} {noun}s). Turn that off with "
@@ -1668,14 +1674,18 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 if every.empty:
                     st.info(f"No {noun} has {min_reports} or more reports on both antennas. Lower the number above.")
                 else:
-                    trend_sig = (len(fa), len(fb), method_key, an["power"]["offset"], avg_floor, round(avg_min_km), weak_pct)
+                    trend_sig = (len(fa), len(fb), method_key, an["power"]["offset"], avg_floor, round(avg_min_km), weak_pct,
+                                 min_reports, auto_min)
                     cached_trend = st.session_state.get("_trend")
                     if not (cached_trend and cached_trend[0] == trend_sig):
                         cached_trend = st.session_state["_trend"] = (trend_sig, slider_trend(
-                            full_a, full_b, locs, home, method_key, an["power"]["offset"], avg_floor, avg_min_km, weak_pct))
+                            full_a, full_b, locs, home, method_key, an["power"]["offset"], avg_floor, avg_min_km, weak_pct,
+                            settings=trend_settings(full_a, full_b, locs, home, method_key, an["power"]["offset"], avg_floor, avg_min_km,
+                                                    weak_pct, extra=(min_reports, auto_min))))
                     with dash_slot:
                         _dashboard(every, opening, noun, pair_by_pair_gain(every, fa, fb, locs, home, an["power"]["offset"])
-                                   if an["paired"] else None, cached_trend[1], min_reports, auto_min)
+                                   if an["paired"] else None, cached_trend[1], min_reports, auto_min,
+                                   st.session_state.get("_auto_min_step") is not None)
                         st.caption("The summary's number is the average over every receiver compared"
                                    f"{', taking each one pair by pair' if an['paired'] else ''}, so it can differ from the "
                                    "average and the typical gain here, most when a few receivers gain far more than the rest.")

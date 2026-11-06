@@ -376,6 +376,7 @@ def slider_trend_chart(trend, chosen=None, opened=None):
     the receivers each setting rests on. `chosen` marks where the slider is now and `opened` where it opened."""
     t = trend.reset_index(drop=True)
     x = t["reports"].to_numpy(float)
+    gap = float(np.min(np.diff(x))) if len(x) > 1 else 1.0  # settings are 1 apart for a short test, 5 or more for a long one
     avg, sig = t["average"].to_numpy(float), t["signal"].to_numpy(float)
     low, high = t["smallest"].to_numpy(float), t["biggest"].to_numpy(float)
     lines = np.concatenate([avg, sig[~np.isnan(sig)]])
@@ -415,13 +416,13 @@ def slider_trend_chart(trend, chosen=None, opened=None):
             ax.axvline(value, color=COLOR_TIE, linestyle=style, linewidth=1.4, zorder=2)
             ax.annotate(text, (value, y_hi), textcoords="offset points", xytext=(4, -11), fontsize=8, color=COLOR_TIE)
     ax.set_ylim(y_lo, y_hi)
-    ax.set_xlim(x.min() - 0.6, x.max() + 0.6)
+    ax.set_xlim(x.min() - 0.6 * gap, x.max() + 0.6 * gap)
     ax.set_ylabel("Gain, B \u2212 A (dB)", fontsize=9, color=COLOR_TIE)
     ax.tick_params(labelbottom=False)
     ax.grid(axis="y", color=COLOR_TIE, alpha=0.2, zorder=0)
     ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False, labelcolor=COLOR_TIE, fontsize=8)
     counts = t["receivers"].to_numpy(float)
-    strip.bar(x, counts, width=0.6, color=COLOR_TIE, alpha=0.5, zorder=2)
+    strip.bar(x, counts, width=0.6 * gap, color=COLOR_TIE, alpha=0.5, zorder=2)
     for xi, n in zip(x, counts):
         strip.annotate(f"{int(n)}", (xi, n), textcoords="offset points", xytext=(0, 2), ha="center", fontsize=8, color=COLOR_TIE)
     strip.set_xlim(ax.get_xlim())

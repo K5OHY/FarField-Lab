@@ -528,7 +528,23 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         self.assertEqual([e for e in at.get("html") if "scrollTo" in str(e.proto.body)], [])
 
-    def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
+    def test_the_trend_table_reaches_the_setting_a_long_test_opens_at(self):
+        """Dale's long example opens its slider at 40 reports; the table and chart must reach it, not stop at 12."""
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        slider = [s for s in at.main.slider if s.key == "rx_min_reports_blk"][0]
+        self.assertEqual(slider.value, 40)
+        tables = [d.value for d in at.main.dataframe if "Reports needed on each antenna" in d.value.columns]
+        self.assertEqual(len(tables), 1)
+        settings = list(tables[0]["Reports needed on each antenna"])
+        self.assertTrue(any(v.startswith("40") and "now" in v for v in settings), settings)  # marked where the slider is
+        self.assertGreater(len(settings), 4)
+        self.assertLess(len(settings), 20)  # steps of 5, not every number
+        reading = " ".join(m.value for m in at.main.markdown)
+        self.assertIn("a long test aims for 20 reports", reading)  # why it opens where it does
+
+
         at = page("compare_page").run()
         open_example(at, "long")
         self.assertEqual(errors(at), [])
