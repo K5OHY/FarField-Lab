@@ -338,6 +338,12 @@ class SettledSlider(unittest.TestCase):
         places_ = places(*calls)
         short = spots({c: [-20] * 6 for c in calls})  # 6 reports each: every setting from 1 to 6
         self.assertEqual(cs.trend_settings(short, short, places_, HOME), [1, 2, 3, 4, 5, 6])
+        medium = spots({c: [-20] * 14 for c in calls})  # 14 reports each (a 28-transmission test): still every setting, not 1, 5, 10
+        self.assertEqual(cs.trend_settings(medium, medium, places_, HOME), list(range(1, 15)))
+        edge = spots({c: [-20] * 20 for c in calls})
+        self.assertEqual(cs.trend_settings(edge, edge, places_, HOME), list(range(1, 21)))
+        past = spots({c: [-20] * 21 for c in calls})  # one more and it goes to steps of 5
+        self.assertEqual(cs.trend_settings(past, past, places_, HOME), [1, 5, 10, 15, 20])
         long_ = spots({c: [-20] * 47 for c in calls})  # 47 reports each: steps of 5, and the slider's own settings are always in
         self.assertEqual(cs.trend_settings(long_, long_, places_, HOME), [1, 5, 10, 15, 20, 25, 30, 35, 40, 45])
         self.assertEqual(cs.trend_settings(long_, long_, places_, HOME, extra=(40, 37, 20)), [1, 5, 10, 15, 20, 25, 30, 35, 37, 40, 45])

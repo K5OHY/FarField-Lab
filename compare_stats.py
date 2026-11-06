@@ -187,9 +187,12 @@ SETTLED_DB = 0.25               # the result has settled when one more report on
 SETTLED_MIN_RECEIVERS = 30      # and the settled setting still leaves at least this many receivers on the table
 
 
+TREND_EVERY_SETTING = 20  # the trend chart and table show every slider setting up to here (a test of about 40 transmissions)
+
+
 def trend_settings(spots_a, spots_b, locs, home, method="snr", offset=0.0, floor=None, min_km=0.0, weak_pct=0, extra=()):
-    """The slider settings worth showing in the trend chart and table, scaled to the test: every setting from 1 while receivers have
-    12 or fewer reports on each antenna, then steps of 5 (10 beyond 100), up to the highest setting that still leaves 5 receivers. The
+    """The slider settings worth showing in the trend chart and table, scaled to the test: every setting from 1 while the highest
+    setting that leaves 5 receivers is 20 or less, then steps of 5 (10 beyond 100), up to that highest setting. The
     settings in `extra` (where the slider is, where it opened) are always included, so they can be marked."""
     every = station_gains(spots_a, spots_b, locs, home, method, 1, offset, floor, min_km, weak_pct)
     if every.empty:
@@ -197,7 +200,7 @@ def trend_settings(spots_a, spots_b, locs, home, method="snr", offset=0.0, floor
     reports = np.minimum(every["n_a"], every["n_b"]).to_numpy(float)
     top = int(np.sort(reports)[::-1][min(4, len(reports) - 1)])  # the highest setting that still leaves 5 receivers
     top = max(top, 1)
-    if top <= 12:
+    if top <= TREND_EVERY_SETTING:
         base = list(range(1, top + 1))
     else:
         step = 5 if top <= 100 else 10
