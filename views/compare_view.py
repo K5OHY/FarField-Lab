@@ -1225,6 +1225,9 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                  scale, noun, kind, all_spots):
     """Compare antennas: separate `spots` into an A side and a B side (by frequency, time window, timed blocks,
     or every other transmission), then say which one is getting out better, by how much, and in which directions."""
+    # The verdict follows the Receiver by receiver slider unless this is switched off, so the headline and the dashboard count the
+    # same receivers. For WSPR only: RBN keeps counting every skimmer that heard both.
+    st.session_state.setdefault(_APPLY_KEY, kind == "WSPR")
     top = st.container()  # the answer comes first; the setup it rests on sits just below it
     notes = top.container()
     setup = st.container()
@@ -1340,7 +1343,10 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         leave_out, leave_text, applied_min, leave_fallback = None, "", None, False
         if st.session_state.get(_APPLY_KEY):  # the tab's settings narrow the verdict's strength figures too
             floor_, near_km, weak_, leave_text = _leave_out_choices(kind, units)
-            applied_min = int(st.session_state.get("rx_min_reports_" + ("blk" if sep.get("blocks") else "pair")) or 1)
+            applied_min = int(st.session_state.get("rx_min_reports_" + ("blk" if sep.get("blocks") else "pair"))
+                              or _auto_min_reports(full_a, full_b, locs, home, bool(sep.get("blocks")),
+                                                   (pa - pb) if normalize and pa is not None and pb is not None else 0.0,
+                                                   floor_, near_km, weak_))
             if applied_min > 1 or floor_ is not None or near_km or weak_:
                 leave_out = dict(min_spots=applied_min, floor=floor_, min_km=near_km, weak_pct=weak_)
         an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"), leave_out=leave_out)
@@ -1421,21 +1427,17 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 span = (f"{min(abs(x['lo']), abs(x['hi'])):.1f} to {max(abs(x['lo']), abs(x['hi'])):.1f}" if one_side
                         else _range_text(names, x["lo"], x["hi"]))
                 return f"{_lead_text(names, x['mean'])} (95% range {span})"
-            weak_why = (f"{noun.capitalize()}s heard only once or twice swing more, and they are mostly the weak, far ones, where "
-                        "reports near WSPR's -28 dB floor are partly missing, which usually pulls the gap toward zero. The stricter "
-                        f"number is steadier but rests on fewer {noun}s.")
             if leave_out:
-                verdict["caveats"].append(f"On all {so['n']} {noun}s that heard both, the Signal advantage would be {counting(so)}, "
-                                          f"against {counting(sa)} on the {sa['n']} this verdict uses. " + weak_why)
+                verdict["caveats"].append(f"On all {so['n']} {noun}s that heard both it is {counting(so)}; the extra {noun}s were heard "
+                                          f"only once or twice, so they swing more.")
                 other_row = (f"**Signal advantage, all {noun}s**", _lead_text(names, so["mean"]),
                              f"The same figure on all {so['n']} {noun}s that heard both, instead of the {sa['n']} the Receiver by "
-                             "receiver settings keep, which this verdict uses.")
+                             "receiver settings keep, which this verdict uses. The extra ones were heard only once or twice, so they "
+                             "swing more.")
             else:
                 verdict["caveats"].append(
-                    f"On the {so['n']} {noun}s the Receiver by receiver slider keeps ({m_o} or more reports on each antenna), the "
-                    f"Signal advantage is {counting(so)}, against {counting(sa)} on all {sa['n']} counted here. " + weak_why +
-                    " Turn on \"Use these settings for the verdict and the other tabs too\" on that tab to make the verdict use "
-                    "the stricter number.")
+                    f"On the {so['n']} {noun}s the slider keeps ({m_o} or more reports on each antenna) it is {counting(so)}. Turn on "
+                    "\"Use these settings for the verdict and the other tabs too\" on the Receiver by receiver tab to use it.")
                 other_row = (f"**Signal advantage, slider's {noun}s**", _lead_text(names, so["mean"]),
                              f"The same figure on the {so['n']} {noun}s the Receiver by receiver slider keeps ({m_o} or more reports "
                              f"on each antenna), instead of all {sa['n']}, which this verdict uses.")

@@ -487,7 +487,7 @@ class ComparePage(unittest.TestCase):
     @needs_network
     def test_a_short_test_opens_the_slider_where_it_settles_and_shows_the_verdict_both_ways(self):
         """K5OHY's 1 November test: raising the slider from 3 to 4 moves the average by 0.1 dB, so it opens at 3. The verdict
-        counts everyone (2.1 dB) until the switch is on, and says what the slider's receivers would give (2.7 dB) and why."""
+        follows the slider (2.7 dB over 87 receivers) and says in one line what all 131 receivers give (2.1 dB)."""
         at = page("compare_page", call="K5OHY", src="wspr", units="mi", date="2026-11-01", go="1", na="Vertical", nb="2 el Vertical",
                   n="16", ed="8X,9X,10X,11X", ord="abba").run()
         self.assertEqual(errors(at), [])
@@ -497,10 +497,10 @@ class ComparePage(unittest.TestCase):
         self.assertIn("the result has settled there", text)
         self.assertTrue(any(e.label.startswith("How the result changes as the slider rises") for e in at.main.expander))
         card = " ".join(m.value for m in at.main.markdown)
-        self.assertIn("slider keeps (3 or more reports on each antenna)", card)
-        self.assertIn("Signal advantage, slider's receivers", card)
-        self.assertIn("2.1 dB", card)  # everyone: the verdict's default
-        self.assertIn("2.7 dB", card)  # the slider's receivers
+        self.assertIn("On all 131 receivers that heard both it is", card)
+        self.assertIn("Signal advantage, all receivers", card)
+        self.assertIn("2.7 dB", card)  # the verdict: the receivers the slider keeps
+        self.assertIn("2.1 dB", card)  # all receivers
 
     def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
         at = page("compare_page").run()
@@ -518,18 +518,24 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         switch = [t for t in at.main.toggle if t.key == "leave_apply"]
         self.assertEqual(len(switch), 1)
-        self.assertFalse(switch[0].value)
+        self.assertTrue(switch[0].value)  # on by default for WSPR: the verdict counts the receivers the slider keeps
         text = lambda: " ".join(m.value for m in at.markdown)  # noqa: E731
-        self.assertNotIn("The strength figures count only", text())
-        switch[0].set_value(True)
-        at.run()
-        self.assertEqual(errors(at), [])
         self.assertIn("The strength figures count only", text())
         self.assertIn("at least 40 reports on each antenna", text())
         self.assertTrue(any(c.value.startswith("On: the verdict and the other tabs use only") for c in at.main.caption))
-        [t for t in at.main.toggle if t.key == "leave_apply"][0].set_value(False)
+        switch[0].set_value(False)
         at.run()
+        self.assertEqual(errors(at), [])
         self.assertNotIn("The strength figures count only", text())
+        [t for t in at.main.toggle if t.key == "leave_apply"][0].set_value(True)
+        at.run()
+        self.assertIn("The strength figures count only", text())
+
+    def test_rbn_keeps_counting_every_skimmer_until_the_switch_is_turned_on(self):
+        at = page("compare_page").run()
+        open_example(at, "rbn")
+        self.assertEqual(errors(at), [])
+        self.assertFalse([t for t in at.main.toggle if t.key == "leave_apply"][0].value)
 
     def test_data_used_steps_the_spots_and_the_receivers_down_in_one_place(self):
         at = page("compare_page").run()
@@ -549,13 +555,23 @@ class ComparePage(unittest.TestCase):
         open_example(at, "long")
         table = lambda: [d.value for d in at.main.dataframe if "Used for" in d.value.columns][0]  # noqa: E731
         row = table()[table()["Step"].str.startswith("40+ reports")]
-        self.assertEqual(list(row["Used for"]), ["Receiver tab only"])
-        [t for t in at.main.toggle if t.key == "leave_apply"][0].set_value(True)
+        self.assertEqual(list(row["Used for"]), ["Verdict and all tabs"])  # the switch is on by default for WSPR
+        [t for t in at.main.toggle if t.key == "leave_apply"][0].set_value(False)
         at.run()
         self.assertEqual(errors(at), [])
         row = table()[table()["Step"].str.startswith("40+ reports")]
-        self.assertEqual(list(row["Used for"]), ["Verdict and all tabs"])
+        self.assertEqual(list(row["Used for"]), ["Receiver tab only"])
+        [t for t in at.main.toggle if t.key == "leave_apply"][0].set_value(True)
+        at.run()
         self.assertEqual(list(table()["Step"])[-1], "Used for the strength result")
+
+    def test_the_switch_being_off_travels_in_a_link(self):
+        from views import test_link
+        ss = {}
+        test_link.read(ss, {"uv": "0", "n": "12"})
+        self.assertFalse(ss["leave_apply"])
+        self.assertEqual(test_link.params(ss, "mi")["uv"], "0")
+        self.assertNotIn("uv", test_link.params({"leave_apply": True}, "mi"))  # on is the default, so a link need not say it
 
     def test_the_switch_travels_in_a_link(self):
         at = page("compare_page", call="N3HXZ", src="wspr", date="2026-08-26", band="20m", sw="blocks", bl="30", mr="25",

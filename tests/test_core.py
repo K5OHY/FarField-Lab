@@ -163,7 +163,7 @@ class PairByPairGain(unittest.TestCase):
 
 
 class VerdictCard(unittest.TestCase):
-    """The verdict card opens on the answer and the two questions it answers; the supporting lines are folded, never removed."""
+    """The verdict card is labelled and shows every evidence line, none hidden behind a click."""
 
     POINTS = [("📡", "**Reach:** r"), ("📶", "**Strength:** s"), ("🌍", "far"),
               ("📏", "**By distance:** d"), ("🧭", "**By direction:** e"), ("🔁", "**Consistency:** c")]
@@ -175,21 +175,11 @@ class VerdictCard(unittest.TestCase):
     def test_it_is_labelled_the_verdict(self):
         self.assertIn(">Verdict</div>", self.card(self.POINTS))
 
-    def test_reach_and_strength_lead_and_the_rest_is_folded_but_present(self):
+    def test_every_line_and_caveat_is_shown(self):
         html = self.card(self.POINTS)
-        head, folded = html.split("<details", 1)
-        self.assertIn("Reach:", head)
-        self.assertIn("Strength:", head)
-        for word in ("far", "By distance:", "By direction:", "Consistency:"):
-            self.assertNotIn(word, head)
-            self.assertIn(word, folded)
-        self.assertIn("More detail: farthest reach, distance, direction, consistency", html)
-        self.assertIn("careful", html)  # the caveats stay in view
-
-    def test_nothing_is_hidden_when_there_is_no_reach_or_strength_line(self):
-        html = self.card([("🌍", "far")])
         self.assertNotIn("<details", html)
-        self.assertIn("far", html)
+        for word in ("Reach:", "Strength:", "far", "By distance:", "By direction:", "Consistency:", "careful"):
+            self.assertIn(word, html)
 
 
 class SettledSlider(unittest.TestCase):

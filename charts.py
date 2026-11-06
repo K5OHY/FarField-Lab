@@ -486,31 +486,15 @@ def breakdown_table(df, names, first_col, noun):
     return view.style.apply(tint, axis=1)
 
 
-VERDICT_MAIN_ICONS = ("\U0001F4E1", "\U0001F4F6")  # reach and strength: the two questions the verdict answers
-_VERDICT_MORE = {"\U0001F30D": "farthest reach", "\U0001F4CF": "distance", "\U0001F9ED": "direction", "\U0001F501": "consistency"}
-
-
 def verdict_card_html(v):
-    """The overall answer in a card tinted for the winner (blue = A, orange = B, grey = neither). It opens on the headline and the
-    two questions it answers (reach and strength); the supporting lines (farthest reach, distance, direction, consistency) are
-    folded under "More detail", so the card is calm to read and nothing is taken out. The PDF report shows every line."""
+    """The overall answer in a card tinted for the winner (blue = A, orange = B, grey = neither), labelled Verdict."""
     color = {"A": COLOR_A, "B": COLOR_B}.get(v["winner"], COLOR_TIE)
-    item = lambda icon, text: f'<li style="margin:7px 0">{icon} {_bold(text)}</li>'  # noqa: E731
-    main = [item(i, t) for i, t in v["points"] if i in VERDICT_MAIN_ICONS]
-    more = [(i, t) for i, t in v["points"] if i not in VERDICT_MAIN_ICONS]
-    if not main:  # nothing to lead with: show everything rather than hide it
-        main, more = [item(i, t) for i, t in v["points"]], []
-    detail = ""
-    if more:
-        kinds = ", ".join(dict.fromkeys(_VERDICT_MORE.get(i, "more") for i, _ in more))
-        detail = (f'<details style="margin-top:6px"><summary style="cursor:pointer;font-size:.9rem;opacity:.85">More detail: {kinds}</summary>'
-                  f'<ul style="list-style:none;padding:0;margin:6px 0 0 0;font-size:.95rem">{"".join(item(i, t) for i, t in more)}</ul>'
-                  "</details>")
+    points = "".join(f'<li style="margin:7px 0">{icon} {_bold(text)}</li>' for icon, text in v["points"])
     caveats = "".join(f'<div style="margin-top:6px">⚠️ {_bold(c)}</div>' for c in v["caveats"])
     return (f'<div style="border-left:6px solid {color};background:{color}1c;border-radius:10px;padding:16px 22px;'
             f'margin:4px 0 16px 0"><div style="font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;opacity:.7;'
             f'margin-bottom:4px">Verdict</div><div style="font-size:1.3rem;line-height:1.45">{_bold(v["headline"])}</div>'
-            f'<ul style="list-style:none;padding:0;margin:12px 0 0 0;font-size:.95rem">{"".join(main)}</ul>{detail}'
+            f'<ul style="list-style:none;padding:0;margin:12px 0 0 0;font-size:.95rem">{points}</ul>'
             f'<div style="font-size:.85rem;opacity:.8;margin-top:8px">{caveats}</div></div>')
 
 
