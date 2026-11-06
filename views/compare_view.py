@@ -32,9 +32,11 @@ from charts import (
 )
 from compare_stats import (
     BIN_MIN_SHARED,
+    SETTLED_MIN_RECEIVERS,
     FAR_KM,
     DALE_MIN_SPOTS,
-    default_min_reports,
+    min_reports_plan,
+    slider_trend,
     DALE_SITE_MIN,
     pair_by_pair_gain,
     station_gains,
@@ -625,14 +627,14 @@ def _auto_min_reports(spots_a, spots_b, locs, home, long_test, offset, floor, mi
     """default_min_reports, remembered until the spots or the averaging settings change (it works out every receiver several times)."""
     sig = (len(spots_a), len(spots_b), long_test, offset, floor, round(min_km), weak_pct)
     cached = st.session_state.get("_auto_min")
-    if cached and cached[0] == sig:
-        return cached[1]
-    value = default_min_reports(spots_a, spots_b, locs, home, long_test, offset, floor, min_km, weak_pct)
-    st.session_state["_auto_min"] = (sig, value)
-    return value
+    if not (cached and cached[0] == sig):
+        value, step = min_reports_plan(spots_a, spots_b, locs, home, long_test, offset, floor, min_km, weak_pct)
+        cached = st.session_state["_auto_min"] = (sig, value, step)
+    st.session_state["_auto_min_step"] = cached[2]  # how far the next step moves the result, when it opens where it settled
+    return cached[1]
 
 
-def _min_reports_caption(noun, chosen, auto, long_test, shown, total):
+def _min_reports_caption(noun, chosen, auto, long_test, shown, total, step=None):
     """One line under the 'at least this many reports' slider: how many receivers are on the table out of how many heard both
     antennas, and why the slider sits where it does."""
     if chosen == 1:
@@ -645,6 +647,10 @@ def _min_reports_caption(noun, chosen, auto, long_test, shown, total):
         return text + f" That is above where it opens ({auto}): fewer {noun}s, steadier averages."
     if chosen < auto:
         return text + f" That is below where it opens ({auto}): more {noun}s, rougher averages."
+    if not long_test and step is not None:
+        return text + (f" It opens at {auto} because the result has settled there: going from {auto} to {auto + 1} moves the average by "
+                       f"only {step:.1f} dB. Below that, a {noun} heard once or twice on an antenna can swing it; above it, only the "
+                       f"{noun}s that heard you most are left, so the number keeps changing as fewer remain.")
     if not long_test:
         return text + " It opens at 2 so that one lucky report cannot set a result; move the slider to see more or fewer."
     if chosen == DALE_MIN_SPOTS:
@@ -784,6 +790,8 @@ def _glance_rows(an, names, noun, glance, pm):
                f"{s['n']} {noun}s that heard both." if an["paired"] else
                f"Each {noun}'s middle report on A minus on B, averaged over the {s['n']} {noun}s that heard both.")
         rows.append(("**Signal advantage** (the verdict's number)", _lead_text(names, s["mean"]), how))
+        if glance.get("other"):
+            rows.append(glance["other"])
     gr = glance.get("gr")
     if gr and gr["n"] and not pd.isna(gr["mean"]):
         whole = (f"Each {noun}'s middle report on A minus on B over the whole test, even from rounds where only one side was heard, "
@@ -1125,11 +1133,12 @@ def _leave_out_box(kind, units):
     return (WSPR_FLOOR_DB if floor_on else None), near * (KM_PER_MILE if units == "mi" else 1.0), weak_pct, note
 
 
-def _dashboard(every, reference, noun, pairwise=None):
+def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None):
     """The monitoring dashboard: the few numbers to watch as the slider moves, to see whether the result has settled.
     `every` is the receivers left at this slider setting; `reference` is the receivers left where the slider opens, which is
     what picks the direction to watch (so the choice does not hop about as the slider moves). `pairwise` is (receivers, average
-    gain) taken pair by pair, for a test that alternates; None when the test is not judged that way."""
+    gain) taken pair by pair, for a test that alternates; None when the test is not judged that way. `trend` is the result at each
+    slider setting (slider_trend), shown as a table with the setting `chosen` marked."""
     signed_db = lambda v: "–" if v is None or pd.isna(v) else f"{v:+.1f} dB"  # noqa: E731
     gr = gain_readout(every)
     ss = st.session_state
@@ -1173,6 +1182,25 @@ def _dashboard(every, reference, noun, pairwise=None):
             c_why.caption("This is the verdict's Signal advantage. The gains above use every report a receiver made, including "
                           "rounds where it heard only one antenna, so the two can differ by a few tenths of a dB. If they stay "
                           "close as you raise the slider, the result does not depend on how it is averaged.")
+        if trend is not None and len(trend) >= 2:
+            shown = trend[trend["receivers"] >= ENOUGH_RECEIVERS // 2]
+            if len(shown) >= 2:
+                with st.expander("How the result changes as the slider rises"):
+                    table = {"Reports needed on each antenna": [f"{int(m)}" + ("  \u25c0 now" if m == chosen else "") for m in shown["reports"]],
+                             f"{noun.capitalize()}s": shown["receivers"].astype(int).to_numpy(),
+                             "Average gain": [signed_db(v) for v in shown["average"]],
+                             "Typical gain": [signed_db(v) for v in shown["typical"]]}
+                    if shown["signal"].notna().any():
+                        table["Signal advantage"] = [signed_db(v) for v in shown["signal"]]
+                    table["Biggest gain"] = [signed_db(v) for v in shown["biggest"]]
+                    table["Smallest gain"] = [signed_db(v) for v in shown["smallest"]]
+                    st.dataframe(pd.DataFrame(table), width="stretch", hide_index=True, height=min(38 * (len(shown) + 1), 420))
+                    st.caption(f"The same test with the slider at each setting. Raising it drops the {noun}s heard least, which are mostly "
+                               "the weak, far ones. Their reports near WSPR's floor (about \u221228 dB) are partly missing, because "
+                               "they cannot be decoded, and that squeezes the gap toward zero. So the numbers can keep rising as fewer, "
+                               "stronger receivers are left. The slider opens where the average stops moving much from one step to "
+                               f"the next, as long as at least {SETTLED_MIN_RECEIVERS} receivers are left. Look for where the biggest and "
+                               "smallest gain stop jumping, and keep at least 5 to 10 receivers.")
         st.markdown("###### Watch a direction")
         picks = st.columns(2)
         for col, key, options in ((picks[0], "dash_dir_a", directions), (picks[1], "dash_dir_b", ["Off"] + directions)):
@@ -1319,6 +1347,23 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         if leave_out and (not an["leave_out"]["kept"] or not an["strength"]["n"]):  # nothing left to compare: use everything
             an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"))
             leave_out, leave_fallback = None, True
+        # The same strength figure counted the other way, so both are on screen and the reader sees why they differ: with the
+        # receivers the Receiver by receiver slider keeps when the verdict counts everyone, with everyone when it uses the slider's.
+        other = None
+        if not leave_fallback:
+            floor_o, near_o, weak_o, _ = _leave_out_choices(kind, units)
+            blocks_o = bool(sep.get("blocks"))
+            m_o = int(st.session_state.get("rx_min_reports_" + ("blk" if blocks_o else "pair"))
+                      or _auto_min_reports(full_a, full_b, locs, home, blocks_o, an["power"]["offset"], floor_o, near_o, weak_o))
+            if leave_out:
+                other = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"))
+            elif m_o > 1 or floor_o is not None or near_o or weak_o:
+                other = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"),
+                                leave_out=dict(min_spots=m_o, floor=floor_o, min_km=near_o, weak_pct=weak_o))
+                if not other["leave_out"]["kept"]:
+                    other = None
+            if other is not None and (not other["strength"]["n"] or other["strength"]["n"] == an["strength"]["n"]):
+                other = None  # nothing to compare, or the same receivers either way
         # Describe what was heard the way the maps do, from every receiver that heard each side. The fairness checks (listening
         # during both sides, real A/B pairs) decide who counts for the reach and strength verdict, but they would otherwise
         # hide a receiver from the "farthest" figure that the map plainly shows.
@@ -1368,6 +1413,32 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     ([f"at least {applied_min} reports on each antenna"] if applied_min > 1 else []) + ([leave_text] if leave_text else []))
                 + f". How many {noun}s heard each side is not changed.")
 
+        other_row = None
+        if other is not None:
+            sa, so = an["strength"], other["strength"]
+            def counting(x):  # "B ahead by 2.7 dB (95% range 1.4 to 4.1)", without repeating the name when the range is on one side
+                one_side = (x["lo"] > 0 and x["hi"] > 0) or (x["lo"] < 0 and x["hi"] < 0)
+                span = (f"{min(abs(x['lo']), abs(x['hi'])):.1f} to {max(abs(x['lo']), abs(x['hi'])):.1f}" if one_side
+                        else _range_text(names, x["lo"], x["hi"]))
+                return f"{_lead_text(names, x['mean'])} (95% range {span})"
+            weak_why = (f"{noun.capitalize()}s heard only once or twice swing more, and they are mostly the weak, far ones, where "
+                        "reports near WSPR's -28 dB floor are partly missing, which usually pulls the gap toward zero. The stricter "
+                        f"number is steadier but rests on fewer {noun}s.")
+            if leave_out:
+                verdict["caveats"].append(f"On all {so['n']} {noun}s that heard both, the Signal advantage would be {counting(so)}, "
+                                          f"against {counting(sa)} on the {sa['n']} this verdict uses. " + weak_why)
+                other_row = (f"**Signal advantage, all {noun}s**", _lead_text(names, so["mean"]),
+                             f"The same figure on all {so['n']} {noun}s that heard both, instead of the {sa['n']} the Receiver by "
+                             "receiver settings keep, which this verdict uses.")
+            else:
+                verdict["caveats"].append(
+                    f"On the {so['n']} {noun}s the Receiver by receiver slider keeps ({m_o} or more reports on each antenna), the "
+                    f"Signal advantage is {counting(so)}, against {counting(sa)} on all {sa['n']} counted here. " + weak_why +
+                    " Turn on \"Use these settings for the verdict and the other tabs too\" on that tab to make the verdict use "
+                    "the stricter number.")
+                other_row = (f"**Signal advantage, slider's {noun}s**", _lead_text(names, so["mean"]),
+                             f"The same figure on the {so['n']} {noun}s the Receiver by receiver slider keeps ({m_o} or more reports "
+                             f"on each antenna), instead of all {sa['n']}, which this verdict uses.")
         r, s_, dx = an["reach"], an["strength"], an["dx"]
         k = KM_PER_MILE if units == "mi" else 1
         means_a, means_b = sector_means(ta_all), sector_means(tb_all)
@@ -1384,7 +1455,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         tab_result, tab_where, tab_each, tab_method, tab_maps = st.tabs(
             [":material/bar_chart: Result", ":material/explore: Direction & distance", ":material/table_rows: Receiver by receiver",
              ":material/functions: Linear average", ":material/map: Maps"])
-        glance = {}  # what the Receiver by receiver tab works out, for "Numbers at a glance" on the Result tab
+        glance = {"other": other_row}  # and what the Receiver by receiver tab works out, for "Numbers at a glance" on the Result tab
 
         with tab_result:
             st.caption("The scoreboard for each side, who heard you, and a timeline of every spot in the order it happened.")
@@ -1561,7 +1632,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     scatter_src = every
                 everyone = (station_gains(full_a, full_b, locs, home, method_key, 1, an["power"]["offset"], avg_floor, avg_min_km,
                                           weak_pct) if min_reports > 1 else every)
-                ctrl_min.caption(_min_reports_caption(noun, min_reports, auto_min, blocks_mode, len(every), len(everyone)))
+                ctrl_min.caption(_min_reports_caption(noun, min_reports, auto_min, blocks_mode, len(every), len(everyone),
+                                                      st.session_state.get("_auto_min_step")))
                 ctrl_min.caption("Where these counts come from: **Data used**, on the Result tab.")
                 if st.session_state.get(_APPLY_KEY):
                     if min_reports != applied_min:  # the verdict above used an older setting (first visit from a link): redo it
@@ -1579,9 +1651,14 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 if every.empty:
                     st.info(f"No {noun} has {min_reports} or more reports on both antennas. Lower the number above.")
                 else:
+                    trend_sig = (len(fa), len(fb), method_key, an["power"]["offset"], avg_floor, round(avg_min_km), weak_pct)
+                    cached_trend = st.session_state.get("_trend")
+                    if not (cached_trend and cached_trend[0] == trend_sig):
+                        cached_trend = st.session_state["_trend"] = (trend_sig, slider_trend(
+                            full_a, full_b, locs, home, method_key, an["power"]["offset"], avg_floor, avg_min_km, weak_pct))
                     with dash_slot:
                         _dashboard(every, opening, noun, pair_by_pair_gain(every, fa, fb, locs, home, an["power"]["offset"])
-                                   if an["paired"] else None)
+                                   if an["paired"] else None, cached_trend[1], min_reports)
                         st.caption("The verdict's number is the average over every receiver compared"
                                    f"{', taking each one pair by pair' if an['paired'] else ''}, so it can differ from the "
                                    "average and the typical gain here, most when a few receivers gain far more than the rest.")

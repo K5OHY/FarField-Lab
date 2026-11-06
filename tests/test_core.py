@@ -192,6 +192,50 @@ class VerdictCard(unittest.TestCase):
         self.assertIn("far", html)
 
 
+class SettledSlider(unittest.TestCase):
+    """A short test opens the slider where the result stops moving much, and says so."""
+
+    @staticmethod
+    def trend(receivers, average, signal=None):
+        n = len(receivers)
+        return pd.DataFrame({"reports": range(1, n + 1), "receivers": receivers, "average": average, "typical": average,
+                             "biggest": average, "smallest": average, "signal": signal if signal is not None else [math.nan] * n})
+
+    def test_it_opens_where_the_next_step_barely_moves_the_result(self):
+        # 1 November: the average moves 0.4 from 2 to 3 but only 0.1 from 3 to 4, so 3 is where it settles
+        t = self.trend([139, 115, 87, 72, 52, 29], [1.6, 1.8, 2.2, 2.3, 3.0, 3.6], [2.13, 2.17, 2.74, 2.76, 3.29, 3.48])
+        found = cs.settled_min_reports(t)
+        self.assertEqual(found[0], 3)
+        self.assertLess(found[1], cs.SETTLED_DB)
+
+    def test_the_pair_by_pair_figure_must_settle_too(self):
+        t = self.trend([100, 90, 80, 70], [1.0, 2.0, 2.1, 2.2], [1.0, 2.0, 3.0, 4.0])  # the average is steady from 2, the signal is not
+        self.assertIsNone(cs.settled_min_reports(t))
+
+    def test_it_never_settles_on_a_handful_of_receivers(self):
+        t = self.trend([100, 20, 15, 10], [1.0, 2.0, 2.05, 2.1])  # steady, but fewer than SETTLED_MIN_RECEIVERS are left
+        self.assertIsNone(cs.settled_min_reports(t))
+
+    def test_a_result_that_keeps_climbing_has_no_settled_setting(self):
+        t = self.trend([100, 80, 60, 40], [1.0, 1.6, 2.2, 2.8])
+        self.assertIsNone(cs.settled_min_reports(t))
+
+    def test_the_trend_has_one_row_per_setting_and_matches_the_dashboard(self):
+        calls = [f"R{n}" for n in range(12)]
+        a, b = spots({c: [-20, -21, -22] for c in calls}), spots({c: [-15, -16] for c in calls})
+        t = cs.slider_trend(a, b, places(*calls), HOME)
+        self.assertEqual(list(t["reports"]), [1, 2])  # nobody has 3 reports on B
+        self.assertEqual(int(t.loc[1, "receivers"]), 12)
+        every = cs.station_gains(a, b, places(*calls), HOME, "snr", 2)
+        self.assertAlmostEqual(float(t.loc[1, "average"]), cs.gain_readout(every)["mean"])
+        self.assertTrue(math.isnan(t.loc[0, "signal"]))  # no pairs, so no pair-by-pair figure
+
+    def test_a_long_test_keeps_its_published_default(self):
+        calls = [f"R{n}" for n in range(12)]
+        many = spots({c: [-20] * 25 for c in calls})
+        self.assertEqual(cs.min_reports_plan(many, many, places(*calls), HOME, long_test=True), (20, None))
+
+
 class DefaultMinimumReports(unittest.TestCase):
     """The 'at least this many reports on each antenna' slider opens as strict as it can while leaving enough receivers."""
 

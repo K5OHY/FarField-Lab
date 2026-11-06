@@ -181,15 +181,70 @@ def apply_leave_out(spots_a, spots_b, locs, home, min_spots=1, floor=None, min_k
 ENOUGH_RECEIVERS = 10   # a default report minimum should leave at least this many receivers on the table
 
 
-def default_min_reports(spots_a, spots_b, locs, home, long_test, offset=0.0, floor=None, min_km=0.0, weak_pct=0):
-    """The 'at least this many reports on each antenna' setting a test opens with: the strictest of a short list that still
-    leaves ENOUGH_RECEIVERS receivers. A short test tries 2 (so a single lucky report cannot set the result); a long test
-    tries 20, then 10, 5 and 2. When even the mildest leaves too few, it is 1 and every receiver that heard both is shown."""
+SETTLED_DB = 0.25               # the result has settled when one more report on the slider moves it by less than this (dB)
+SETTLED_MIN_RECEIVERS = 30      # and the settled setting still leaves at least this many receivers on the table
+
+
+def slider_trend(spots_a, spots_b, locs, home, method="snr", offset=0.0, floor=None, min_km=0.0, weak_pct=0, top=12):
+    """The result at each setting of the 'at least this many reports on each antenna' slider, from 1 up: one row per setting with
+    the receivers left, the average and typical gain (B minus A), the biggest and smallest gain, and the signal advantage taken
+    pair by pair on those same receivers (NaN when the test has no pairs). Stops when fewer than 3 receivers are left."""
+    fa = spots_a if floor is None else spots_a[spots_a["snr"] > floor]
+    fb = spots_b if floor is None else spots_b[spots_b["snr"] > floor]
+    rows = []
+    for m in range(1, top + 1):
+        every = station_gains(spots_a, spots_b, locs, home, method, m, offset, floor, min_km, weak_pct)
+        if len(every) < 3:
+            break
+        r = gain_readout(every)
+        n_pair, pair = pair_by_pair_gain(every, fa, fb, locs, home, offset)
+        rows.append({"reports": m, "receivers": r["n"], "average": r["mean"], "typical": r["typical"], "biggest": r["biggest"],
+                     "smallest": r["smallest"], "signal": pair if n_pair else math.nan})
+    return pd.DataFrame(rows, columns=["reports", "receivers", "average", "typical", "biggest", "smallest", "signal"])
+
+
+def settled_min_reports(trend):
+    """(setting, step) for the lowest slider setting from 2 up where the result has settled, or None. Settled means going up one
+    more step moves the average gain, and the pair-by-pair signal advantage where there is one, by less than SETTLED_DB, with at
+    least SETTLED_MIN_RECEIVERS receivers left at both settings. `step` is the largest of those moves. Below it, receivers heard
+    only once or twice still swing the result; above it, only the receivers heard most are left and the number keeps changing."""
+    t = trend.set_index("reports")
+    for m in t.index:
+        if m < 2 or m + 1 not in t.index:
+            continue
+        a, b = t.loc[m], t.loc[m + 1]
+        if min(a["receivers"], b["receivers"]) < SETTLED_MIN_RECEIVERS:
+            continue
+        moves = [abs(b["average"] - a["average"])]
+        if not (pd.isna(a["signal"]) or pd.isna(b["signal"])):
+            moves.append(abs(b["signal"] - a["signal"]))
+        if max(moves) < SETTLED_DB:
+            return int(m), float(max(moves))
+    return None
+
+
+def min_reports_plan(spots_a, spots_b, locs, home, long_test, offset=0.0, floor=None, min_km=0.0, weak_pct=0):
+    """(setting, step): the 'at least this many reports on each antenna' setting a test opens with, and, when it comes from the
+    result settling, how far the next step moves it (otherwise None).
+
+    A short test opens where the result has settled (settled_min_reports) when it does, so a receiver heard once or twice cannot
+    set the answer and the numbers are not still moving. Failing that it tries 2, the old default, which still leaves
+    ENOUGH_RECEIVERS receivers. A long test tries 20 (Dale's published method), then 10, 5 and 2. When even the mildest leaves too
+    few, it is 1 and every receiver that heard both is shown."""
+    if not long_test:
+        found = settled_min_reports(slider_trend(spots_a, spots_b, locs, home, "snr", offset, floor, min_km, weak_pct))
+        if found:
+            return found
     method = "linear" if long_test else "snr"
     for m in ((DALE_MIN_SPOTS, 10, 5, 2) if long_test else (2,)):
         if len(station_gains(spots_a, spots_b, locs, home, method, m, offset, floor, min_km, weak_pct)) >= ENOUGH_RECEIVERS:
-            return m
-    return 1
+            return m, None
+    return 1, None
+
+
+def default_min_reports(spots_a, spots_b, locs, home, long_test, offset=0.0, floor=None, min_km=0.0, weak_pct=0):
+    """The slider setting a test opens with (see min_reports_plan)."""
+    return min_reports_plan(spots_a, spots_b, locs, home, long_test, offset, floor, min_km, weak_pct)[0]
 
 
 def mean_interval(values):

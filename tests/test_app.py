@@ -484,6 +484,24 @@ class ComparePage(unittest.TestCase):
         self.assertTrue(any(e.label.startswith("Numbers at a glance") for e in at.main.expander))  # the figures side by side
         self.assertIn("Strength:", " ".join(m.value for m in at.main.markdown))  # the verdict names the question it answers
 
+    @needs_network
+    def test_a_short_test_opens_the_slider_where_it_settles_and_shows_the_verdict_both_ways(self):
+        """K5OHY's 1 November test: raising the slider from 3 to 4 moves the average by 0.1 dB, so it opens at 3. The verdict
+        counts everyone (2.1 dB) until the switch is on, and says what the slider's receivers would give (2.7 dB) and why."""
+        at = page("compare_page", call="K5OHY", src="wspr", units="mi", date="2026-11-01", go="1", na="Vertical", nb="2 el Vertical",
+                  n="16", ed="8X,9X,10X,11X", ord="abba").run()
+        self.assertEqual(errors(at), [])
+        slider = [x for x in at.main.slider if x.key == "rx_min_reports_pair"][0]
+        self.assertEqual(slider.value, 3)
+        text = " ".join(c.value for c in at.main.caption)
+        self.assertIn("the result has settled there", text)
+        self.assertTrue(any(e.label.startswith("How the result changes as the slider rises") for e in at.main.expander))
+        card = " ".join(m.value for m in at.main.markdown)
+        self.assertIn("slider keeps (3 or more reports on each antenna)", card)
+        self.assertIn("Signal advantage, slider's receivers", card)
+        self.assertIn("2.1 dB", card)  # everyone: the verdict's default
+        self.assertIn("2.7 dB", card)  # the slider's receivers
+
     def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
         at = page("compare_page").run()
         open_example(at, "long")
