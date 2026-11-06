@@ -911,7 +911,7 @@ def build_verdict(an, names, exposure=None, rounds=None, receiver_word="receiver
         elif sc == "equal":
             lean = f" {names[s['lean']]} is very slightly ahead, too little to matter." if s["lean"] else ""
             inside = s["lo"] >= -EQUAL_DB and s["hi"] <= EQUAL_DB
-            body = (f"**No meaningful strength difference:** at the {s['n']} shared {receiver_word}s the average difference is only "
+            body = (f"**No meaningful difference:** at the {s['n']} shared {receiver_word}s the average difference is only "
                     f"{abs(s['mean']):.1f} dB, and the 95% range runs from {_lead_text(names, s['lo'])} to "
                     f"{_lead_text(names, s['hi'])}"
                     + (f", inside ±{EQUAL_DB:g} dB." if inside else
@@ -924,16 +924,16 @@ def build_verdict(an, names, exposure=None, rounds=None, receiver_word="receiver
                         f"{abs(s['mean']):.1f} dB on average (95% range {lo_:.1f} to {hi_:.1f} dB), too small and "
                         f"uncertain to call decisively.")
             else:
-                body = (f"**Strength is inconclusive:** at the {s['n']} shared {receiver_word}s, "
+                body = (f"**Inconclusive:** at the {s['n']} shared {receiver_word}s, "
                         f"{_straddle_text(names, s)}.")
         else:
-            body = (f"**Strength:** only {s['n']} {receiver_word}(s) heard both ({_lead_text(names, s['mean'])}); "
+            body = (f"Only {s['n']} {receiver_word}(s) heard both ({_lead_text(names, s['mean'])}); "
                     f"too few to judge.")
         chance = ""
         if sc == "inconclusive" and not math.isnan(s["p_ahead"]) and s["p_ahead"] >= 0.7:
             chance = (f" {names['A' if s['mean'] > 0 else 'B']} leads, but if the two were really equal, a lead this big "
                       f"would still show up about {1 - s['p_ahead']:.0%} of the time: suggestive, not enough to call it.")
-        points.append(("\U0001F4F6", body + chance + f" A was stronger at {s['wins_a']}, B at {s['wins_b']}, "
+        points.append(("\U0001F4F6", "**Strength:** " + body + chance + f" A was stronger at {s['wins_a']}, B at {s['wins_b']}, "
                        f"tied at {s['ties']}."))
     else:
         points.append(("\U0001F4F6", f"**Strength:** no {receiver_word} heard both, so strength can't be compared directly."))

@@ -18,7 +18,7 @@ See where your signal is heard, how strong it is, and how conditions change. Map
 
 **Comparing two antennas.** The rest of these screens are from a real test: K5OHY's WSPR transmitter on 20m on 4 October 2026, 12 transmissions switched between a 40m loop at 20 ft (A) and a 20m dipole at 40 ft (B). The dipole won clearly.
 
-**The verdict** comes first, in plain English: who reached more receivers, who was stronger and by how much, and whether changing conditions could explain it.
+**The verdict** is the coloured card at the top, labelled *Verdict*, in plain English: who reached more receivers, who was stronger and by how much, and whether changing conditions could explain it. The three tiles above it give the headline numbers, and the *Signal advantage* tile is the verdict's strength figure. The tabs below it hold the evidence.
 
 ![The compare result](images/compare-result.jpg)
 
@@ -129,8 +129,8 @@ The picture follows five receivers through one A transmission and the B transmis
 
 ### Reading the result
 
-- **The PDF report.** Under the verdict button, *Download report (PDF)* starts with a **Test setup** section: the transmitter, date and band, how the antennas were switched, the power, and the block table or the list of transmissions, so someone else can repeat the analysis from the report alone. The averaging settings and filters are stated beside the receiver results. The tables can also be downloaded as CSV.
-- **Result.** The verdict first, in plain English, with the evidence and any caveats. Then a scoreboard, who heard you on each side, and a timeline of every spot in the order it happened. **Download report (PDF)** sits under the verdict. A collapsed **Data used** box says how many spots and receivers went in (loaded, in the test, compared, and how many have 5, 20 and 40 or more reports on each antenna) and what was left out and why; it is in the PDF too.
+- **The PDF report.** On the **Result** tab, *Download report (PDF)* starts with a **Test setup** section: the transmitter, date and band, how the antennas were switched, the power, and the block table or the list of transmissions, so someone else can repeat the analysis from the report alone. The averaging settings and filters are stated beside the receiver results. The tables can also be downloaded as CSV.
+- **Result.** The tab under the verdict: a scoreboard, who heard you on each side, and a timeline of every spot in the order it happened. **Download report (PDF)** is at the top of this tab, and a collapsed **Numbers at a glance** box lists the different gain figures side by side with how each is worked out. A collapsed **Data used** box says how many spots and receivers went in (loaded, in the test, compared, and how many have 5, 20 and 40 or more reports on each antenna) and what was left out and why; it is in the PDF too.
 - **Direction & distance.** A world map centred on your station (distance from the centre is true distance, angle is true compass bearing), coloured by direction and distance: which antenna is stronger, or the SNR with A or B, or just the receivers (filled where both antennas were heard, open where only one was), so you can see whether an antenna is getting out toward Europe, Asia or Oceania; zoom between nearby, half the world and the whole world. Then a rose chart of how much stronger one side is toward each direction (longer bar means a bigger difference; blue A, orange B; fainter or hatched for fewer receivers; pick 45, 30 or 15 degree sectors, or one direction to see its numbers), the average SNR by direction, and the same by distance range.
 - **Receiver by receiver.** Every station that heard both sides, as a chart and a table. The table gives each station's **relative gain** (B's SNR minus A's, so A is the reference and B the test), and two charts plot that gain against direction and against distance. You choose how each station's reports are averaged (SNR in dB, or linear power) and the minimum number of reports a station needs on each antenna, so you can watch the answer settle as the weak, thin stations drop out. Pick one station (sorted A to Z, by distance, by direction or by reports) to see every report from it against time for both antennas, with each antenna's average, the relative gain and its 95% range, which shows fading and band changes at a glance. Under the relative gain charts, a **summary table** gives the average gain by direction (eight octants or four quadrants) and by distance (Short, Medium and Long, with cut points you can change), with the number of receivers and a 95% range for each; it is in the PDF too. For a long-block test, a **Relative gain over time** view averages the gain in windows that are a few block lengths long (20 minutes with 10 minute blocks, 40 with 20 minute blocks) (all stations, with a 95% range, plus the picked station), so a band opening during the test shows up instead of being averaged away. The difference cancels each station's own noise level, so stations can be compared with each other.
 - **Linear average.** The standard SNR average next to the same comparison done by averaging power instead of dB (each report turned into power, averaged per antenna, turned back into dB), overall and by direction, with when to use which.
@@ -214,6 +214,19 @@ This gives equal weight to each receiver callsign, not to each place. Receivers 
 **The 95% range** says how uncertain that average is, and the app uses a few methods depending on the test. For the standard comparison it resamples the receivers (a bootstrap). For an alternating test it also widens that range when needed to allow for fading from one pair of transmissions to the next, which moves every receiver together. For short unpaired tests and for the linear-power check it uses the Student t interval, $\bar{G} \pm t_{0.975,N-1} s/\sqrt{N}$, where $s$ is the standard deviation of the $G_r$ and $t$ is the Student t critical value for $N-1$ degrees of freedom. A range is not a guarantee that the true difference lies inside it.
 
 </details>
+
+### Which number is which
+
+One test gives several figures that all answer "how much stronger is B?". They are different ways of averaging the same receivers. Signal advantage, Average gain and Typical gain usually land within a few tenths of a dB of each other, more when a few receivers gain far more than the rest. The Power average can sit a dB or more away, because strong reports count for more in power. The **Numbers at a glance** box on the Result tab shows all of them for your test.
+
+| Figure | Where | What it is |
+|---|---|---|
+| **Signal advantage** | The verdict, and a tile on the Receiver by receiver dashboard | The verdict's number. For a test that alternates, taken pair by pair: at each receiver only an A transmission and the B one right after it count. The number to quote. |
+| **Average gain** | Dashboard, Receiver by receiver tab | Each receiver's middle report on A minus on B over the whole test, including rounds where only one side was heard. It follows that tab's settings, and is Dale's method for long tests. |
+| **Typical gain** | Dashboard | The middle receiver, so a few extreme receivers do not pull it. |
+| **Power average** | Linear average tab | Each receiver's average power instead of its middle dB report, a cross-check. |
+
+In a long-blocks test there are no pairs, so the Signal advantage and the Average gain are worked out the same way.
 
 ### How the verdict is decided
 

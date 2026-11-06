@@ -468,7 +468,7 @@ class ComparePage(unittest.TestCase):
         at = page("compare_page").run()
         open_example(at, "long")
         self.assertEqual(errors(at), [])
-        self.assertNotIn("Pair-by-pair average", {m.label for m in at.main.metric})
+        self.assertNotIn("Signal advantage", {m.label for m in at.main.metric})
 
     @needs_network
     def test_an_alternating_test_shows_the_verdicts_number_beside_the_dashboard(self):
@@ -478,9 +478,11 @@ class ComparePage(unittest.TestCase):
                   n="16", ed="8X,9X,10X,11X", ord="abba", mr="3", uv="1").run()
         self.assertEqual(errors(at), [])
         shown = {m.label: m.value for m in at.main.metric}
-        self.assertEqual(shown["Pair-by-pair average"], "+2.7 dB")
+        self.assertEqual(shown["Signal advantage"], "+2.7 dB")
         self.assertEqual(shown["Average gain"], "+2.2 dB")
         self.assertEqual(shown["Receivers"], "87")
+        self.assertTrue(any(e.label.startswith("Numbers at a glance") for e in at.main.expander))  # the figures side by side
+        self.assertIn("Strength:", " ".join(m.value for m in at.main.markdown))  # the verdict names the question it answers
 
     def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
         at = page("compare_page").run()

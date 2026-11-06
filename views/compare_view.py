@@ -774,6 +774,48 @@ def _linear_average_view(spots_a, spots_b, an, names, noun, locs, home, kind, ca
         "and give the start time, block length and number of blocks.")
 
 
+def _glance_rows(an, names, noun, glance, pm):
+    """The figures that all answer 'how much stronger?', one row each: its name, this test's reading, and how it is worked out, so
+    two different numbers on screen are never a puzzle. `glance` holds what the Receiver by receiver tab worked out (gain_readout,
+    and the direction and distance tables); `pm` is the power average. A figure that cannot be worked out is left out."""
+    s, rows = an["strength"], []
+    if s["n"]:
+        how = (f"Pair by pair: at each {noun}, only an A transmission and the B one right after it count. Averaged over the "
+               f"{s['n']} {noun}s that heard both." if an["paired"] else
+               f"Each {noun}'s middle report on A minus on B, averaged over the {s['n']} {noun}s that heard both.")
+        rows.append(("**Signal advantage** (the verdict's number)", _lead_text(names, s["mean"]), how))
+    gr = glance.get("gr")
+    if gr and gr["n"] and not pd.isna(gr["mean"]):
+        whole = (f"Each {noun}'s middle report on A minus on B over the whole test, even from rounds where only one side was heard, "
+                 f"then averaged over the {gr['n']} {noun}s the Receiver by receiver tab keeps. It follows that tab's settings; "
+                 "the verdict does too only if \"Use these settings for the verdict and the other tabs too\" is on.")
+        rows.append(("**Average gain**" + (", whole test" if an["paired"] else ""), _lead_text(names, -gr["mean"]), whole))
+        rows.append(("**Typical gain**", _lead_text(names, -gr["typical"]),
+                     f"The middle {noun}: half gained more than this and half less. Less pulled around by a few extreme {noun}s."))
+    if pm["n"] >= 2 and not pd.isna(pm["mean"]):
+        rows.append(("**Power average** (Linear average tab)", _lead_text(names, pm["mean"]),
+                     f"Each {noun}'s average power instead of its middle dB report, a cross-check. Steadiest on a long test with many "
+                     "reports per receiver."))
+
+    def biggest(summary):
+        t = summary[summary["receivers"] >= BIN_MIN_SHARED].dropna(subset=["mean"])
+        return None if t.empty else t.loc[t["mean"].abs().idxmax()]
+
+    for key, label, what in (("direction", "direction", "compass group"), ("distance", "distance", "distance group")):
+        found = glance.get(key)
+        if found is None:
+            continue
+        by, summary = found if key == "direction" else (None, found)
+        top = biggest(summary)
+        if top is not None:
+            group = f"{top['group']} ({direction_degrees(top['group'], by)})" if by else str(top["group"])
+            rows.append((f"**Biggest difference by {label}**",
+                         f"{group}: {_lead_text(names, -float(top['mean']))} ({int(top['receivers'])} {noun}s)",
+                         f"The average gain in each {what}, as set on the Receiver by receiver tab; this is the {what} where it "
+                         f"was largest. Groups with fewer than {BIN_MIN_SHARED} {noun}s are skipped. The full table is on that tab."))
+    return rows
+
+
 def _method_summary(spots_a, spots_b, an, names, noun, locs, home):
     """One paragraph for the PDF: the SNR average next to the linear average, and whether they agree."""
     s_ = an["strength"]
@@ -1123,14 +1165,14 @@ def _dashboard(every, reference, noun, pairwise=None):
                             "with the rest is an outlier, usually from too few reports.")
         if pairwise is not None and pairwise[0]:
             c_pair, c_why = st.columns([1, 4])
-            c_pair.metric("Pair-by-pair average", signed_db(pairwise[1]), f"{pairwise[0]} {noun}{'s' if pairwise[0] != 1 else ''}",
+            c_pair.metric("Signal advantage", signed_db(pairwise[1]), f"{pairwise[0]} {noun}{'s' if pairwise[0] != 1 else ''}",
                           delta_color="off", delta_arrow="off",
-                          help="The same receivers, averaged the way the verdict does it: for each one, only an A transmission and "
-                               "the B transmission right after it count, and only where the receiver heard both. This is the "
-                               "verdict's Signal advantage, as a gain (B minus A).")
-            c_why.caption("This is the verdict's number. The tiles above use every report a receiver made, including rounds "
-                          "where it heard only one antenna, so the two can differ by a few tenths of a dB. If they stay close as "
-                          "you raise the slider, the result does not depend on how it is averaged.")
+                          help="The verdict's number, on the same receivers as the tiles above: for each one, only an A transmission "
+                               "and the B transmission right after it count, and only where the receiver heard both. Shown as a gain "
+                               "(B minus A), like the tiles above.")
+            c_why.caption("This is the verdict's Signal advantage. The gains above use every report a receiver made, including "
+                          "rounds where it heard only one antenna, so the two can differ by a few tenths of a dB. If they stay "
+                          "close as you raise the slider, the result does not depend on how it is averaged.")
         st.markdown("###### Watch a direction")
         picks = st.columns(2)
         for col, key, options in ((picks[0], "dash_dir_a", directions), (picks[1], "dash_dir_b", ["Off"] + directions)):
@@ -1342,10 +1384,12 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
         tab_result, tab_where, tab_each, tab_method, tab_maps = st.tabs(
             [":material/bar_chart: Result", ":material/explore: Direction & distance", ":material/table_rows: Receiver by receiver",
              ":material/functions: Linear average", ":material/map: Maps"])
+        glance = {}  # what the Receiver by receiver tab works out, for "Numbers at a glance" on the Result tab
 
         with tab_result:
             st.caption("The scoreboard for each side, who heard you, and a timeline of every spot in the order it happened.")
-            snr_note = f"at the {s_['n']} {noun}s that heard both" if s_["n"] else f"no {noun} heard both"
+            snr_note = (f"at the {s_['n']} {noun}s that heard both · each side's own average; the verdict uses the difference"
+                        if s_["n"] else f"no {noun} heard both")
             avg_a = f"{an['shared']['snr_a'].mean():.1f} dB" if s_["n"] else "—"
             avg_b = f"{an['shared']['snr_b'].mean():.1f} dB" if s_["n"] else "—"
             far = lambda d: (f"{d['km'] / k:,.0f} {units}", d["who"]) if d else ("—", "")  # noqa: E731
@@ -1378,7 +1422,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
             st.download_button(":material/download: Download report (PDF)", data=lambda: compare_report_pdf(pdf_ctx),
                                file_name=f"FarFieldLab_compare_{callsign}_{file_date}.pdf", mime="application/pdf",
                                help="The verdict, scoreboard and every chart and table, as a PDF you can keep or share.")
-            used_slot = st.container()  # filled below, once the Receiver by receiver settings are known
+            glance_slot = st.container()  # filled below, once the Receiver by receiver settings are known
+            used_slot = st.container()  # likewise
             st.markdown(scoreboard_html(names["A"], names["B"], score_rows), unsafe_allow_html=True)
 
             st.markdown(f"##### Who heard you on each {'side' if sep.get('time_based') else 'frequency'}?")
@@ -1598,6 +1643,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     dist_labels = [f"Short: under {short_max:,.0f} {units}", f"Medium: {short_max:,.0f} to {medium_max:,.0f} {units}",
                                    f"Long: over {medium_max:,.0f} {units}"]
                     dist_sum = gain_summary(every, "distance", [short_max * kk_gs, medium_max * kk_gs], dist_labels)
+                    glance.update(gr=gain_readout(every), direction=(dir_by, dir_sum), distance=dist_sum)
                     gs_dir = _gain_summary_view(dir_sum, "Direction", noun, dir_by)
                     gs_dist = _gain_summary_view(dist_sum, "Distance", noun)
                     pdf_ctx["gain_summary"] = {"direction": gs_dir, "distance": gs_dist}
@@ -1692,6 +1738,17 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                        "whole test hides it. A band opening, for example Europe late in the day, shows up here.")
             else:
                 st.info(f"No {noun} heard both sides, so there is nothing to compare receiver by receiver.")
+
+        with glance_slot:
+            rows = _glance_rows(an, names, noun, glance, power_method(spots_a, spots_b, locs, home, offset=an["power"]["offset"]))
+            if rows:
+                with st.expander("Numbers at a glance: which figure is which"):
+                    st.markdown("| Number | Reading | How it is worked out |\n|---|---|---|\n"
+                                + "\n".join("| " + " | ".join(c.replace("|", "/") for c in row) + " |" for row in rows))
+                    st.caption("These are different ways of averaging the same receivers. The first three usually land within a few "
+                               "tenths of a dB of each other, more when a few receivers gain far more than the rest. The power "
+                               "average can sit a dB or more away, because strong reports count for more in power. The verdict's "
+                               "Signal advantage is the number to quote.")
 
         flow = _data_flow(all_spots, spots, map_a, map_b, spots_a, spots_b, an, locs, home, noun, units, unpaired, listening_note,
                           st.session_state.get("ghost_cycles", 0),
