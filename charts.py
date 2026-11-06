@@ -9,7 +9,7 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
 from compare_stats import BIN_MIN_SHARED, SECTOR_NAMES, locate as skimmer_location, t_crit
-from ui_common import KM_PER_MILE, RBN_SNR_SCALE, SNR_CMAP, _bold, signed, snr_color
+from ui_common import KM_PER_MILE, RBN_SNR_SCALE, SNR_CMAP, _bold, esc, signed, snr_color
 
 
 SECTORS = 16
@@ -156,18 +156,18 @@ def scoreboard_html(name_a, name_b, rows):
         color = COLOR_A if side == "A" else COLOR_B
         won = winner == side
         style = f"background:{color}26;border-left:4px solid {color}" if won else "border-left:4px solid transparent"
-        sub = f'<div style="opacity:.6;font-size:.8rem">{note}</div>' if note else ""
+        sub = f'<div style="opacity:.6;font-size:.8rem">{esc(note)}</div>' if note else ""
         return (f'<td style="padding:12px 16px;{style}"><span style="font-size:1.5rem;font-weight:{700 if won else 400}">'
-                f'{value}</span>{" &nbsp;✔" if won else ""}{sub}</td>')
+                f'{esc(value)}</span>{" &nbsp;✔" if won else ""}{sub}</td>')
 
     body = "".join(
-        f'<tr style="border-top:1px solid rgba(128,128,128,.25)"><td style="padding:12px 16px">{label}'
-        f'<div style="opacity:.6;font-size:.8rem">{note}</div></td>{cell("A", *a, w)}{cell("B", *b, w)}</tr>'
+        f'<tr style="border-top:1px solid rgba(128,128,128,.25)"><td style="padding:12px 16px">{esc(label)}'
+        f'<div style="opacity:.6;font-size:.8rem">{esc(note)}</div></td>{cell("A", *a, w)}{cell("B", *b, w)}</tr>'
         for label, note, a, b, w in rows)
     return (f'<table style="width:100%;border-collapse:collapse"><tr>'
             f'<th style="text-align:left;padding:8px 16px"></th>'
-            f'<th style="text-align:left;padding:8px 16px;color:{COLOR_A}">🔵 {name_a}</th>'
-            f'<th style="text-align:left;padding:8px 16px;color:{COLOR_B}">🟠 {name_b}</th></tr>{body}</table>')
+            f'<th style="text-align:left;padding:8px 16px;color:{COLOR_A}">🔵 {esc(name_a)}</th>'
+            f'<th style="text-align:left;padding:8px 16px;color:{COLOR_B}">🟠 {esc(name_b)}</th></tr>{body}</table>')
 
 
 def reach_bar_html(only_a, both, only_b):

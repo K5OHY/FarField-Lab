@@ -56,15 +56,17 @@ def _inverse(lat1, lon1, lat2, lon2):
     return inv["s12"] / 1000, inv["azi1"] % 360
 
 
-def receiver_table(spots, locs, home):
-    """One row per located receiver: median SNR, spot count, distance (km) and bearing from `home`."""
+def receiver_table(spots, locs, home, method="snr"):
+    """One row per located receiver: its SNR, spot count, distance (km) and bearing from `home`. The SNR is the median of the receiver's
+    reports (method 'snr'), or, for a long test with many reports per receiver, their average power turned back into dB ('linear')."""
     rows = []
     for spotter, g in spots.groupby("spotter"):
         loc = locate(spotter, locs)
         if loc is None:
             continue
         km, bearing = _inverse(float(home[0]), float(home[1]), float(loc[0]), float(loc[1]))
-        rows.append((spotter, g["snr"].median(), len(g), km, bearing))
+        level = 10 * np.log10(np.mean(10 ** (g["snr"].to_numpy(float) / 10))) if method == "linear" else g["snr"].median()
+        rows.append((spotter, level, len(g), km, bearing))
     return pd.DataFrame(rows, columns=["skimmer", "snr", "spots", "km", "bearing"]).set_index("skimmer")
 
 
@@ -637,12 +639,15 @@ def _farthest(table):
     return {"km": float(table.loc[row, "km"]), "who": row, "p90": float(table["km"].quantile(0.9))}
 
 
-def analyze(spots_a, spots_b, locs, home, power_a=None, power_b=None, normalize=True, units="mi", exposure=None, leave_out=None):
+def analyze(spots_a, spots_b, locs, home, power_a=None, power_b=None, normalize=True, units="mi", exposure=None, leave_out=None,
+            linear=False):
     """Compare two groups of spots. `power_a` / `power_b` are dBm (None = unknown); when both are known and
     `normalize` is true, B's SNR is shifted to A's power before comparing. `exposure` = (minutes_a, minutes_b) of
     time on the air when the sides were separated in time; an unbalanced pair is thinned to equal exposure first.
     `leave_out` (the keyword arguments of apply_leave_out) narrows the strength figures, and the direction and distance
-    comparisons that rest on them, to the receivers it keeps; how many receivers heard each side is not changed."""
+    comparisons that rest on them, to the receivers it keeps; how many receivers heard each side is not changed. `linear` is for a
+    long test run in blocks (no pairs): each receiver's strength is then its average power on each antenna, as in Dale's published
+    method, not the median of its reports. The numbers on the Receiver by receiver tab use the same average."""
     n_all_a, n_all_b = len(spots_a), len(spots_b)
     spots_a, spots_b, equalized = equalize_exposure(spots_a, spots_b, exposure)
     ta, tb = receiver_table(spots_a, locs, home), receiver_table(spots_b, locs, home)
@@ -652,11 +657,15 @@ def analyze(spots_a, spots_b, locs, home, power_a=None, power_b=None, normalize=
     round_means = None
     cut_a, cut_b, cut_info = spots_a, spots_b, None
     ta_s, tb_s = ta, tb
+    how = "linear" if (linear and not paired) else "snr"
+    if how == "linear":
+        ta_s, tb_s = receiver_table(spots_a, locs, home, how), receiver_table(spots_b, locs, home, how)
+        tb_s = tb_s.assign(snr=tb_s["snr"] + offset)
     if leave_out:
         cut_a, cut_b, kept = apply_leave_out(spots_a, spots_b, locs, home, **leave_out)
         cut_info = {"kept": kept, "total": len(station_gains(spots_a, spots_b, locs, home))}
         if kept:
-            ta_s, tb_s = receiver_table(cut_a, locs, home), receiver_table(cut_b, locs, home)
+            ta_s, tb_s = receiver_table(cut_a, locs, home, how), receiver_table(cut_b, locs, home, how)
             tb_s = tb_s.assign(snr=tb_s["snr"] + offset)
         else:  # nothing is left to compare, so the caller falls back to everything
             cut_a, cut_b = spots_a, spots_b

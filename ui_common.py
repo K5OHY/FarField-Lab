@@ -1,4 +1,5 @@
 """Settings, colours, constants and small helpers shared by every page."""
+import html
 import json
 import re
 from pathlib import Path
@@ -75,8 +76,22 @@ SPLIT_FREQ = "Two frequencies"
 SPLIT_LOG = "Antenna log"
 
 
+def esc(text):
+    """`text` made safe to put into HTML: anything typed by a visitor (an antenna name from a shared link, say) or read from outside the
+    app (a receiver's callsign) is shown as text and can never become markup or script."""
+    return html.escape(str(text))
+
+
+def clean_name(text, limit=60):
+    """An antenna name as typed or carried in a link, without the characters that make HTML tags, markdown links or code, and without
+    control characters, on one line and at most `limit` characters. Ordinary names ('40m loop, 20 ft', 'Vertical (tuned)') are unchanged."""
+    text = re.sub(r"[<>\[\]`\\\x00-\x1f\x7f]", "", str(text or ""))
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
 def _bold(text):
-    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    """Text with **bold** marked up, escaped first so nothing in it can become HTML."""
+    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(str(text), quote=False))
 
 
 def _pretty_date(file_date):

@@ -9,7 +9,7 @@ from functools import lru_cache
 from geographiclib.geodesic import Geodesic
 
 from compare_stats import locate as skimmer_location, receiver_table
-from ui_common import BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, TILE_STYLES, _ESRI_ATTR, snr_color, snr_radius
+from ui_common import BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, TILE_STYLES, _ESRI_ATTR, esc, snr_color, snr_radius
 
 
 # --------------------------------------------------------------------- geometry
@@ -185,7 +185,7 @@ def _band_panel_html(spotter, band, g, gid_seed, scale=RBN_SNR_SCALE):
     best = g.loc[g["snr"].idxmax()]
     freq_label = (f"{best['freq']:.1f} kHz" if g["freq"].nunique() == 1
                   else f"{g['freq'].min():.1f}&ndash;{g['freq'].max():.1f} kHz")
-    sub = f'<div style="opacity:.7;font-size:12px;margin:2px 0 6px 0">{band} &middot; {freq_label}</div>'
+    sub = f'<div style="opacity:.7;font-size:12px;margin:2px 0 6px 0">{esc(band)} &middot; {freq_label}</div>'
     return sub + _history_block(g, f"{gid_seed}{band}", scale)
 
 
@@ -198,7 +198,7 @@ def spot_popup_html(spotter, g, dist, units, scale=RBN_SNR_SCALE):
     and "which panel to hide" rules stay simple, explicit ID selectors, which also beats needing
     !important: an unadorned base class rule sets the resting look, and each `#radio:checked ~
     #label` override rule outranks it on specificity alone because it includes an ID."""
-    header = f"<b>{spotter}</b><br>{dist:,.0f} {units}"
+    header = f"<b>{esc(spotter)}</b><br>{dist:,.0f} {esc(units)}"
     bands = sorted(g["band"].unique(), key=lambda b: -len(g[g["band"] == b]))  # busiest band first
     if len(bands) == 1:
         return header + "<br>" + _band_panel_html(spotter, bands[0], g, spotter, scale)
@@ -211,7 +211,7 @@ def spot_popup_html(spotter, g, dist, units, scale=RBN_SNR_SCALE):
         bg = g[g["band"] == band]
         inputs.append(f'<input type="radio" name="{gid}" id="{gid}_{i}" style="display:none"'
                       + (" checked>" if i == 0 else ">"))
-        tabs.append(f'<label for="{gid}_{i}" id="{gid}_tab{i}" class="{gid}_tab">{band} ({len(bg)})</label>')
+        tabs.append(f'<label for="{gid}_{i}" id="{gid}_tab{i}" class="{gid}_tab">{esc(band)} ({len(bg)})</label>')
         panels.append(f'<div id="{gid}_panel{i}">{_band_panel_html(spotter, band, bg, spotter, scale)}</div>')
         rules.append(f'#{gid}_{i}:checked ~ #{gid}_tab{i} {{background:{BAND_COLORS.get(band, "#3388ff")}55}}')
         rules += [f'#{gid}_{i}:checked ~ #{gid}_panel{j} {{display:none}}' for j in range(len(bands)) if j != i]
@@ -308,13 +308,13 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
         far_end = great_circle(home, far_loc)[-1]
         folium.CircleMarker(
             far_end, radius=18, color="#e11d48", weight=3, dash_array="6 6", fill=False,
-            tooltip=folium.Tooltip(f"Farthest: {farthest} · {distance_km(home, far_loc) / k:,.0f} {units}",
+            tooltip=folium.Tooltip(f"Farthest: {esc(farthest)} · {distance_km(home, far_loc) / k:,.0f} {esc(units)}",
                                    permanent=True, direction="top", offset=(0, -14)),
         ).add_to(m)
 
     folium.Marker(
         home, icon=folium.Icon(icon="star", color="red"),
-        popup=f"{callsign}<br>{home_label}", tooltip=f"{callsign} ({home_label})",
+        popup=f"{esc(callsign)}<br>{esc(home_label)}", tooltip=f"{esc(callsign)} ({esc(home_label)})",
     ).add_to(m)
 
     if len(bounds) > 1:
@@ -324,7 +324,7 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
     bands_present = spots["band"].value_counts()
     rows = "".join(
         f'<div><span style="display:inline-block;width:18px;height:4px;background:{BAND_COLORS.get(b, "#3388ff")};'
-        f'margin-right:6px;vertical-align:middle;border-radius:2px"></span>{b} <span style="opacity:.6">({n})</span></div>'
+        f'margin-right:6px;vertical-align:middle;border-radius:2px"></span>{esc(b)} <span style="opacity:.6">({n})</span></div>'
         for b, n in sorted(bands_present.items(), key=lambda kv: list(BAND_COLORS).index(kv[0]) if kv[0] in BAND_COLORS else 99)
     )
     snr_key = "".join(
@@ -338,7 +338,7 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
     <div style="position:fixed;bottom:34px;right:12px;z-index:9999;background:rgba(255,255,255,.92);
       padding:10px 12px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.3);
       font:12px/1.5 system-ui,sans-serif;color:#222">
-      <b>{title or callsign}</b> &middot; {len(spots)} spots<div style="margin:6px 0 2px;font-weight:600">Band</div>{rows}
+      <b>{esc(title or callsign)}</b> &middot; {len(spots)} spots<div style="margin:6px 0 2px;font-weight:600">Band</div>{rows}
       <div style="margin:8px 0 4px;font-weight:600">SNR (dB)</div>
       <div style="display:flex;justify-content:space-between;width:130px">{snr_key}</div>
     </div>"""

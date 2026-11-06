@@ -572,6 +572,34 @@ class ComparePage(unittest.TestCase):
             self.assertEqual(errors(at), [])
         self.assertEqual(len(calls), first)  # nothing drew them again
 
+    def test_the_summary_and_the_average_gain_agree_on_a_long_test(self):
+        """Dale's long example: both are each receiver's average power, over the same receivers (the summary used the middle report)."""
+        import re
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        tile = [m.value for m in at.main.markdown if "Signal advantage" in m.value and "font-size:1.6rem" in m.value][0]
+        summary = float(re.findall(r"(\d+\.\d) dB", tile)[0])
+        average = float({m.label: m.value for m in at.main.metric}["Average gain"].replace(" dB", ""))
+        self.assertAlmostEqual(summary, average, delta=0.11)
+        glance = " ".join(m.value for m in at.main.markdown if m.value.startswith("| Number |"))
+        self.assertNotIn("Power average", glance)  # for a long test the summary already is the power average
+        self.assertIn("average power on A minus on B", glance)
+
+    @needs_network
+    def test_a_name_in_a_link_never_becomes_markup_on_the_page_or_in_the_maps(self):
+        evil = "<img src=x onerror=1>"
+        at = page("compare_page", call="K5OHY", src="wspr", units="mi", date="2026-11-01", go="1", na=evil, nb="Safe", n="16",
+                  ed="8X,9X,10X,11X", ord="abba").run()
+        self.assertEqual(errors(at), [])
+        self.assertNotIn("<", at.session_state["cmp_name_a"])
+        frames = at.get("iframe")
+        self.assertGreaterEqual(len(frames), 2)  # the two maps are drawn in frames the browser does not filter
+        for frame in frames:
+            self.assertNotIn("<img src=x", str(frame.proto.srcdoc))
+        for m in at.main.markdown:
+            self.assertNotIn("<img src=x", m.value)
+
     def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
         at = page("compare_page").run()
         open_example(at, "long")

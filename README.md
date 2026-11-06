@@ -230,7 +230,7 @@ One test gives several figures that all answer "how much stronger is B?". They a
 | **Typical gain** | Dashboard | The middle receiver, so a few extreme receivers do not pull it. |
 | **Power average** | Linear average tab | Each receiver's average power instead of its middle dB report, a cross-check. |
 
-In a long-blocks test there are no pairs, so the Signal advantage and the Average gain are worked out the same way.
+In a long-blocks test there are no pairs, so the Signal advantage and the Average gain are worked out the same way: each receiver's average power on A against B, as in Dale's method.
 
 ### How the summary is decided
 

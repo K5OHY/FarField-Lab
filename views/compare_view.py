@@ -74,7 +74,7 @@ from compare_stats import (
 from data_sources import load_listening
 from maps import build_map, compute_stats
 from pdfs import compare_report_pdf
-from ui_common import KM_PER_MILE, SPLIT_FREQ, _pretty_date, _views
+from ui_common import KM_PER_MILE, SPLIT_FREQ, _pretty_date, _views, clean_name, esc
 from views import test_link
 from world_map import MAX_KM, MIN_CELL, azimuth_map_figure, fit_radius_km
 from wspr_data import WsprError
@@ -800,19 +800,20 @@ def _glance_rows(an, names, noun, glance, pm):
     if s["n"]:
         how = (f"Pair by pair: at each {noun}, only an A transmission and the B one right after it count. Averaged over the "
                f"{s['n']} {noun}s that heard both." if an["paired"] else
-               f"Each {noun}'s middle report on A minus on B, averaged over the {s['n']} {noun}s that heard both.")
+               f"Each {noun}'s average power on A minus on B (a long test gives each {noun} many reports), averaged over the "
+               f"{s['n']} {noun}s that heard both.")
         rows.append(("**Signal advantage** (the summary's number)", _lead_text(names, s["mean"]), how))
         if glance.get("other"):
             rows.append(glance["other"])
     gr = glance.get("gr")
     if gr and gr["n"] and not pd.isna(gr["mean"]):
-        whole = (f"Each {noun}'s middle report on A minus on B over the whole test, even from rounds where only one side was heard, "
+        whole = (f"Each {noun}'s {'average power' if glance.get('linear') else 'middle report'} on A minus on B over the whole test, even from rounds where only one side was heard, "
                  f"then averaged over the {gr['n']} {noun}s the Receiver by receiver tab keeps. It follows that tab's settings; "
                  "the summary does too only if \"Use these settings for the summary and the other tabs too\" is on.")
         rows.append(("**Average gain**" + (", whole test" if an["paired"] else ""), _lead_text(names, -gr["mean"]), whole))
         rows.append(("**Typical gain**", _lead_text(names, -gr["typical"]),
                      f"The middle {noun}: half gained more than this and half less. Less pulled around by a few extreme {noun}s."))
-    if pm["n"] >= 2 and not pd.isna(pm["mean"]):
+    if an["paired"] and pm["n"] >= 2 and not pd.isna(pm["mean"]):  # a long test's summary is already the power average
         rows.append(("**Power average** (Linear average tab)", _lead_text(names, pm["mean"]),
                      f"Each {noun}'s average power instead of its middle dB report, a cross-check. Steadiest on a long test with many "
                      "reports per receiver."))
@@ -1056,15 +1057,15 @@ def _summary_tiles_html(an, names, rounds, noun):
         tiles.append((f"{noun.capitalize()}s that were stronger on", f"A {s['wins_a']} · B {s['wins_b']}", f"tied at {s['ties']}", COLOR_TIE))
     cells = "".join(
         f'<div style="flex:1 1 210px;border:1px solid rgba(128,128,128,.3);border-left:5px solid {edge};border-radius:10px;'
-        f'padding:10px 14px"><div style="font-size:.8rem;opacity:.7">{head}</div>'
-        f'<div style="font-size:1.6rem;font-weight:700;line-height:1.3">{big}</div>'
-        f'<div style="font-size:.82rem;opacity:.75">{sub}</div></div>' for head, big, sub, edge in tiles)
+        f'padding:10px 14px"><div style="font-size:.8rem;opacity:.7">{esc(head)}</div>'
+        f'<div style="font-size:1.6rem;font-weight:700;line-height:1.3">{esc(big)}</div>'
+        f'<div style="font-size:.82rem;opacity:.75">{esc(sub)}</div></div>' for head, big, sub, edge in tiles)
     return f'<div style="display:flex;flex-wrap:wrap;gap:10px;margin:2px 0 10px 0">{cells}</div>'
 
 
 def _headline_html(names, bands):
     """The title of the result, 'Loop (A) vs Dipole (B) on 20 m', with A and B in their colours."""
-    e = lambda s: s.replace("&", "&amp;").replace("<", "&lt;")  # noqa: E731
+    e = esc
     on = " on " + re.sub(r"(\d)m\b", r"\1 m", bands) if bands else ""
     if names["A"] == "A" and names["B"] == "B":
         body = f'<span style="color:{COLOR_A}">A</span> vs <span style="color:{COLOR_B}">B</span>{e(on)}'
@@ -1347,7 +1348,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     notes.warning("No receiver was on the band during both sides' transmissions, so there is nothing fair to "
                                "compare. Try a longer test.")
                     return
-        names = {"A": name_a or sep["default"]["A"], "B": name_b or sep["default"]["B"]}
+        names = {"A": clean_name(name_a) or clean_name(sep["default"]["A"]) or "A",
+                 "B": clean_name(name_b) or clean_name(sep["default"]["B"]) or "B"}  # no markup or links from a typed name or a link
         if names["A"] == names["B"]:  # the names become table headings, so they have to differ
             names = {"A": names["A"] + " (A)", "B": names["B"] + " (B)"}
 
@@ -1371,6 +1373,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 normalize = True
 
         full_a, full_b = spots_a, spots_b  # the Receiver by receiver tab always starts from these
+        lin = bool(sep.get("blocks"))  # a long test: each receiver's average power, not the middle of its reports
         leave_out, leave_text, applied_min, leave_fallback = None, "", None, False
         if st.session_state.get(_APPLY_KEY):  # the tab's settings narrow the summary's strength figures too
             floor_, near_km, weak_, leave_text = _leave_out_choices(kind, units)
@@ -1380,9 +1383,9 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                                    floor_, near_km, weak_))
             if applied_min > 1 or floor_ is not None or near_km or weak_:
                 leave_out = dict(min_spots=applied_min, floor=floor_, min_km=near_km, weak_pct=weak_)
-        an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"), leave_out=leave_out)
+        an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"), linear=lin, leave_out=leave_out)
         if leave_out and (not an["leave_out"]["kept"] or not an["strength"]["n"]):  # nothing left to compare: use everything
-            an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"))
+            an = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"), linear=lin)
             leave_out, leave_fallback = None, True
         # The same strength figure counted the other way, so both are on screen and the reader sees why they differ: with the
         # receivers the Receiver by receiver slider keeps when the summary counts everyone, with everyone when it uses the slider's.
@@ -1393,9 +1396,9 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
             m_o = int(st.session_state.get("rx_min_reports_" + ("blk" if blocks_o else "pair"))
                       or _auto_min_reports(full_a, full_b, locs, home, blocks_o, an["power"]["offset"], floor_o, near_o, weak_o))
             if leave_out:
-                other = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"))
+                other = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"), linear=lin)
             elif m_o > 1 or floor_o is not None or near_o or weak_o:
-                other = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"),
+                other = analyze(spots_a, spots_b, locs, home, pa, pb, normalize, units, exposure=sep.get("exposure"), linear=lin,
                                 leave_out=dict(min_spots=m_o, floor=floor_o, min_km=near_o, weak_pct=weak_o))
                 if not other["leave_out"]["kept"]:
                     other = None
@@ -1763,7 +1766,9 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     dist_labels = [f"Short: under {short_max:,.0f} {units}", f"Medium: {short_max:,.0f} to {medium_max:,.0f} {units}",
                                    f"Long: over {medium_max:,.0f} {units}"]
                     dist_sum = gain_summary(every, "distance", [short_max * kk_gs, medium_max * kk_gs], dist_labels)
-                    glance.update(gr=gain_readout(every), direction=(dir_by, dir_sum), distance=dist_sum)
+                    glance.update(gr=gain_readout(every), direction=(dir_by, dir_sum), distance=dist_sum,
+                                  linear=method_label == "Linear power",
+                                  pm_args=dict(min_spots=min_reports, floor=avg_floor, min_km=avg_min_km, weak_pct=weak_pct))
                     gs_dir = _gain_summary_view(dir_sum, "Direction", noun, dir_by)
                     gs_dist = _gain_summary_view(dist_sum, "Distance", noun)
                     pdf_ctx["gain_summary"] = {"direction": gs_dir, "distance": gs_dist}
@@ -1860,7 +1865,9 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 st.info(f"No {noun} heard both sides, so there is nothing to compare receiver by receiver.")
 
         with glance_slot:
-            rows = _glance_rows(an, names, noun, glance, power_method(spots_a, spots_b, locs, home, offset=an["power"]["offset"]))
+            pm = (power_method(spots_a, spots_b, locs, home, offset=an["power"]["offset"], **glance.get("pm_args", {}))  # the same receivers
+                  if an["paired"] else {"n": 0, "mean": float("nan")})                                              # as the other rows
+            rows = _glance_rows(an, names, noun, glance, pm)
             if rows:
                 with st.expander("Numbers at a glance: which figure is which"):
                     st.markdown("| Number | Reading | How it is worked out |\n|---|---|---|\n"

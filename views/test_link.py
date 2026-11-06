@@ -2,7 +2,7 @@
 choices, so a link opens the same comparison for someone else (the callsign, date and band travel in the basic link)."""
 import re
 
-from ui_common import WSPR_SOURCE
+from ui_common import WSPR_SOURCE, clean_name
 
 BLOCKS = "In long blocks"
 ORDERS = {"abab": "A, B, A, B …", "abba": "A, B, B, A …"}
@@ -29,7 +29,7 @@ def read(ss, q):
         ss["_setup_given"] = True  # the link carries the test's setup, so there is nothing to confirm
     for param, key in (("na", "cmp_name_a"), ("nb", "cmp_name_b")):
         if q.get(param):
-            ss[key] = q[param][:60]
+            ss[key] = clean_name(q[param])
     blocks = q.get("sw") == "blocks"
     if blocks:
         ss["test_mode"] = BLOCKS

@@ -40,7 +40,7 @@ For every receiver that heard both antennas, the program works out that receiver
 
    `G = 10 log10( mean(10^(B/10)) / mean(10^(A/10)) )`
 
-   The headline strength number is the mean of these receiver values, each receiver counting once.
+   The headline strength number is the mean of these receiver values, each receiver counting once. The summary uses the paired method for a test that alternates transmissions and the long-block method (average power) for a test run in blocks, so for a long test the summary and the Receiver by receiver average gain are worked out the same way.
 2. **Reach.** How many receivers heard each side, and how many heard only one.
 3. **Direction and distance.** Receivers are grouped into eight 45-degree sectors and distance bands, and the average relative gain is worked out in each.
 

@@ -124,6 +124,72 @@ class LeaveOutForTheVerdict(unittest.TestCase):
         self.assertNotIn("EDGE", cut["shared"].index)
 
 
+class TextIsNeverTakenAsMarkup(unittest.TestCase):
+    """An antenna name can arrive in a shared link, and a receiver's callsign comes from outside the app: neither may become HTML."""
+
+    EVIL = '<img src=x onerror=alert(1)><script>x</script>'
+
+    def test_a_name_loses_the_characters_that_make_tags_and_links(self):
+        from ui_common import clean_name
+        self.assertEqual(clean_name("40m loop, 20 ft"), "40m loop, 20 ft")
+        self.assertEqual(clean_name("Vertical (tuned) & friends"), "Vertical (tuned) & friends")
+        cleaned = clean_name(self.EVIL + "[click](http://e.example)`code`\\\n\t end")
+        for bad in "<>[]`\\\n\t":
+            self.assertNotIn(bad, cleaned)
+        self.assertLessEqual(len(clean_name("x" * 500)), 60)
+
+    def test_bold_marks_up_only_the_bold_markers(self):
+        from ui_common import _bold, esc
+        self.assertEqual(_bold("**<b>x</b>** & y"), "<b>&lt;b&gt;x&lt;/b&gt;</b> &amp; y")
+        self.assertEqual(esc('R&D <1 "q"'), "R&amp;D &lt;1 &quot;q&quot;")
+
+    def test_the_scoreboard_and_the_summary_card_escape_names(self):
+        import charts
+        html = charts.scoreboard_html(self.EVIL, "Safe", [("Unique receivers", "note <b>", (self.EVIL, ""), ("2", ""), None)])
+        self.assertNotIn("<img", html)
+        self.assertNotIn("<script", html)
+        self.assertIn("&lt;img", html)
+        card = charts.verdict_card_html({"winner": "A", "headline": f"**{self.EVIL}** is stronger.", "points": [("\U0001F4E1", self.EVIL)],
+                                         "caveats": [self.EVIL]})
+        self.assertNotIn("<img", card)
+        self.assertNotIn("<script", card)
+
+    def test_a_receiver_callsign_cannot_become_markup_in_a_map_popup(self):
+        import maps
+        spots = example_data.load("quick")[1]
+        one = spots[spots["spotter"] == spots["spotter"].iloc[0]]
+        html = maps.spot_popup_html(self.EVIL, one, 100.0, "mi")
+        self.assertNotIn("<img", html)
+        self.assertNotIn("<script", html)
+        self.assertIn("&lt;img", html)
+
+
+class LongTestsUseAveragePower(unittest.TestCase):
+    """A long test run in blocks is judged on each receiver's average power (Dale's method); a test that alternates keeps the median."""
+
+    def setUp(self):
+        # one strong report in four on A: its middle report is 0 dB but its average power is 14.1 dB; B is steady at 5 dB
+        self.a, self.b = spots({"AAA": [0, 0, 0, 20]}), spots({"AAA": [5, 5, 5, 5]})
+        self.locs = places("AAA")
+
+    def test_linear_uses_the_average_power_and_the_default_the_median(self):
+        long_test = cs.analyze(self.a, self.b, self.locs, HOME, linear=True)["strength"]["mean"]
+        median = cs.analyze(self.a, self.b, self.locs, HOME)["strength"]["mean"]
+        self.assertAlmostEqual(long_test, 14.1 - 5.0, places=1)
+        self.assertAlmostEqual(median, 0.0 - 5.0, places=1)
+
+    def test_it_matches_the_receiver_by_receiver_average_gain(self):
+        every = cs.station_gains(self.a, self.b, self.locs, HOME, "linear", 1)
+        summary = cs.analyze(self.a, self.b, self.locs, HOME, linear=True)["strength"]["mean"]
+        self.assertAlmostEqual(summary, float(every["gap"].mean()), places=1)
+
+    def test_a_test_that_alternates_ignores_the_flag(self):
+        rounds = lambda s: s.assign(round=[float(n) for n in range(len(s))])  # noqa: E731
+        a, b = rounds(self.a), rounds(self.b)
+        self.assertEqual(cs.analyze(a, b, self.locs, HOME, linear=True)["strength"]["mean"],
+                         cs.analyze(a, b, self.locs, HOME)["strength"]["mean"])
+
+
 class RememberedForSpeed(unittest.TestCase):
     """What is remembered between page redraws must never change what is shown, or leak a change from one caller to the next."""
 
