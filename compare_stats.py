@@ -242,16 +242,19 @@ def settled_min_reports(trend):
     return None
 
 
-def min_reports_plan(spots_a, spots_b, locs, home, long_test, offset=0.0, floor=None, min_km=0.0, weak_pct=0):
+def min_reports_plan(spots_a, spots_b, locs, home, long_test, offset=0.0, floor=None, min_km=0.0, weak_pct=0, trend=None):
     """(setting, step): the 'at least this many reports on each antenna' setting a test opens with, and, when it comes from the
     result settling, how far the next step moves it (otherwise None).
 
     A short test opens where the result has settled (settled_min_reports) when it does, so a receiver heard once or twice cannot
     set the answer and the numbers are not still moving. Failing that it tries 2, the old default, which still leaves
     ENOUGH_RECEIVERS receivers. A long test tries 20 (Dale's published method), then 10, 5 and 2. When even the mildest leaves too
-    few, it is 1 and every receiver that heard both is shown."""
+    few, it is 1 and every receiver that heard both is shown. A short test's `trend` (slider_trend with method "snr") can be passed in
+    when it is already worked out."""
     if not long_test:
-        found = settled_min_reports(slider_trend(spots_a, spots_b, locs, home, "snr", offset, floor, min_km, weak_pct))
+        if trend is None:
+            trend = slider_trend(spots_a, spots_b, locs, home, "snr", offset, floor, min_km, weak_pct)
+        found = settled_min_reports(trend)
         if found:
             return found
     method = "linear" if long_test else "snr"

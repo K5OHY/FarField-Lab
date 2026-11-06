@@ -544,7 +544,35 @@ class ComparePage(unittest.TestCase):
         reading = " ".join(m.value for m in at.main.markdown)
         self.assertIn("a long test aims for 20 reports", reading)  # why it opens where it does
 
+    def test_the_maps_are_drawn_once_and_not_again_when_the_page_redraws(self):
+        """Drawing the maps is the slowest part of the page, and they do not depend on the slider or the switch."""
+        from unittest import mock
+        from views import compare_view
+        real = compare_view.build_map
+        calls = []
 
+        def counting(*args, **kwargs):
+            calls.append(1)
+            return real(*args, **kwargs)
+
+        compare_view._map_html.clear()
+        with mock.patch.object(compare_view, "build_map", counting):
+            at = page("compare_page").run()
+            open_example(at, "long")
+            self.assertEqual(errors(at), [])
+            first = len(calls)
+            self.assertEqual(first, 2)  # one map for each antenna
+            switch = [t for t in at.main.toggle if t.key == "leave_apply"][0]
+            switch.set_value(not switch.value)
+            at.run()
+            self.assertEqual(errors(at), [])
+            slider = [s for s in at.main.slider if s.key == "rx_min_reports_blk"][0]
+            slider.set_value(30)
+            at.run()
+            self.assertEqual(errors(at), [])
+        self.assertEqual(len(calls), first)  # nothing drew them again
+
+    def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
         at = page("compare_page").run()
         open_example(at, "long")
         self.assertEqual(errors(at), [])

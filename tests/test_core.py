@@ -124,6 +124,35 @@ class LeaveOutForTheVerdict(unittest.TestCase):
         self.assertNotIn("EDGE", cut["shared"].index)
 
 
+class RememberedForSpeed(unittest.TestCase):
+    """What is remembered between page redraws must never change what is shown, or leak a change from one caller to the next."""
+
+    def test_an_example_is_read_once_but_each_caller_gets_its_own_copy(self):
+        first = example_data.load("quick")
+        first[1]["snr"] = 999.0  # a caller changing its spots, as the app does when it adds columns
+        first[0]["callsign"] = "CHANGED"
+        again = example_data.load("quick")
+        self.assertNotEqual(again[1]["snr"].iloc[0], 999.0)
+        self.assertNotEqual(again[0]["callsign"], "CHANGED")
+
+    def test_the_saved_list_of_receivers_on_the_band_is_the_same_each_time(self):
+        a = example_data.listening("20m", "2026-10-04 18:00:00", "2026-10-04 18:30:00")
+        b = example_data.listening("20m", "2026-10-04 18:00:00", "2026-10-04 18:30:00")
+        self.assertIsNotNone(a)
+        self.assertTrue(a[0].equals(b[0]))
+        self.assertIsNone(example_data.listening("20m", "2001-01-01 00:00:00", "2001-01-01 00:30:00"))  # no example covers it
+
+    def test_a_remembered_path_is_the_same_path_and_a_list_nobody_else_shares(self):
+        import maps
+        one = maps.great_circle((31.0, -102.0), (52.0, 5.0))
+        two = maps.great_circle((31.0, -102.0), (52.0, 5.0))
+        self.assertEqual(one, two)
+        self.assertEqual(len(one), 51)
+        one.append((0.0, 0.0))
+        self.assertEqual(len(maps.great_circle((31.0, -102.0), (52.0, 5.0))), 51)  # the first caller's change did not stick
+        self.assertAlmostEqual(maps.distance_km((31.0, -102.0), (52.0, 5.0)), maps.distance_km((31.0, -102.0), (52.0, 5.0)))
+
+
 class PairByPairGain(unittest.TestCase):
     """The dashboard's pair-by-pair tile: the summary's way of averaging, over the receivers the dashboard shows."""
 
@@ -259,6 +288,14 @@ class SettledSlider(unittest.TestCase):
         self.assertEqual(len(strip.patches), 5)
         self.assertEqual(sorted(strip.get_xticks()), [1, 10, 20, 30, 40])  # a tick at each setting, not at 1, 2, 3 ...
         self.assertGreater(top.get_xlim()[1], 40)
+
+    def test_a_trend_worked_out_already_gives_the_same_plan(self):
+        calls = [f"R{n}" for n in range(40)]
+        a, b = spots({c: [-20 - n % 5] * 9 for n, c in enumerate(calls)}), spots({c: [-17 - n % 3] * 9 for n, c in enumerate(calls)})
+        places_ = places(*calls)
+        trend = cs.slider_trend(a, b, places_, HOME, "snr", 0.0)
+        self.assertEqual(cs.min_reports_plan(a, b, places_, HOME, long_test=False, trend=trend),
+                         cs.min_reports_plan(a, b, places_, HOME, long_test=False))
 
     def test_a_long_test_keeps_its_published_default(self):
         calls = [f"R{n}" for n in range(12)]

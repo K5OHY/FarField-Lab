@@ -625,13 +625,23 @@ def _shared_counts_note(an, noun):
     return text
 
 
+@st.cache_data(show_spinner=False, max_entries=12, ttl=3600)
+def _map_html(group, _locs, home, label, callsign, show_all, tiles, units, title, fit_spots, scale, noun):
+    """One side's map as HTML. Drawing it is the slowest part of the page and it depends only on the spots and the map settings, so it
+    is remembered: moving the slider or flipping a switch no longer redraws both maps, and a saved example is drawn once for everyone.
+    (`_locs` is not part of the key: receiver positions come with the spots.)"""
+    return build_map(group, _locs, home, label, callsign, show_all, tiles, units, compute_stats(group, _locs, home)["farthest"],
+                     title=title, fit_spots=fit_spots, scale=scale, noun=noun).get_root().render()
+
+
 def _auto_min_reports(spots_a, spots_b, locs, home, long_test, offset, floor, min_km, weak_pct):
     """default_min_reports, remembered until the spots or the averaging settings change (it works out every receiver several times)."""
     sig = (len(spots_a), len(spots_b), long_test, offset, floor, round(min_km), weak_pct)
     cached = st.session_state.get("_auto_min")
     if not (cached and cached[0] == sig):
-        value, step = min_reports_plan(spots_a, spots_b, locs, home, long_test, offset, floor, min_km, weak_pct)
-        cached = st.session_state["_auto_min"] = (sig, value, step)
+        trend = None if long_test else slider_trend(spots_a, spots_b, locs, home, "snr", offset, floor, min_km, weak_pct)
+        value, step = min_reports_plan(spots_a, spots_b, locs, home, long_test, offset, floor, min_km, weak_pct, trend=trend)
+        cached = st.session_state["_auto_min"] = (sig, value, step, trend)  # the trend is kept for the table and chart
     st.session_state["_auto_min_step"] = cached[2]  # how far the next step moves the result, when it opens where it settled
     return cached[1]
 
@@ -1678,10 +1688,16 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                  min_reports, auto_min)
                     cached_trend = st.session_state.get("_trend")
                     if not (cached_trend and cached_trend[0] == trend_sig):
-                        cached_trend = st.session_state["_trend"] = (trend_sig, slider_trend(
-                            full_a, full_b, locs, home, method_key, an["power"]["offset"], avg_floor, avg_min_km, weak_pct,
-                            settings=trend_settings(full_a, full_b, locs, home, method_key, an["power"]["offset"], avg_floor, avg_min_km,
-                                                    weak_pct, extra=(min_reports, auto_min))))
+                        wanted = trend_settings(full_a, full_b, locs, home, method_key, an["power"]["offset"], avg_floor, avg_min_km,
+                                                weak_pct, extra=(min_reports, auto_min))
+                        auto_cached = st.session_state.get("_auto_min")
+                        known = auto_cached[3] if auto_cached and len(auto_cached) > 3 and method_key == "snr" else None
+                        if known is not None and set(wanted) <= set(known["reports"]):  # already worked out for the opening setting
+                            shown_trend = known[known["reports"].isin(wanted)].reset_index(drop=True)
+                        else:
+                            shown_trend = slider_trend(full_a, full_b, locs, home, method_key, an["power"]["offset"], avg_floor,
+                                                       avg_min_km, weak_pct, settings=wanted)
+                        cached_trend = st.session_state["_trend"] = (trend_sig, shown_trend)
                     with dash_slot:
                         _dashboard(every, opening, noun, pair_by_pair_gain(every, fa, fb, locs, home, an["power"]["offset"])
                                    if an["paired"] else None, cached_trend[1], min_reports, auto_min,
@@ -1883,10 +1899,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
             both = pd.concat([map_a, map_b])
             col_a, col_b = st.columns(2)
             for col, side, group in ((col_a, "A", map_a), (col_b, "B", map_b)):
-                html = build_map(group, locs, home, label, callsign, show_all, tiles, units,
-                                 compute_stats(group, locs, home)["farthest"],
-                                 title=f"{callsign} · {names[side]}", fit_spots=both, scale=scale, noun=noun
-                                 ).get_root().render()
+                html = _map_html(group, locs, home, label, callsign, show_all, tiles, units, f"{callsign} · {names[side]}", both,
+                                 scale, noun)
                 icon = "\U0001F535" if side == "A" else "\U0001F7E0"
                 slug = re.sub(r"[^A-Za-z0-9]+", "_", names[side]).strip("_")
                 with col:

@@ -4,6 +4,8 @@ import re
 import folium
 import numpy as np
 import pandas as pd
+from functools import lru_cache
+
 from geographiclib.geodesic import Geodesic
 
 from compare_stats import locate as skimmer_location, receiver_table
@@ -12,13 +14,18 @@ from ui_common import BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, TILE_STYLES, _ESR
 
 # --------------------------------------------------------------------- geometry
 
+@lru_cache(maxsize=20000)
+def _distance_km(lat1, lon1, lat2, lon2):
+    return Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)["s12"] / 1000
+
+
 def distance_km(a, b):
-    return Geodesic.WGS84.Inverse(a[0], a[1], b[0], b[1])["s12"] / 1000
+    return _distance_km(float(a[0]), float(a[1]), float(b[0]), float(b[1]))
 
 
-def great_circle(start, end, num_points=50):
-    """Points along the great circle, with longitudes unwrapped so lines don't jump across the antimeridian."""
-    line = Geodesic.WGS84.InverseLine(start[0], start[1], end[0], end[1])
+@lru_cache(maxsize=20000)
+def _great_circle(lat1, lon1, lat2, lon2, num_points):
+    line = Geodesic.WGS84.InverseLine(lat1, lon1, lat2, lon2)
     pts, last_lon = [], None
     for i in range(num_points + 1):
         pos = line.Position(i * line.s13 / num_points)
@@ -30,7 +37,13 @@ def great_circle(start, end, num_points=50):
                 lon += 360
         last_lon = lon
         pts.append((pos["lat2"], lon))
-    return pts
+    return tuple(pts)
+
+
+def great_circle(start, end, num_points=50):
+    """Points along the great circle, with longitudes unwrapped so lines don't jump across the antimeridian. Remembered, because the
+    same receiver's path is asked for several times while a map is drawn, and again each time the page redraws."""
+    return list(_great_circle(float(start[0]), float(start[1]), float(end[0]), float(end[1]), num_points))
 
 
 # -------------------------------------------------------------------------- map
