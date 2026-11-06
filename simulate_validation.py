@@ -1,4 +1,4 @@
-"""Simulated antenna tests with a known difference, run through the program's own analysis, to measure how the verdict behaves:
+"""Simulated antenna tests with a known difference, run through the program's own analysis, to measure how the summary behaves:
 how often it names the stronger antenna, how often it names a winner when the antennas are the same, and how often its 95% range
 contains the true difference. Run it with the number of simulated tests per row (300 takes about 7 minutes):
 

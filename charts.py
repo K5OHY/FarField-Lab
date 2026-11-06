@@ -369,6 +369,72 @@ def gain_over_time_chart(windows, names, receiver=None):
     return fig
 
 
+def slider_trend_chart(trend, chosen=None, opened=None):
+    """The result at each setting of the minimum-reports slider, to see whether it has converged. One vertical scale, gain in dB
+    (B minus A): the average gain and the pair-by-pair signal advantage as lines, and the band from the smallest to the biggest
+    gain at any one receiver. When that band stops jumping and the lines flatten, the result has settled. A strip underneath gives
+    the receivers each setting rests on. `chosen` marks where the slider is now and `opened` where it opened."""
+    t = trend.reset_index(drop=True)
+    x = t["reports"].to_numpy(float)
+    avg, sig = t["average"].to_numpy(float), t["signal"].to_numpy(float)
+    low, high = t["smallest"].to_numpy(float), t["biggest"].to_numpy(float)
+    lines = np.concatenate([avg, sig[~np.isnan(sig)]])
+    y_lo = max(np.nanmin(low), np.nanmin(lines) - 8)  # one far-out receiver must not squash the lines, so the band is cut off here
+    y_hi = min(np.nanmax(high), np.nanmax(lines) + 8)
+    y_lo, y_hi = min(y_lo, np.nanmin(lines) - 1), max(y_hi, np.nanmax(lines) + 1)
+    fig = Figure(figsize=(8.0, 4.8))
+    fig.patch.set_alpha(0)
+    grid = fig.add_gridspec(2, 1, height_ratios=[3.4, 1], hspace=0.1)
+    ax, strip = fig.add_subplot(grid[0]), fig.add_subplot(grid[1], sharex=None)
+    _style_axes(ax)
+    _style_axes(strip)
+    pair = "#7c3aed"
+    ax.fill_between(x, np.clip(low, y_lo, y_hi), np.clip(high, y_lo, y_hi), color=COLOR_TIE, alpha=0.22, linewidth=0, zorder=1,
+                    label="Smallest to biggest gain at one receiver")
+    ax.plot(x, avg, color=COLOR_B, marker="o", markersize=6, linewidth=2, zorder=4, label="Average gain")
+    if not np.isnan(sig).all():
+        ax.plot(x, sig, color=pair, marker="s", markersize=5, linewidth=1.6, linestyle="--", zorder=3,
+                label="Signal advantage (the summary's number)")
+    for xi, lo_, hi_ in zip(x, low, high):  # say so where the band was cut off
+        if lo_ < y_lo:
+            ax.annotate(f"{lo_:+.0f} \u25bc", (xi, y_lo), textcoords="offset points", xytext=(0, 3), ha="center", fontsize=7,
+                        color=COLOR_TIE)
+        if hi_ > y_hi:
+            ax.annotate(f"{hi_:+.0f} \u25b2", (xi, y_hi), textcoords="offset points", xytext=(0, -10), ha="center", fontsize=7,
+                        color=COLOR_TIE)
+    for xi, a, g in zip(x, avg, sig):  # the higher line's number goes above its point, the lower one's below
+        sig_up = not np.isnan(g) and g >= a
+        ax.annotate(f"{a:+.1f}", (xi, a), textcoords="offset points", xytext=(0, -13 if sig_up else 7), ha="center", fontsize=8,
+                    color=COLOR_B, zorder=6)
+        if not np.isnan(g):
+            ax.annotate(f"{g:+.1f}", (xi, g), textcoords="offset points", xytext=(0, 7 if sig_up else -13), ha="center", fontsize=8,
+                        color=pair, zorder=6)
+    ax.axhline(0, color=COLOR_TIE, linestyle="--", linewidth=1, zorder=0)
+    for value, text, style in ((opened, "opens here", ":"), (chosen, "slider now", "-")):
+        if value is not None and value in x and not (text == "opens here" and opened == chosen):
+            ax.axvline(value, color=COLOR_TIE, linestyle=style, linewidth=1.4, zorder=2)
+            ax.annotate(text, (value, y_hi), textcoords="offset points", xytext=(4, -11), fontsize=8, color=COLOR_TIE)
+    ax.set_ylim(y_lo, y_hi)
+    ax.set_xlim(x.min() - 0.6, x.max() + 0.6)
+    ax.set_ylabel("Gain, B \u2212 A (dB)", fontsize=9, color=COLOR_TIE)
+    ax.tick_params(labelbottom=False)
+    ax.grid(axis="y", color=COLOR_TIE, alpha=0.2, zorder=0)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False, labelcolor=COLOR_TIE, fontsize=8)
+    counts = t["receivers"].to_numpy(float)
+    strip.bar(x, counts, width=0.6, color=COLOR_TIE, alpha=0.5, zorder=2)
+    for xi, n in zip(x, counts):
+        strip.annotate(f"{int(n)}", (xi, n), textcoords="offset points", xytext=(0, 2), ha="center", fontsize=8, color=COLOR_TIE)
+    strip.set_xlim(ax.get_xlim())
+    strip.set_ylim(0, counts.max() * 1.45)
+    strip.set_yticks([])
+    strip.set_xticks(x)
+    strip.set_xticklabels([f"{int(v)}" for v in x], fontsize=8)
+    strip.set_ylabel("Receivers", fontsize=9, color=COLOR_TIE)
+    strip.set_xlabel("Reports needed on each antenna (the slider)", fontsize=9, color=COLOR_TIE)
+    fig.subplots_adjust(left=0.09, right=0.98, top=0.9, bottom=0.14)
+    return fig
+
+
 def paired_scatter(shared, names):
     """One dot per receiver that heard both: A's SNR across, B's up. Above the dashed line B was stronger."""
     fig = Figure(figsize=(4.4, 4.4))
@@ -487,13 +553,13 @@ def breakdown_table(df, names, first_col, noun):
 
 
 def verdict_card_html(v):
-    """The overall answer in a card tinted for the winner (blue = A, orange = B, grey = neither), labelled Verdict."""
+    """The overall answer in a card tinted for the winner (blue = A, orange = B, grey = neither), labelled Summary."""
     color = {"A": COLOR_A, "B": COLOR_B}.get(v["winner"], COLOR_TIE)
     points = "".join(f'<li style="margin:7px 0">{icon} {_bold(text)}</li>' for icon, text in v["points"])
     caveats = "".join(f'<div style="margin-top:6px">⚠️ {_bold(c)}</div>' for c in v["caveats"])
     return (f'<div style="border-left:6px solid {color};background:{color}1c;border-radius:10px;padding:16px 22px;'
             f'margin:4px 0 16px 0"><div style="font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;opacity:.7;'
-            f'margin-bottom:4px">Verdict</div><div style="font-size:1.3rem;line-height:1.45">{_bold(v["headline"])}</div>'
+            f'margin-bottom:4px">Summary</div><div style="font-size:1.3rem;line-height:1.45">{_bold(v["headline"])}</div>'
             f'<ul style="list-style:none;padding:0;margin:12px 0 0 0;font-size:.95rem">{points}</ul>'
             f'<div style="font-size:.85rem;opacity:.8;margin-top:8px">{caveats}</div></div>')
 

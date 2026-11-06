@@ -125,7 +125,7 @@ class LeaveOutForTheVerdict(unittest.TestCase):
 
 
 class PairByPairGain(unittest.TestCase):
-    """The dashboard's pair-by-pair tile: the verdict's way of averaging, over the receivers the dashboard shows."""
+    """The dashboard's pair-by-pair tile: the summary's way of averaging, over the receivers the dashboard shows."""
 
     def setUp(self):
         # One receiver over four rounds. Rounds 1 and 4 have both antennas (B is 4 dB stronger each time); round 2 has only A and
@@ -163,7 +163,7 @@ class PairByPairGain(unittest.TestCase):
 
 
 class VerdictCard(unittest.TestCase):
-    """The verdict card is labelled and shows every evidence line, none hidden behind a click."""
+    """The summary card is labelled and shows every evidence line, none hidden behind a click."""
 
     POINTS = [("📡", "**Reach:** r"), ("📶", "**Strength:** s"), ("🌍", "far"),
               ("📏", "**By distance:** d"), ("🧭", "**By direction:** e"), ("🔁", "**Consistency:** c")]
@@ -173,7 +173,7 @@ class VerdictCard(unittest.TestCase):
         return charts.verdict_card_html({"winner": "B", "headline": "**B is stronger.**", "points": points, "caveats": ["careful"]})
 
     def test_it_is_labelled_the_verdict(self):
-        self.assertIn(">Verdict</div>", self.card(self.POINTS))
+        self.assertIn(">Summary</div>", self.card(self.POINTS))
 
     def test_every_line_and_caveat_is_shown(self):
         html = self.card(self.POINTS)
@@ -219,6 +219,24 @@ class SettledSlider(unittest.TestCase):
         every = cs.station_gains(a, b, places(*calls), HOME, "snr", 2)
         self.assertAlmostEqual(float(t.loc[1, "average"]), cs.gain_readout(every)["mean"])
         self.assertTrue(math.isnan(t.loc[0, "signal"]))  # no pairs, so no pair-by-pair figure
+
+    def test_the_trend_chart_draws_the_lines_the_band_and_the_receiver_strip(self):
+        import charts
+        t = self.trend([139, 115, 87, 72, 52], [1.6, 1.8, 2.2, 2.3, 3.0], [2.13, 2.17, 2.74, 2.76, 3.29])
+        t["smallest"], t["biggest"] = [-17.0, -17.0, -4.0, -4.0, -2.0], [12.5, 9.5, 9.5, 9.5, 9.5]  # one far-out receiver at 1 and 2
+        fig = charts.slider_trend_chart(t, chosen=5, opened=3)
+        self.assertEqual(len(fig.axes), 2)  # the gain panel and the receivers strip
+        top, strip = fig.axes
+        self.assertEqual(len(top.lines) >= 2, True)  # average and signal advantage (plus the zero line and the two markers)
+        low, high = top.get_ylim()
+        self.assertGreater(low, -17.0)  # the far-out receiver does not squash the lines; the chart says it was cut off
+        self.assertEqual(len(strip.patches), 5)  # one bar per setting
+
+    def test_the_trend_chart_copes_with_no_pairs_and_one_marker(self):
+        import charts
+        t = self.trend([100, 80, 60], [1.0, 1.1, 1.2])  # no pair-by-pair figure: the signal column is empty
+        fig = charts.slider_trend_chart(t, chosen=2, opened=2)
+        self.assertEqual(len(fig.axes), 2)
 
     def test_a_long_test_keeps_its_published_default(self):
         calls = [f"R{n}" for n in range(12)]

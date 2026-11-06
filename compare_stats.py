@@ -1,7 +1,7 @@
 """Antenna / test comparison maths, shared by the RBN and WSPR views.
 
 Everything here is plain pandas / numpy (no Streamlit), so it can be checked against data where the right
-answer is known. Two groups of spots, A and B, go in; a dict of findings and a plain-English verdict come out.
+answer is known. Two groups of spots, A and B, go in; a dict of findings and a plain-English summary come out.
 
 How the answer is reached
 -------------------------
@@ -154,7 +154,7 @@ def station_gains(spots_a, spots_b, locs, home, method="snr", min_spots=1, offse
 
 
 def pair_by_pair_gain(every, spots_a, spots_b, locs, home, offset=0.0):
-    """The verdict's way of averaging, over the receivers on the dashboard: for an alternating test, each receiver's relative gain
+    """The summary's way of averaging, over the receivers on the dashboard: for an alternating test, each receiver's relative gain
     (B minus A) taken pair by pair (see paired_shared), then averaged over the receivers of `every` that heard both antennas in
     at least one pair. Returns (receivers, average gain); the average is NaN when no receiver has a pair."""
     if "round" not in spots_a.columns or "round" not in spots_b.columns or every.empty:
@@ -803,7 +803,7 @@ def count_pairs(spots_a, spots_b):
     return len(set(spots_a["round"].dropna()) & set(spots_b["round"].dropna()))
 
 
-# ------------------------------------------------------------------ the verdict
+# ------------------------------------------------------------------ the summary
 
 def _straddle_text(names, s):
     """'Loop looks ahead by about 1.4 dB, but it could be anywhere from Dipole ahead by 0.3 dB to Loop ahead by 3.0 dB.'
@@ -847,7 +847,7 @@ def build_verdict(an, names, exposure=None, rounds=None, receiver_word="receiver
     """Plain-English result. Returns {'level', 'winner', 'headline', 'points', 'caveats'}.
     `names` = {'A': ..., 'B': ...}; `exposure` = (minutes_a, minutes_b) when the sides were separated in time;
     `rounds` = the round_consistency() table for alternating tests; `n_pairs` = how many neighbouring A/B transmission
-    pairs there were (a test of only a pair or two can be swung by fading, and the verdict says so). `sequential` is true when A and B ran one after
+    pairs there were (a test of only a pair or two can be swung by fading, and the summary says so). `sequential` is true when A and B ran one after
     the other (separate frequencies or time windows): changing conditions can then explain a difference, so a winner
     is described as winning "this test" rather than as the better antenna."""
     r, s, dx, pw, units = an["reach"], an["strength"], an["dx"], an["power"], an["units"]

@@ -385,7 +385,7 @@ class ComparePage(unittest.TestCase):
         at = page("compare_page").run()
         open_example(at, "quick")
         text = " ".join(c.value for c in at.caption)
-        self.assertIn("The verdict's number is the average over every receiver compared, taking each one pair by pair", text)
+        self.assertIn("The summary's number is the average over every receiver compared, taking each one pair by pair", text)
 
     def test_the_dashboard_watches_one_direction_and_a_second_on_request(self):
         at = page("compare_page").run()
@@ -472,8 +472,8 @@ class ComparePage(unittest.TestCase):
 
     @needs_network
     def test_an_alternating_test_shows_the_verdicts_number_beside_the_dashboard(self):
-        """K5OHY's 1 November test: the verdict says 2.7 dB and the dashboard's own tiles 2.2 dB. The pair-by-pair tile is the
-        verdict's number, shown on the same receivers, so a visitor sees why the two differ instead of two unexplained figures."""
+        """K5OHY's 1 November test: the summary says 2.7 dB and the dashboard's own tiles 2.2 dB. The pair-by-pair tile is the
+        summary's number, shown on the same receivers, so a visitor sees why the two differ instead of two unexplained figures."""
         at = page("compare_page", call="K5OHY", src="wspr", units="mi", date="2026-11-01", go="1", na="Vertical", nb="2 el Vertical",
                   n="16", ed="8X,9X,10X,11X", ord="abba", mr="3", uv="1").run()
         self.assertEqual(errors(at), [])
@@ -482,11 +482,11 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(shown["Average gain"], "+2.2 dB")
         self.assertEqual(shown["Receivers"], "87")
         self.assertTrue(any(e.label.startswith("Numbers at a glance") for e in at.main.expander))  # the figures side by side
-        self.assertIn("Strength:", " ".join(m.value for m in at.main.markdown))  # the verdict names the question it answers
+        self.assertIn("Strength:", " ".join(m.value for m in at.main.markdown))  # the summary names the question it answers
 
     @needs_network
     def test_a_short_test_opens_the_slider_where_it_settles_and_shows_the_verdict_both_ways(self):
-        """K5OHY's 1 November test: raising the slider from 3 to 4 moves the average by 0.1 dB, so it opens at 3. The verdict
+        """K5OHY's 1 November test: raising the slider from 3 to 4 moves the average by 0.1 dB, so it opens at 3. The summary
         follows the slider (2.7 dB over 87 receivers) and says in one line what all 131 receivers give (2.1 dB)."""
         at = page("compare_page", call="K5OHY", src="wspr", units="mi", date="2026-11-01", go="1", na="Vertical", nb="2 el Vertical",
                   n="16", ed="8X,9X,10X,11X", ord="abba").run()
@@ -497,9 +497,13 @@ class ComparePage(unittest.TestCase):
         self.assertIn("the result has settled there", text)
         self.assertTrue(any(e.label.startswith("How the result changes as the slider rises") for e in at.main.expander))
         card = " ".join(m.value for m in at.main.markdown)
+        self.assertTrue(any(c.value.startswith("The summary and all the tabs use 3 or more reports (87 receivers)") for c in at.main.caption))
+        reading = " ".join(m.value for m in at.main.markdown)
+        for phrase in ("How to read this.", "Lower settings", "Higher settings", "The setting to trust"):
+            self.assertIn(phrase, reading)  # why the numbers change, and what raising the slider gains and costs
         self.assertIn("On all 131 receivers that heard both it is", card)
         self.assertIn("Signal advantage, all receivers", card)
-        self.assertIn("2.7 dB", card)  # the verdict: the receivers the slider keeps
+        self.assertIn("2.7 dB", card)  # the summary: the receivers the slider keeps
         self.assertIn("2.1 dB", card)  # all receivers
 
     def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
@@ -518,11 +522,11 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         switch = [t for t in at.main.toggle if t.key == "leave_apply"]
         self.assertEqual(len(switch), 1)
-        self.assertTrue(switch[0].value)  # on by default for WSPR: the verdict counts the receivers the slider keeps
+        self.assertTrue(switch[0].value)  # on by default for WSPR: the summary counts the receivers the slider keeps
         text = lambda: " ".join(m.value for m in at.markdown)  # noqa: E731
         self.assertIn("The strength figures count only", text())
         self.assertIn("at least 40 reports on each antenna", text())
-        self.assertTrue(any(c.value.startswith("On: the verdict and the other tabs use only") for c in at.main.caption))
+        self.assertTrue(any(c.value.startswith("On: the summary and the other tabs use only") for c in at.main.caption))
         switch[0].set_value(False)
         at.run()
         self.assertEqual(errors(at), [])
@@ -555,7 +559,7 @@ class ComparePage(unittest.TestCase):
         open_example(at, "long")
         table = lambda: [d.value for d in at.main.dataframe if "Used for" in d.value.columns][0]  # noqa: E731
         row = table()[table()["Step"].str.startswith("40+ reports")]
-        self.assertEqual(list(row["Used for"]), ["Verdict and all tabs"])  # the switch is on by default for WSPR
+        self.assertEqual(list(row["Used for"]), ["Summary and all tabs"])  # the switch is on by default for WSPR
         [t for t in at.main.toggle if t.key == "leave_apply"][0].set_value(False)
         at.run()
         self.assertEqual(errors(at), [])

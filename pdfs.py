@@ -38,7 +38,7 @@ def comparison_headline(names, bands):
 
 
 def compare_report_pdf(ctx):
-    """A/B comparison as a PDF: the verdict, scoreboard, who heard you, direction and distance, receiver by receiver."""
+    """A/B comparison as a PDF: the summary, scoreboard, who heard you, direction and distance, receiver by receiver."""
     names, an, verdict, noun, units = ctx["names"], ctx["an"], ctx["verdict"], ctx["noun"], ctx["units"]
     colors = {"A": COLOR_A, "B": COLOR_B, None: COLOR_TIE}
     r, s_ = an["reach"], an["strength"]

@@ -1,6 +1,6 @@
 # Technical methodology
 
-This is the detailed companion to the [README](../README.md). The README explains how to use the program. This page says exactly what is calculated, which numbers decide a verdict, how the program was checked, and what it does not establish. Everything here describes the code as it is, so a result can be reproduced and challenged.
+This is the detailed companion to the [README](../README.md). The README explains how to use the program. This page says exactly what is calculated, which numbers decide a summary, how the program was checked, and what it does not establish. Everything here describes the code as it is, so a result can be reproduced and challenged.
 
 **In one sentence:** the program compares two antennas by asking the *same receivers* about both, which cancels each receiver's own noise and path, and then it is careful about how sure it can be.
 
@@ -22,7 +22,7 @@ This is the detailed companion to the [README](../README.md). The README explain
 - A transmission heard by 2 or fewer receivers, or by 10% or fewer of the usual number, when ordinary ones are heard by 16 or more is treated as a skipped cycle (usually a few receivers with a wrong clock, reporting your signal in the slot after). It is listed above the test's table with its receiver count, and you can count it as a real transmission, which gives it a row and an antenna. That matters on a weak band, where a real transmission can be heard by only two receivers.
 - An A or B transmission with no partner on the other antenna is left out of the comparison, though it still shows on the maps.
 
-**Optional filters** (reports at or below -27 dB, which is WSPR's decoding edge; receivers closer than a distance you choose; receivers where more than a chosen share of reports sit at the floor) change the detailed averages on the Receiver by receiver and Linear average views. They change the main verdict only while the switch *Use these settings for the verdict and the other tabs too* is on, which it is by default for WSPR tests (the minimum-reports slider then decides which receivers the verdict counts). With it off, the verdict counts every receiver that heard both, so a result can be reproduced from the verdict rules alone. The verdict always states the other number as well.
+**Optional filters** (reports at or below -27 dB, which is WSPR's decoding edge; receivers closer than a distance you choose; receivers where more than a chosen share of reports sit at the floor) change the detailed averages on the Receiver by receiver and Linear average views. They change the main summary only while the switch *Use these settings for the summary and the other tabs too* is on, which it is by default for WSPR tests (the minimum-reports slider then decides which receivers the summary counts). With it off, the summary counts every receiver that heard both, so a result can be reproduced from the summary rules alone. The summary always states the other number as well.
 
 ## 2. How A and B are told apart and paired
 
@@ -30,7 +30,7 @@ This is the detailed companion to the [README](../README.md). The README explain
 - **After every transmission (WSPR):** transmissions are labelled A, B, A, B or A, B, B, A. A **round** is an A transmission and the B one next to it. Neighbouring transmissions share nearly the same propagation, so drift mostly cancels.
 - **In long blocks (WSPR):** one antenna for a set time, then the other. Nothing is paired; each receiver's reports on A and on B are compared as a whole.
 - **Equal time on the air:** if one side was on the air more than 15% longer, the longer side is thinned at random (with a fixed seed, so the answer is repeatable) to match.
-- **Sequential tests:** when A and B ran one after the other (separate frequencies or time windows more than 10 minutes apart, mostly unpaired transmissions, or fewer than 4 blocks), the verdict says changing conditions could explain a difference.
+- **Sequential tests:** when A and B ran one after the other (separate frequencies or time windows more than 10 minutes apart, mostly unpaired transmissions, or fewer than 4 blocks), the summary says changing conditions could explain a difference.
 
 ## 3. What is being estimated
 
@@ -59,7 +59,7 @@ The two strength methods do not always use the same observations. The paired met
 
 **Fading at the transmitting end.** Fading moves every receiver at once, so counting receivers as independent flags differences that are only fading. For paired tests, the range is widened: with 4 or more rounds, by the measured round-to-round spread of the averages, and with fewer rounds by 0.85 dB per pair (the spread of identical-antenna pairs measured on real WSPR data, 0.84 dB over 43 pairs). The final range is the wider of the receiver-based range and this one. That is a practical correction, not a full hierarchical resampling of receivers and rounds, and the program does not claim it is one.
 
-## 5. How a verdict is decided
+## 5. How a summary is decided
 
 **Strength** (with `N` receivers that heard both, `lo` and `hi` the range, `mean` the average):
 - Fewer than 5 receivers: not enough to judge.
@@ -99,7 +99,7 @@ At a nominal 5% level, a well-calibrated test should wrongly reject "the antenna
 
 What these suggest: the paired method gives fewer false winners than a test with only a few long blocks. They do not show that the intervals are calibrated, and the simulation below shows they sometimes are not. What they do not show: one station, one band and one day each, with overlapping windows, so they are a good indication, not a calibration. A proper coverage study would repeat this over many days, bands and stations.
 
-**Simulated tests with a known difference.** `simulate_validation.py` makes up antenna tests in which B is truly 0, 1, 3 or 6 dB stronger than A, runs them through the program's own analysis, and counts the verdicts. The made-up tests have 80 receivers, fading shared by every receiver in each transmission (0.6 dB), noise on every report (3 dB), a steady band drift (2 dB an hour), receivers that listen only 85% of the time, and reports below -28 dB lost. 300 tests per row:
+**Simulated tests with a known difference.** `simulate_validation.py` makes up antenna tests in which B is truly 0, 1, 3 or 6 dB stronger than A, runs them through the program's own analysis, and counts the summaries. The made-up tests have 80 receivers, fading shared by every receiver in each transmission (0.6 dB), noise on every report (3 dB), a steady band drift (2 dB an hour), receivers that listen only 85% of the time, and reports below -28 dB lost. 300 tests per row:
 
 | True gain of B | Transmissions | Says B stronger | Says A stronger (wrong way) | 95% range holds the truth |
 | --- | --- | --- | --- | --- |
@@ -125,7 +125,7 @@ Each range covers A, B, A, B and A, B, B, A. What it shows: with identical anten
 
 With 250 tests a cell, a figure is uncertain by about 2 points either way. Two things stand out. Even with complete data the range holds the truth about 91 to 93% of the time, not 95%, so the interval itself is slightly narrow. And losing the weak reports costs the longer tests about 5 points: a receiver that can only just decode the weaker antenna is kept only when that antenna's reports happen to be strong enough, which shrinks the measured gap, so the range is centred a little short of the truth. That second effect is a selection effect (the comparison is among receivers that decoded both), not an error in the arithmetic. It is a reason to treat the range as slightly optimistic.
 
-The "chance this lead is real" figures in the verdict text (for example "a lead this big would still show up about 30% of the time if they were equal") are approximate. They come from the width of the final range, as if it were a t interval, so they are as rough as the range itself.
+The "chance this lead is real" figures in the summary text (for example "a lead this big would still show up about 30% of the time if they were equal") are approximate. They come from the width of the final range, as if it were a t interval, so they are as rough as the range itself.
 
 **Band conditions against RBN.** See the README section "Band conditions now". In short, predicted signal margins were compared with what skimmers actually reported for four stations' activations, and the typical error was about 7 dB (6 dB within 1,000 miles, 9 dB at 1,000 to 2,000 miles, no DX paths in the sample).
 

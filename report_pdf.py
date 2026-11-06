@@ -4,7 +4,7 @@ Everything here takes plain data (text, numbers, matplotlib figures), never Stre
 its own. `build_pdf(meta, blocks)` lays the blocks out on Letter pages, starting a new page whenever one runs out:
 
     ("heading", text)                       a section heading
-    ("verdict", {"headline", "points", "caveats", "winner"})
+    ("summary", {"headline", "points", "caveats", "winner"})
     ("paragraph", text) / ("note", text)    body text / small grey text
     ("bullets", [text, ...])
     ("scoreboard", names, rows, colors)     rows as built for the on-screen scoreboard

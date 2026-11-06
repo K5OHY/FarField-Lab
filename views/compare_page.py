@@ -25,7 +25,7 @@ def _steps(loaded, comparing_rbn):
     labels = [("Load your spots", "in the sidebar (the » at the top left on a phone)"),
               ("Say how you switched", "I guessed it: check it below, then confirm" if loaded
                else "which frequency was which" if comparing_rbn else "which antenna, and when"),
-              ("Read the result", "the verdict and the evidence")]
+              ("Read the result", "the summary and the evidence")]
     cells = "".join(f'<div class="{state}"><b>{"&#10003;" if state == "done" else n}</b><div style="border:0;background:none;padding:0;'
                     f'display:block"><span>{head}</span><small>{sub}</small></div></div>'
                     for n, (state, (head, sub)) in enumerate(zip(states, labels), 1))
@@ -82,7 +82,7 @@ def compare_page():
     brand_strip()
     st.title(":material/balance: Compare antennas")
     st.markdown('<p class="subtitle">Which of two antennas, power levels or tests gets out better? Load the spots from one '
-                'station, say how you switched, and read the verdict, with the evidence behind it.</p>', unsafe_allow_html=True)
+                'station, say how you switched, and read the summary, with the evidence behind it.</p>', unsafe_allow_html=True)
 
     skimmers, refresh_msg = skimmer_data()
     ss, cfg, pick = inputs.begin(default_source=WSPR_SOURCE)
