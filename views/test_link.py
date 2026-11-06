@@ -8,6 +8,7 @@ BLOCKS = "In long blocks"
 ORDERS = {"abab": "A, B, A, B …", "abba": "A, B, B, A …"}
 _TIME = re.compile(r"^(\d{1,2} [A-Za-z]{3} )?\d{2}:\d{2}$")
 _EDIT = re.compile(r"^(\d{1,3})([ABX])$")
+_SLOT = re.compile(r"^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$")
 
 
 def _int(text, low, high):
@@ -24,7 +25,7 @@ def read(ss, q):
     if ss.get("_test_link_read"):
         return
     ss["_test_link_read"] = True
-    if any(q.get(p) for p in ("cb", "na", "nb", "sw", "n", "ts", "ord", "bl", "bn", "bs", "bp", "ed")):
+    if any(q.get(p) for p in ("cb", "na", "nb", "sw", "n", "ts", "ord", "bl", "bn", "bs", "bp", "ed", "gk")):
         ss["_setup_given"] = True  # the link carries the test's setup, so there is nothing to confirm
     for param, key in (("na", "cmp_name_a"), ("nb", "cmp_name_b")):
         if q.get(param):
@@ -52,6 +53,9 @@ def read(ss, q):
             edits[int(m[1])] = None if m[2] == "X" else m[2]
     if edits and not blocks:
         ss["_log_pending"] = edits
+    counted = [x.strip() for x in q.get("gk", "")[:200].split(",") if _SLOT.match(x.strip())][:8]
+    if counted and not blocks:
+        ss["ghost_keep"] = counted  # thin slots the sender counted as real transmissions
     reports = _int(q.get("mr"), 1, 60)
     if reports:
         ss["rx_min_reports_blk" if blocks else "rx_min_reports_pair"] = reports
@@ -120,6 +124,8 @@ def params(ss, units):
         if ss.get("test_start") not in (None, "Latest"):
             out["ts"] = str(ss["test_start"])
         order = reverse.get(ss.get("test_order"))
+        if ss.get("ghost_keep"):
+            out["gk"] = ",".join(ss["ghost_keep"])
         logs = [k for k in ss if isinstance(k, str) and k.startswith("antenna_log_")]
         if len(logs) == 1:
             base = ss.get("_log_base")

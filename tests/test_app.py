@@ -464,6 +464,24 @@ class ComparePage(unittest.TestCase):
         self.assertRegex(box[0].label, r"^Monitoring dashboard: average gain [+-][0-9.]+ dB over [0-9]+ receivers$")
         self.assertFalse(box[0].proto.expanded)
 
+    def test_a_test_judged_by_blocks_has_no_pair_by_pair_tile(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        self.assertNotIn("Pair-by-pair average", {m.label for m in at.main.metric})
+
+    @needs_network
+    def test_an_alternating_test_shows_the_verdicts_number_beside_the_dashboard(self):
+        """K5OHY's 1 November test: the verdict says 2.7 dB and the dashboard's own tiles 2.2 dB. The pair-by-pair tile is the
+        verdict's number, shown on the same receivers, so a visitor sees why the two differ instead of two unexplained figures."""
+        at = page("compare_page", call="K5OHY", src="wspr", units="mi", date="2026-11-01", go="1", na="Vertical", nb="2 el Vertical",
+                  n="16", ed="8X,9X,10X,11X", ord="abba", mr="3", uv="1").run()
+        self.assertEqual(errors(at), [])
+        shown = {m.label: m.value for m in at.main.metric}
+        self.assertEqual(shown["Pair-by-pair average"], "+2.7 dB")
+        self.assertEqual(shown["Average gain"], "+2.2 dB")
+        self.assertEqual(shown["Receivers"], "87")
+
     def test_the_leave_out_box_is_with_the_receiver_results_not_the_setup(self):
         at = page("compare_page").run()
         open_example(at, "long")
@@ -722,6 +740,42 @@ class SkippedTransmissions(unittest.TestCase):
         from views.compare_view import _without_ghost_cycles
         kept = _without_ghost_cycles(self.spots([6, 5, 3, 7, 6, 4]))
         self.assertEqual(kept["time"].nunique(), 6)
+
+    def test_a_thin_slot_the_visitor_counts_is_kept_as_a_transmission(self):
+        """Dale's 3 November test: a real second transmission heard by only 2 receivers, on a day when slots had about 34. Left out,
+        it put every antenna label after it one step off, and there was no row to correct."""
+        import streamlit as st
+        from views.compare_view import _ghost_slots, _without_ghost_cycles
+        data = self.spots([5, 2, 9, 41, 40, 22, 27, 34, 40, 22, 10, 34])
+        ghosts, limit, _ = _ghost_slots(data)
+        self.assertEqual(([int(n) for n in ghosts.values], limit), ([2], 2))
+        slot = ghosts.index[0]
+        self.assertNotIn(slot, set(_without_ghost_cycles(data)["time"]))  # left out unless counted
+        self.assertEqual(st.session_state["ghost_cycles"], 1)
+        kept = _without_ghost_cycles(data, counted=[slot])
+        self.assertIn(slot, set(kept["time"]))
+        self.assertEqual(kept["time"].nunique(), 12)
+        self.assertEqual(st.session_state["ghost_cycles"], 0)
+
+    def test_the_slots_counted_travel_in_the_link(self):
+        from views import test_link
+        ss = {}
+        test_link.read(ss, {"n": "12", "gk": "03 Nov 16:52,<script>,03 Nov 17:10"})
+        self.assertEqual(ss["ghost_keep"], ["03 Nov 16:52", "03 Nov 17:10"])  # anything that is not a time is ignored
+        self.assertEqual(test_link.params(ss, "mi")["gk"], "03 Nov 16:52,03 Nov 17:10")
+        self.assertNotIn("gk", test_link.params({"test_cycles": 12}, "mi"))
+
+    @needs_network
+    def test_dales_thin_second_transmission_is_listed_and_can_be_counted(self):
+        at = page("compare_page", call="N3HXZ", src="wspr", units="mi", date="2026-11-03", band="20m", go="1", n="12", ord="abba").run()
+        self.assertEqual(errors(at), [])
+        box = [m for m in at.main.multiselect if m.key == "ghost_keep"][0]
+        self.assertIn("03 Nov 16:52 UTC: heard by 2 receivers", box.options)
+        self.assertEqual(at.session_state["ghost_cycles"], 4)  # 16:52, and three one-receiver slots at 18:12 to 18:16
+        box.set_value(["03 Nov 16:52"])
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["ghost_cycles"], 3)
 
 
 class SavedExamplesMatchTheLiveData(unittest.TestCase):

@@ -124,6 +124,44 @@ class LeaveOutForTheVerdict(unittest.TestCase):
         self.assertNotIn("EDGE", cut["shared"].index)
 
 
+class PairByPairGain(unittest.TestCase):
+    """The dashboard's pair-by-pair tile: the verdict's way of averaging, over the receivers the dashboard shows."""
+
+    def setUp(self):
+        # One receiver over four rounds. Rounds 1 and 4 have both antennas (B is 4 dB stronger each time); round 2 has only A and
+        # round 3 only B (and weak). Pooled over the whole test it is +3 dB; pair by pair it is +4 dB.
+        rows_a = [("AAA", 1, -20), ("AAA", 2, -18), ("AAA", 4, -19)]
+        rows_b = [("AAA", 1, -16), ("AAA", 3, -22), ("AAA", 4, -15)]
+        self.a = pd.DataFrame(rows_a, columns=["spotter", "round", "snr"])
+        self.b = pd.DataFrame(rows_b, columns=["spotter", "round", "snr"])
+        self.locs = places("AAA")
+
+    def test_the_whole_test_and_pair_by_pair_differ_as_explained(self):
+        every = cs.station_gains(self.a, self.b, self.locs, HOME)
+        self.assertEqual(cs.gain_readout(every)["mean"], 3.0)
+        self.assertEqual(cs.pair_by_pair_gain(every, self.a, self.b, self.locs, HOME), (1, 4.0))
+
+    def test_it_matches_the_verdict_on_the_same_receivers(self):
+        an = cs.analyze(self.a, self.b, self.locs, HOME)
+        every = cs.station_gains(self.a, self.b, self.locs, HOME)
+        n, gain = cs.pair_by_pair_gain(every, self.a, self.b, self.locs, HOME)
+        self.assertEqual(n, an["strength"]["n"])
+        self.assertAlmostEqual(gain, -an["strength"]["mean"])
+
+    def test_only_the_receivers_on_the_dashboard_count(self):
+        a = pd.concat([self.a, self.a.assign(spotter="BBB", snr=self.a["snr"] - 5)])
+        b = pd.concat([self.b, self.b.assign(spotter="BBB", snr=self.b["snr"] - 9)])
+        locs = places("AAA", "BBB")
+        every = cs.station_gains(a, b, locs, HOME).loc[["AAA"]]  # BBB was left off the dashboard (say, by the slider)
+        self.assertEqual(cs.pair_by_pair_gain(every, a, b, locs, HOME), (1, 4.0))
+
+    def test_a_test_without_pairs_has_no_pair_by_pair_figure(self):
+        every = cs.station_gains(self.a, self.b, self.locs, HOME)
+        n, gain = cs.pair_by_pair_gain(every, self.a.drop(columns="round"), self.b.drop(columns="round"), self.locs, HOME)
+        self.assertEqual(n, 0)
+        self.assertTrue(math.isnan(gain))
+
+
 class DefaultMinimumReports(unittest.TestCase):
     """The 'at least this many reports on each antenna' slider opens as strict as it can while leaving enough receivers."""
 

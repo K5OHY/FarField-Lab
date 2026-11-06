@@ -153,6 +153,19 @@ def station_gains(spots_a, spots_b, locs, home, method="snr", min_spots=1, offse
     return t
 
 
+def pair_by_pair_gain(every, spots_a, spots_b, locs, home, offset=0.0):
+    """The verdict's way of averaging, over the receivers on the dashboard: for an alternating test, each receiver's relative gain
+    (B minus A) taken pair by pair (see paired_shared), then averaged over the receivers of `every` that heard both antennas in
+    at least one pair. Returns (receivers, average gain); the average is NaN when no receiver has a pair."""
+    if "round" not in spots_a.columns or "round" not in spots_b.columns or every.empty:
+        return 0, math.nan
+    keep = set(every.index)
+    per, _ = paired_shared(spots_a[spots_a["spotter"].isin(keep)], spots_b[spots_b["spotter"].isin(keep)], locs, home, offset)
+    if per.empty:
+        return 0, math.nan
+    return int(len(per)), float(-per["delta"].mean())
+
+
 def apply_leave_out(spots_a, spots_b, locs, home, min_spots=1, floor=None, min_km=0.0, weak_pct=0):
     """spots_a and spots_b cut down to what the Receiver by receiver tab keeps: only receivers with at least `min_spots` reports
     on each side, none closer than `min_km`, none that `weak_pct` drops, and no reports at or below `floor`. Returns

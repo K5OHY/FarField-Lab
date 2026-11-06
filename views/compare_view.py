@@ -36,6 +36,7 @@ from compare_stats import (
     DALE_MIN_SPOTS,
     default_min_reports,
     DALE_SITE_MIN,
+    pair_by_pair_gain,
     station_gains,
     gain_by_window,
     DIRECTION_EDGE_DB,
@@ -140,28 +141,54 @@ def _separate_by_frequency(spots, gap_khz):
     return {"a": spots_a, "b": spots_b, "bands": (spots_a["band"].mode().iat[0], spots_b["band"].mode().iat[0]), "default": {"A": f"A ({fa:.1f} kHz)", "B": f"B ({fb:.1f} kHz)"}}
 
 
-def _without_ghost_cycles(spots):
-    """Throw out cycles that only a handful of receivers reported when ordinary cycles are heard by many more: at most 2, or
-    10% of the typical count if that is more (so 10 when ordinary cycles are heard by 100). They are nearly always a few
-    receivers with a wrong clock reporting your transmission under the next time slot, for instance in the slot where you
-    skipped a transmission, so they are not real transmissions and would put every label after them out of step. On a weak
-    band, where every cycle has few reports, nothing is thrown out."""
-    st.session_state["ghost_cycles"] = 0
+def _ghost_slots(spots):
+    """The slots that are probably not real transmissions: (receivers that heard each such slot, the most receivers a slot can
+    have and still be one, the typical count). A slot heard by at most 2 receivers, or 10% of the typical count if that is more
+    (so 10 when ordinary slots are heard by 100), is nearly always a few receivers with a wrong clock reporting your
+    transmission under the next time slot, for instance in the slot where you skipped a transmission. On a weak band, where
+    every slot has few reports, nothing is flagged."""
     heard = spots.groupby("time")["spotter"].nunique()
     typical = heard[heard > GHOST_MAX].median()
     if pd.isna(typical) or typical < GHOST_MIN_TYPICAL:
-        return spots
+        return heard.iloc[0:0], 0, typical
     limit = max(GHOST_MAX, int(typical * GHOST_SHARE))
-    ghosts = heard[heard <= limit].index
-    if len(ghosts) == 0:
+    return heard[heard <= limit], limit, typical
+
+
+def _without_ghost_cycles(spots, counted=()):
+    """`spots` without the slots `_ghost_slots` flags, except the ones in `counted` (the visitor said they were real
+    transmissions). A flagged slot left in would be given an antenna, and one taken out of a real run puts every label after it
+    one step off, so the visitor is shown which were left out and can count them (see `_separate_by_log`)."""
+    st.session_state["ghost_cycles"] = 0
+    ghosts, _, _ = _ghost_slots(spots)
+    left_out = [t for t in ghosts.index if t not in set(counted)]
+    if not left_out:
         return spots
-    st.session_state["ghost_cycles"] = len(ghosts)
-    when = ", ".join(f"{t:%H:%M}" for t in ghosts[:6]) + (" …" if len(ghosts) > 6 else "")
-    st.caption(f"Left out {len(ghosts)} cycle{'s' if len(ghosts) > 1 else ''} ({when} UTC) that {limit} or fewer receivers heard, "
-               f"when typical cycles were heard by about {typical:.0f}. A cycle that thin says little about an antenna, and "
-               "it is often a few receivers with a wrong clock reporting your signal under the wrong time slot, such as "
-               "the slot where you skipped a transmission.")
-    return spots[~spots["time"].isin(ghosts)]
+    st.session_state["ghost_cycles"] = len(left_out)
+    return spots[~spots["time"].isin(left_out)]
+
+
+def _ghost_choice(spots, quick):
+    """Tell the visitor which slots were left out as probably not real transmissions, and (for the every-transmission test, where
+    each one gets an antenna) let them count any that were real. Returns the slots they counted."""
+    ghosts, limit, typical = _ghost_slots(spots)
+    if not len(ghosts):
+        return []
+    what = (f"{len(ghosts)} slot{'s' if len(ghosts) > 1 else ''} that {limit} or fewer receivers heard, when typical slots were "
+            f"heard by about {typical:.0f}")
+    if not quick:
+        st.caption(f"Left out {what}. A slot that thin says little about an antenna, and it is often a few receivers with a wrong "
+                   "clock reporting your signal under the wrong time slot.")
+        return []
+    names = {f"{t:%d %b %H:%M}": t for t in ghosts.index}
+    shown = {name: f"{name} UTC: heard by {int(ghosts[t])} receiver{'s' if ghosts[t] != 1 else ''}" for name, t in names.items()}
+    st.session_state["ghost_keep"] = [o for o in st.session_state.get("ghost_keep", []) if o in names]  # a link made for other spots
+    st.info(f"Left out {what}. That is usually a slot where you skipped a transmission and a few receivers with a wrong clock "
+            "reported your signal anyway, so it is not counted as one. **If you really did transmit in a slot below, count it**, "
+            "or every antenna label after it will be one step off. (On a weak band that can happen.)")
+    chosen = st.multiselect("Count these slots as transmissions", list(names), key="ghost_keep", format_func=shown.get,
+                            help="Pick any slot you really transmitted in. It then gets a row in the list below, with an antenna.")
+    return [names[o] for o in chosen]
 
 
 def _labels_by_call(spots, stamps, call_a, call_b):
@@ -176,7 +203,9 @@ def _separate_by_log(spots):
     """WSPR antenna test: each transmission is logged with the antenna that was connected. Either the antenna changed
     after every transmission (the user says how many there were and where the test started, and the app lists them with a
     first guess the user can correct), or it stayed on one antenna for a long block and then the other, over hours."""
-    spots = _without_ghost_cycles(spots)
+    by_call_early = bool(st.session_state.get("tx_call") and st.session_state.get("tx_call_b"))
+    quick = by_call_early or st.session_state.get("test_mode", "After every transmission") != "In long blocks"
+    spots = _without_ghost_cycles(spots, _ghost_choice(spots, quick))
     all_stamps = [pd.Timestamp(t) for t in np.sort(spots["time"].unique())]
     if len(all_stamps) < 2:
         st.warning("Only one transmission was found. An antenna test needs at least two, one on each antenna. Spots "
@@ -1054,10 +1083,11 @@ def _leave_out_box(kind, units):
     return (WSPR_FLOOR_DB if floor_on else None), near * (KM_PER_MILE if units == "mi" else 1.0), weak_pct, note
 
 
-def _dashboard(every, reference, noun):
+def _dashboard(every, reference, noun, pairwise=None):
     """The monitoring dashboard: the few numbers to watch as the slider moves, to see whether the result has settled.
     `every` is the receivers left at this slider setting; `reference` is the receivers left where the slider opens, which is
-    what picks the direction to watch (so the choice does not hop about as the slider moves)."""
+    what picks the direction to watch (so the choice does not hop about as the slider moves). `pairwise` is (receivers, average
+    gain) taken pair by pair, for a test that alternates; None when the test is not judged that way."""
     signed_db = lambda v: "–" if v is None or pd.isna(v) else f"{v:+.1f} dB"  # noqa: E731
     gr = gain_readout(every)
     ss = st.session_state
@@ -1091,6 +1121,16 @@ def _dashboard(every, reference, noun):
         c_small.metric("Smallest gain", signed_db(gr["smallest"]), gr["smallest_who"] or None, delta_color="off", delta_arrow="off",
                        help=f"The smallest relative gain at any one {noun}, and which {noun} it was. A {noun} far out of line "
                             "with the rest is an outlier, usually from too few reports.")
+        if pairwise is not None and pairwise[0]:
+            c_pair, c_why = st.columns([1, 4])
+            c_pair.metric("Pair-by-pair average", signed_db(pairwise[1]), f"{pairwise[0]} {noun}{'s' if pairwise[0] != 1 else ''}",
+                          delta_color="off", delta_arrow="off",
+                          help="The same receivers, averaged the way the verdict does it: for each one, only an A transmission and "
+                               "the B transmission right after it count, and only where the receiver heard both. This is the "
+                               "verdict's Signal advantage, as a gain (B minus A).")
+            c_why.caption("This is the verdict's number. The tiles above use every report a receiver made, including rounds "
+                          "where it heard only one antenna, so the two can differ by a few tenths of a dB. If they stay close as "
+                          "you raise the slider, the result does not depend on how it is averaged.")
         st.markdown("###### Watch a direction")
         picks = st.columns(2)
         for col, key, options in ((picks[0], "dash_dir_a", directions), (picks[1], "dash_dir_b", ["Off"] + directions)):
@@ -1495,7 +1535,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     st.info(f"No {noun} has {min_reports} or more reports on both antennas. Lower the number above.")
                 else:
                     with dash_slot:
-                        _dashboard(every, opening, noun)
+                        _dashboard(every, opening, noun, pair_by_pair_gain(every, fa, fb, locs, home, an["power"]["offset"])
+                                   if an["paired"] else None)
                         st.caption("The verdict's number is the average over every receiver compared"
                                    f"{', taking each one pair by pair' if an['paired'] else ''}, so it can differ from the "
                                    "average and the typical gain here, most when a few receivers gain far more than the rest.")
