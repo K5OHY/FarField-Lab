@@ -124,6 +124,37 @@ class LeaveOutForTheVerdict(unittest.TestCase):
         self.assertNotIn("EDGE", cut["shared"].index)
 
 
+class ConditionsRefresh(unittest.TestCase):
+    """A phone's position wobbles from one reading to the next; a refresh must still find the spots it kept, and Refresh must forget them."""
+
+    def test_nearby_positions_look_spots_up_at_the_same_point(self):
+        from views.conditions_view import _lookup_point
+        self.assertEqual(_lookup_point(31.99917, -102.158146), _lookup_point(31.9981, -102.1584))
+        self.assertNotEqual(_lookup_point(31.99917, -102.158146), _lookup_point(32.2, -102.158146))  # a real move is a new point
+
+    def test_refresh_forgets_the_kept_spots_for_both_ways_of_asking(self):
+        from unittest import mock
+        from views import conditions_view as cv
+        calls = []
+
+        def fake(*args, **kwargs):
+            calls.append(args)
+            return pd.DataFrame({"tx": []})
+
+        with mock.patch.object(cv.cond, "fetch_nearby", fake), mock.patch.object(cv.cond, "fetch_station", fake):
+            cv._refresh_data()
+            cv._nearby_spots(1.0, 2.0, 100.0, "2026-01-01T00:00:00", 30)
+            cv._nearby_spots(1.0, 2.0, 100.0, "2026-01-01T00:00:00", 30)
+            cv._station_spots("K5OHY", "2026-01-01T00:00:00", 30)
+            cv._station_spots("K5OHY", "2026-01-01T00:00:00", 30)
+            self.assertEqual(len(calls), 2)  # each asked once, then kept
+            cv._refresh_data()
+            cv._nearby_spots(1.0, 2.0, 100.0, "2026-01-01T00:00:00", 30)
+            cv._station_spots("K5OHY", "2026-01-01T00:00:00", 30)
+            self.assertEqual(len(calls), 4)  # both forgotten
+            cv._refresh_data()
+
+
 class TextIsNeverTakenAsMarkup(unittest.TestCase):
     """An antenna name can arrive in a shared link, and a receiver's callsign comes from outside the app: neither may become HTML."""
 

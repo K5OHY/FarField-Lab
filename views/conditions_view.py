@@ -304,6 +304,26 @@ def _muf_card(lat, lon, boxed=True):
                    "Only a few dozen report at any time, so this is an estimate for your location, not a measurement.")
 
 
+def _lookup_point(lat, lon):
+    """The point the spots are looked up around: the position to about a kilometre. A phone's position wobbles a little from one reading
+    to the next, and the saved copy of the spots is filed under this point, so without the rounding a refresh never finds it."""
+    return round(float(lat), 2), round(float(lon), 2)
+
+
+def _refresh_data():
+    """Forget the spots kept for five minutes, so the next draw asks wspr.live again."""
+    _nearby_spots.clear()
+    _station_spots.clear()
+
+
+def _caption_with_refresh(text):
+    """The line saying where and when the spots are from, with a Refresh button beside it where it is easy to reach on a phone."""
+    words, button = st.columns([5, 2], vertical_alignment="center")
+    words.caption(text)
+    button.button("Refresh", key="cond_refresh_top", icon=":material/refresh:", width="stretch", on_click=_refresh_data,
+                  help="Ask wspr.live again for the latest spots. Your place and settings stay as they are.")
+
+
 def _use_my_location():
     """The page's own button: switch to My location and have the browser asked for it straight away."""
     ss = st.session_state
@@ -333,6 +353,9 @@ def conditions_page():
                 ss["cond_power"] = float(q["power"])
         except ValueError:
             pass
+        if q.get("loc") == "1":  # opened from My location: ask the browser again (it never goes in the link, only that it was used)
+            ss["cond_where"] = "My location"
+            ss["_locate_ticket"] = ss.get("_locate_ticket", 0) + 1
         if q.get("mode") in cond.MODES:
             ss["cond_mode"] = q["mode"]
         if q.get("window", "").isdigit() and int(q["window"]) in (30, 60, 120):
@@ -361,7 +384,8 @@ def conditions_page():
             if geo:
                 st.caption(f":material/location_on: {geo[0]:.3f}, {geo[1]:.3f} \u00b7 grid {cond.latlon_to_maidenhead(*geo)}")
             st.caption("Your browser asks before sharing. The position is used only to find WSPR stations near you and is not "
-                       "saved; only a box around it goes to wspr.live.")
+                       "saved; only a box around it goes to wspr.live. After a refresh it asks again; choose Allow in the browser's "
+                       "site settings (not Allow this time) to skip the question.")
         source = st.radio("Learn from", ["Stations near me", "One transmitter"], horizontal=True, key="cond_source",
                           help="Stations near me uses every WSPR transmitter inside the area below. One transmitter uses just "
                                "your own WSPR transmitter, or a friend's, and treats it as you: its spots, at its own power, "
@@ -395,12 +419,15 @@ def conditions_page():
                               help="Signals fade, so a path counts as good only when it beats the mode's threshold by this much.")
         window = st.radio("Look back", [30, 60, 120], horizontal=True, key="cond_window",
                           format_func=lambda m: f"{m} min" if m < 60 else f"{m // 60} h")
-        if st.button("Refresh now", width="stretch", key="cond_refresh"):
-            _nearby_spots.clear()
-    link = {"call": callsign, "units": units, "power": f"{power:g}", "mode": mode, "window": str(window)}
-    if grid.strip():
-        link["grid"] = grid.strip()
-    if callsign and dict(st.query_params) != link:
+        st.button("Refresh now", width="stretch", key="cond_refresh", on_click=_refresh_data)
+    link = {"units": units, "power": f"{power:g}", "mode": mode, "window": str(window)}
+    if where == "My location":
+        link["loc"] = "1"  # only that My location was used, never the position
+    else:
+        link = {"call": callsign, **link}
+        if grid.strip():
+            link["grid"] = grid.strip()
+    if (callsign or where == "My location") and dict(st.query_params) != link:
         st.query_params.from_dict(link)
     k = KM_PER_MILE if units == "mi" else 1.0
     now = datetime.now(timezone.utc).replace(tzinfo=None, second=0, microsecond=0)
@@ -420,7 +447,7 @@ def conditions_page():
             return
         lat, lon = float(spots["tx_lat"].median()), float(spots["tx_lon"].median())
         home, label, radius, widened = (lat, lon), f"{ref_call}, grid {cond.latlon_to_maidenhead(lat, lon)}", 0.0, False
-        st.caption(f"\U0001F4CD {label} \u00b7 spots up to {end:%H:%M} UTC (WSPR reports arrive a few minutes late)")
+        _caption_with_refresh(f"\U0001F4CD {label} \u00b7 spots up to {end:%H:%M} UTC (WSPR reports arrive a few minutes late)")
         if cut:
             st.warning("That was more data than the limit, so the oldest spots are missing. Try a shorter look-back.")
         result = cond.analyze(spots, home, power, mode, end, window, antenna_db, margin_db)
@@ -455,14 +482,14 @@ def conditions_page():
     try:
         with st.spinner("Asking wspr.live which stations near you were heard\u2026"):
             while True:
-                spots, cut = _nearby_spots(lat, lon, float(radius), end.isoformat(), int(window))
+                spots, cut = _nearby_spots(*_lookup_point(lat, lon), float(radius), end.isoformat(), int(window))
                 if spots["tx"].nunique() >= 3 or radius >= 1490:
                     break
                 radius, widened = min(1500.0, radius * 2), True
     except WsprError as exc:
         st.error(str(exc))
         return
-    st.caption(f"\U0001F4CD {label} \u00b7 spots up to {end:%H:%M} UTC (WSPR reports arrive a few minutes late)")
+    _caption_with_refresh(f"\U0001F4CD {label} \u00b7 spots up to {end:%H:%M} UTC (WSPR reports arrive a few minutes late)")
     if spots.empty:
         st.warning(f"No WSPR station within {radius / k:,.0f} {units} of this spot was heard in the last {window} minutes, so there is "
                    "nothing to base conditions on. Widen the area, or try again in a few minutes.")

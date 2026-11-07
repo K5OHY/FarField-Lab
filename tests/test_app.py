@@ -932,6 +932,18 @@ class BandConditionsPage(unittest.TestCase):
         self.assertEqual([x.label for x in at.selectbox if x.label == "Mode"], ["Mode"])
 
     @needs_network
+    def test_a_refresh_button_sits_beside_the_spots_line_and_works(self):
+        at = page("conditions_page", call="K5OHY").run()
+        self.assertEqual(errors(at), [])
+        labels = [b.label for b in at.button]
+        self.assertIn("Refresh", labels)  # beside the spots line, in reach on a phone
+        self.assertIn("Refresh now", labels)  # the sidebar one stays
+        [b for b in at.button if b.label == "Refresh"][0].click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["cond_call"], "K5OHY")  # nothing about the place was lost
+
+    @needs_network
     def test_an_examples_callsign_does_not_become_yours(self):
         at = page_after_example("conditions_page", "dxc20").run()
         self.assertEqual(at.session_state["cond_call"], "")
@@ -968,6 +980,29 @@ class BandConditionsPage(unittest.TestCase):
         self.assertEqual([e for e in errors(at) if "not registered" not in e], [])
         self.assertEqual(at.session_state["cond_where"], "My location")
         self.assertEqual(at.session_state["_locate_ticket"], 1)
+
+    def test_a_link_from_my_location_opens_on_it_and_asks_again(self):
+        at = page("conditions_page", loc="1").run()
+        self.assertEqual([e for e in errors(at) if "not registered" not in e], [])
+        self.assertEqual(at.session_state["cond_where"], "My location")
+        self.assertEqual(at.session_state["_locate_ticket"], 1)  # the browser is asked once, with no button press
+
+    def test_my_location_goes_in_the_link_but_never_the_position(self):
+        import types
+        from unittest import mock
+        from views import conditions_view
+        asked = types.SimpleNamespace(position=None)
+        with mock.patch.object(conditions_view, "_LOCATE", lambda **kw: asked):  # the test runner cannot load the real component
+            at = page("conditions_page", call="K5OHY", loc="1", power="20", mode="SSB").run()  # opened with a callsign too
+            at.session_state["cond_geo"] = (31.99917, -102.158146)
+            at.run()
+        self.assertEqual([e for e in errors(at) if "not registered" not in e], [])
+        self.assertNotIn("call", at.query_params)  # the page rewrote the link for My location, so the callsign is gone from it
+        self.assertEqual(str(at.query_params["loc"]).strip("[]'\""), "1")
+        self.assertEqual(str(at.query_params["power"]).strip("[]'\""), "20")
+        shown = " ".join(str(v) for v in at.query_params.values())
+        self.assertNotIn("31.99", shown)  # the position itself never goes in the link
+        self.assertNotIn("102.15", shown)
 
     def test_bad_link_values_are_ignored(self):
         at = page("conditions_page", call="K5OHY", power="99999", mode="bogus", window="7").run()
