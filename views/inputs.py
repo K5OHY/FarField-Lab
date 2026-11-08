@@ -96,6 +96,9 @@ def _load_saved(which):
 COMPARE_EXAMPLES = (
     ("quick", "Switched after every transmission", "Loop vs dipole, 12 transmissions (K5OHY)",
      "WSPR, 20m, 4 Oct 2026. A 40m loop and a 20m dipole took turns, one on each two-minute transmission."),
+    ("vert2", "Switched after every transmission", "Quarter-wave vs 2 element vertical, 12 transmissions (K5OHY)",
+     "WSPR, 20m, 1 Nov 2026. Two verticals took turns on two-minute transmissions, in the order A, B, B, A; "
+     "judged on receivers with at least 3 reports on each."),
     ("long", "Long alternating blocks", "Performer vs 17 ft whip, 9½ hours (Dale, N3HXZ)",
      "WSPR, 20m, 26 Aug 2026. Switched every 30 minutes, and judged on receivers with 40 or more reports on each antenna."),
     ("rbn", "Told apart by frequency", "Loop vs dipole on CW (K5OHY, RBN)",
@@ -112,7 +115,7 @@ EXAMPLE_TITLES = {key: title for key, _, title, _ in COMPARE_EXAMPLES}
 def start_example(which):
     """The example buttons, each set up and loaded so the result shows straight away. 'map' is K5OHY's Reverse Beacon Network
     spots of 23 Oct 2025 on the My spots page. On the Compare page, 'rbn' is a quick CW check by frequency (27 Sep 2026, loop on 14069.5 against dipole on 14070.5), 'quick' is the same day's test of 12 transmissions alternating a 40m loop and a
-    20m dipole, 'dxc20' and 'dxc40' are Callum's (M0MCX, DX Commander) delta loop against a vertical, each sent under its own
+    20m dipole, 'vert2' is K5OHY's quarter-wave vertical against a 2 element vertical on 1 Nov 2026 (16 transmissions, four left out), 'dxc20' and 'dxc40' are Callum's (M0MCX, DX Commander) delta loop against a vertical, each sent under its own
     callsign, on 14 Jan 2026, and 'long' is Dale N3HXZ's test of 26 Aug 2026: a Performer (tuned elevated quarter-wave) against an untuned 17 ft whip on a 5:1 unun at ground level,
     alternating 30 minute blocks from 12:00 to 21:30 UTC, judged on stations with 40 or more reports per antenna as in his
     write-up."""
@@ -125,6 +128,12 @@ def start_example(which):
                   cmp_name_a="Delta loop" if twenty else "Vertical", cmp_name_b="Vertical" if twenty else "Delta loop",
                   test_mode="After every transmission", test_cycles=6, test_start="13:38" if twenty else "21:34",
                   test_order="A, B, A, B …", _example=which)
+    elif which == "vert2":
+        ss.update(callsign_in="K5OHY", grid_in="", src_in=WSPR_SOURCE, span_in="Single day", day_in=date(2026, 11, 1),
+                  band_choice="20m", cmp_name_a="Quarter-wave vertical", cmp_name_b="2 el vertical",
+                  test_mode="After every transmission", test_cycles=16, test_start="18:38", test_order="A, B, B, A …",
+                  rx_min_reports_pair=3, _example="vert2")
+        ss["_log_pending"] = {8: None, 9: None, 10: None, 11: None}  # four transmissions in the middle left out, as he did
     elif which == "long":
         ss.update(callsign_in="N3HXZ", grid_in="", src_in=WSPR_SOURCE, span_in="Single day", day_in=date(2026, 8, 26),
                   band_choice="20m", cmp_name_a="17 ft whip + 5:1 unun (ground)", cmp_name_b="Performer (tuned, elevated)",
@@ -213,6 +222,10 @@ def example_banner(ss):
     elif which == "quick":
         st.info("This is an example: a real WSPR test from K5OHY on 4 October 2026. A 40m loop (A) and a 20m dipole (B) took turns "
                 "on 12 two-minute transmissions from 18:00 UTC, in the order A, B, B, A.")
+    elif which == "vert2":
+        st.info("This is an example: a real WSPR test from K5OHY on 1 November 2026. A quarter-wave vertical (A) and a 2 element "
+                "vertical (B) took turns on two-minute transmissions from 18:38 UTC, in the order A, B, B, A. Four transmissions in "
+                "the middle were left out of the test, and receivers need at least 3 reports on each antenna.")
     elif which == "rbn":
         st.info("This is an example: a quick CW check from K5OHY on 27 September 2026, on the Reverse Beacon Network. A 40m loop (A) "
                 "called CQ on 14069.5 kHz and a 20m dipole (B) on 14070.5 kHz, so the two are told apart by frequency.")

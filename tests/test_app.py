@@ -231,6 +231,25 @@ class ComparePage(unittest.TestCase):
             self.assertTrue(any("Delta loop" in m.value or "Vertical" in m.value for m in at.markdown))
             self.assertTrue(any("Opened from a saved copy" in c.value for c in at.main.caption), key)
 
+    def test_the_two_verticals_example_gives_the_result_of_the_real_test(self):
+        """K5OHY's quarter-wave against a 2 element vertical on 1 Nov 2026: 16 slots from 18:38, four in the middle left out, so 12
+        transmissions, judged on receivers with at least 3 reports on each antenna. Same figures as the link he shared."""
+        at = page("compare_page").run()
+        open_example(at, "vert2")
+        self.assertEqual(errors(at), [])
+        ss = at.session_state
+        self.assertEqual((ss["cmp_name_a"], ss["cmp_name_b"], ss["band_choice"], ss["test_start"], ss["test_cycles"]),
+                         ("Quarter-wave vertical", "2 el vertical", "20m", "18:38", 16))
+        self.assertEqual(ss["rx_min_reports_pair"], 3)
+        metrics = {m.label: (m.value, m.delta) for m in at.main.metric}
+        self.assertEqual(metrics["Signal advantage"][0], "+2.7 dB")
+        self.assertEqual(metrics["Signal advantage"][1], "87 receivers")
+        text = " ".join(m.value for m in at.main.markdown)
+        self.assertIn("of 6 rounds", text)  # 16 slots less the four left out is 12 transmissions, six rounds of A then B
+        self.assertIn("2 el vertical has the stronger signal", text)
+        self.assertTrue(any("1 November 2026" in i.value and "quarter-wave vertical (A)" in i.value for i in at.info))
+        self.assertTrue(any("Opened from a saved copy" in c.value for c in at.main.caption))
+
     def test_closing_an_example_goes_back_to_the_cards_on_wspr_with_no_second_callsign(self):
         at = page("compare_page").run()
         open_example(at, "dxc20")
@@ -828,7 +847,8 @@ class ComparePage(unittest.TestCase):
         self.assertIsNone(at.session_state["raw"])
         self.assertEqual(at.session_state["callsign_in"], "")
         self.assertEqual(at.session_state["src_in"], "WSPR")
-        self.assertEqual(len([b for b in at.main.button if b.key.startswith("hero_")]), 5)
+        from views import inputs
+        self.assertEqual(len([b for b in at.main.button if b.key.startswith("hero_")]), len(inputs.COMPARE_EXAMPLES))  # all the cards
 
     def test_a_compare_example_does_not_follow_you_to_my_spots(self):
         at = page_after_example("spots_page", "quick").run()

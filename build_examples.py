@@ -24,6 +24,7 @@ EXAMPLES = {
     "rbn": ("K5OHY", "RBN", date(2026, 9, 27), None, {}),
     "quick": ("K5OHY", "WSPR", date(2026, 10, 4), "20m", {}),
     "long": ("N3HXZ", "WSPR", date(2026, 8, 26), "20m", {}),
+    "vert2": ("K5OHY", "WSPR", date(2026, 11, 1), "20m", {}),  # a quarter-wave vertical against a 2 element vertical
     # Callum (M0MCX, DX Commander): a delta loop (M0MCX) against a vertical (M0XXT), three pairs on each band
     "dxc20": ("M0MCX", "WSPR", date(2026, 1, 14), "20m", {"call_b": "M0XXT", "grid": "IO92di"}),
     "dxc40": ("M0XXT", "WSPR", date(2026, 1, 14), "40m", {"call_b": "M0MCX", "grid": "IO92di"}),

@@ -1,0 +1,18 @@
+{
+ "callsign": "K5OHY",
+ "kind": "WSPR",
+ "file_date": "20261101",
+ "tx_call": "K5OHY",
+ "tx_call_b": null,
+ "listening": {
+  "band": "20m",
+  "start": "2026-11-01 18:38:00",
+  "end": "2026-11-01 19:52:00"
+ },
+ "home": [
+  31.99917,
+  -102.158146,
+  "DM81wx via FCC (callook.info)"
+ ],
+ "fetched": "2026-11-08"
+}
