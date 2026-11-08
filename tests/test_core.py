@@ -857,5 +857,59 @@ class MapZoomAndGainText(unittest.TestCase):
         self.assertEqual(signed(-2), "-2")
 
 
+class LowBands(unittest.TestCase):
+    """630m and 2200m (WSPR runs on both) are named, loadable, offered in the Band list, and kept out of the Band conditions page."""
+
+    def test_the_wspr_frequencies_are_named(self):
+        from rbn_data import get_band
+        self.assertEqual(get_band(474.4), "630m")    # 475.7 is the WSPR window's centre; the lowest spot seen is 474.4 kHz
+        self.assertEqual(get_band(475.7), "630m")
+        self.assertEqual(get_band(137.4), "2200m")
+        self.assertEqual(get_band(137.6), "2200m")
+        self.assertEqual(get_band(14097.0), "20m")   # the HF bands are unchanged
+        self.assertEqual(get_band(1838.0), "160m")
+        self.assertEqual(get_band(300.0), "unknown")  # between the two, in no amateur band
+
+    def test_wspr_live_numbers_them_minus_one_and_zero(self):
+        import wspr_data
+        self.assertEqual(wspr_data.STATION_BAND_CODES["2200m"], -1)
+        self.assertEqual(wspr_data.STATION_BAND_CODES["630m"], 0)
+        self.assertEqual(wspr_data.STATION_BAND_CODES["20m"], 14)
+
+    def test_the_band_conditions_page_never_asks_for_them(self):
+        """That page asks wspr.live for every code in BAND_CODES; 630m has about 160,000 spots a day and would crowd out the HF ones."""
+        import wspr_data
+        self.assertNotIn("630m", wspr_data.BAND_CODES)
+        self.assertNotIn("2200m", wspr_data.BAND_CODES)
+        self.assertNotIn(0, cond.CODE_TO_BAND)
+        self.assertNotIn(-1, cond.CODE_TO_BAND)
+
+    def test_a_station_load_asks_for_the_right_band(self):
+        import wspr_data
+        seen = []
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            seen.append(params["query"])
+            resp = mock.Mock(status_code=200)
+            resp.json.return_value = {"meta": [{"name": n} for n in ("time", "tx_sign", "tx_loc", "rx_sign", "rx_loc", "rx_lat", "rx_lon",
+                                                                      "frequency", "power", "snr", "drift")],
+                                      "data": [["2026-11-07 00:04:00", "SV8ANW", "KM09", "GM0UDL", "IO75", 55.0, -3.0, 474402, 37, -22, 0]]}
+            return resp
+
+        with mock.patch.object(wspr_data.requests, "get", fake_get):
+            spots, _ = wspr_data.fetch_wspr_spots("SV8ANW", datetime(2026, 11, 7), datetime(2026, 11, 8), band="630m")
+            wspr_data.fetch_listening("630m", datetime(2026, 11, 7), datetime(2026, 11, 8))
+        self.assertIn("band = 0", seen[0])
+        self.assertIn("band = 0", seen[1])
+        self.assertEqual(list(spots["band"]), ["630m"])   # not "unknown"
+
+    def test_they_come_first_in_the_band_list_and_the_order(self):
+        import session_report
+        import ui_common
+        self.assertEqual(list(ui_common.BAND_COLORS)[:3], ["2200m", "630m", "160m"])
+        self.assertEqual(session_report.BAND_ORDER[:3], ["2200m", "630m", "160m"])
+        self.assertEqual(session_report.band_list(pd.DataFrame({"band": ["20m", "630m", "unknown"]})), ["630m", "20m", "unknown"])
+
+
 if __name__ == "__main__":
     unittest.main()

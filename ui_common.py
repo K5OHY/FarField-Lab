@@ -13,6 +13,7 @@ from world_map import MAX_KM, SNR_CMAP
 
 # Same colours the RBN website uses for each band.
 BAND_COLORS = {
+    "2200m": "#8b4513", "630m": "#008080",  # not on the RBN website; chosen to stand apart from the others
     "160m": "#ffe000", "80m": "#093F00", "60m": "#777777", "40m": "#ffa500",
     "30m": "#ff0000", "20m": "#800080", "17m": "#0000ff", "15m": "#444444",
     "12m": "#00ffff", "10m": "#ff00ff", "6m": "#ffc0cb",
