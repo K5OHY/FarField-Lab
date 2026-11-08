@@ -149,6 +149,19 @@ _SETUP_KEYS = ("cmp_name_a", "cmp_name_b", "test_mode", "test_cycles", "test_sta
 _SETUP_PREFIXES = ("blk_", "antenna_log_", "avg_near_", "rx_min_reports_", "dash_dir_")
 
 
+def keep_between_pages():
+    """Streamlit forgets a widget's value when a page that does not draw it runs (the Help page, or My spots for a Compare test's
+    setup). Writing the value back first makes it an ordinary session value that stays, so going to the README and back finds the
+    test as you left it. Run before every page, in web.py."""
+    ss = st.session_state
+    for key in list(ss.keys()):
+        if key in SHARED_WIDGET_KEYS or key in _SETUP_KEYS or key == "ghost_keep" or (isinstance(key, str) and key.startswith(_SETUP_PREFIXES)):
+            try:
+                ss[key] = ss[key]
+            except Exception:  # a key that cannot be set (for instance a widget already drawn this run) is left alone
+                pass
+
+
 def start_over(source=None):
     """Back to a clean page, as if it had just been opened: the loaded spots, the callsigns and grid, the dates (to the latest),
     the band, the source (`source`, or RBN) and a comparison's setup are cleared. Units and the map settings stay."""

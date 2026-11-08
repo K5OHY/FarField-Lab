@@ -1033,6 +1033,33 @@ class HelpPage(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(HERE, "images", "two-transmissions.png")))
 
 
+class SetupSurvivesOtherPages(unittest.TestCase):
+    """Going to the README and back used to bring the Compare page back with its test setup reset (Dale N3HXZ, November 2026):
+    Streamlit forgets a widget's value on a page that does not draw it. A page that draws no widgets stands in for the README."""
+    SCRIPT = chr(10).join([
+        "import sys", "sys.path.insert(0, r'%s')" % HERE,
+        "import streamlit as st", "from views import inputs",
+        "inputs.keep_between_pages()",
+        "if st.session_state.get('on_compare', True):",
+        "    st.text_input('A', key='cmp_name_a')",
+        "    st.selectbox('Mode', ['After every transmission', 'In long blocks'], key='test_mode')",
+        "    st.number_input('Window', 0, 99, key='rx_min_reports_blk')"])
+
+    def test_the_setup_is_still_there_after_a_page_that_does_not_draw_it(self):
+        at = AppTest.from_string(self.SCRIPT, default_timeout=60).run()
+        at.text_input[0].set_value("17 ft whip").run()
+        at.selectbox[0].set_value("In long blocks").run()
+        at.number_input[0].set_value(40).run()
+        at.session_state["on_compare"] = False  # the README
+        at.run()
+        at.session_state["on_compare"] = True  # back to Compare
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.text_input[0].value, "17 ft whip")
+        self.assertEqual(at.selectbox[0].value, "In long blocks")
+        self.assertEqual(at.number_input[0].value, 40)
+
+
 class WholeApp(unittest.TestCase):
     def test_the_menu_has_the_four_pages(self):
         at = AppTest.from_file(os.path.join(HERE, "web.py"), default_timeout=600).run()

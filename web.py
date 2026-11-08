@@ -4,6 +4,7 @@ import streamlit as st
 from pathlib import Path
 
 from ui_common import CSS, github_url
+from views import inputs
 from views.compare_page import compare_page
 from views.conditions_view import conditions_page
 from views.help_view import help_page
@@ -23,6 +24,7 @@ def main():
              st.Page(compare_page, title="Compare antennas", icon=":material/balance:", url_path="compare"),
              st.Page(conditions_page, title="Band conditions", icon=":material/public:", url_path="conditions"),
              st.Page(help_page, title="Help and README", icon=":material/help:", url_path="help")]
+    inputs.keep_between_pages()  # so the README and back does not lose a test's setup
     st.navigation(pages).run()
     st.sidebar.divider()
     st.sidebar.caption(f"Built by Tim, K5OHY \u00b7 [README and code on GitHub]({github_url()}#readme) \u00b7 long-test method by "
