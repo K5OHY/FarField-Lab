@@ -147,14 +147,18 @@ def start_example(which):
 _SETUP_KEYS = ("cmp_name_a", "cmp_name_b", "test_mode", "test_cycles", "test_start", "test_order", "avg_floor", "avg_weak", "leave_apply",
                "setup_ok", "callsign_b_in", "_setup_given", "_blk_pending", "_log_pending", "_log_base", "_example", "_autoload")
 _SETUP_PREFIXES = ("blk_", "antenna_log_", "avg_near_", "rx_min_reports_", "dash_dir_")
+_NEVER_WRITTEN = ("antenna_log_",)  # st.data_editor keys: Streamlit refuses a value assigned to them
 
 
 def keep_between_pages():
     """Streamlit forgets a widget's value when a page that does not draw it runs (the Help page, or My spots for a Compare test's
     setup). Writing the value back first makes it an ordinary session value that stays, so going to the README and back finds the
-    test as you left it. Run before every page, in web.py."""
+    test as you left it. Run before every page, in web.py. A table widget (st.data_editor) must never be written to, or Streamlit
+    stops the page with an error: that is the per-transmission antenna list, whose keys start with antenna_log_ and are left out."""
     ss = st.session_state
     for key in list(ss.keys()):
+        if isinstance(key, str) and key.startswith(_NEVER_WRITTEN):
+            continue
         if key in SHARED_WIDGET_KEYS or key in _SETUP_KEYS or key == "ghost_keep" or (isinstance(key, str) and key.startswith(_SETUP_PREFIXES)):
             try:
                 ss[key] = ss[key]

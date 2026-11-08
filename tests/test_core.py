@@ -124,6 +124,31 @@ class LeaveOutForTheVerdict(unittest.TestCase):
         self.assertNotIn("EDGE", cut["shared"].index)
 
 
+class KeepBetweenPages(unittest.TestCase):
+    """The step that keeps a test's setup when you visit another page must not write to a table widget (st.data_editor): the live site
+    stopped with StreamlitValueAssignmentNotAllowedError on the antenna list of any alternating test (November 2026)."""
+
+    def test_the_antenna_list_is_never_written_back_but_the_setup_is(self):
+        from unittest import mock
+        import streamlit as st
+        from views import inputs
+
+        class Recording(dict):
+            written = []
+
+            def __setitem__(self, key, value):
+                self.written.append(key)
+                super().__setitem__(key, value)
+
+        state = Recording({"antenna_log_ABBA_12_041800": object(), "cmp_name_a": "Loop", "blk_len": 30, "test_mode": "In long blocks",
+                           "callsign_in": "K5OHY", "_example": "quick"})
+        with mock.patch.object(st, "session_state", state):
+            inputs.keep_between_pages()
+        self.assertNotIn("antenna_log_ABBA_12_041800", Recording.written)
+        for key in ("cmp_name_a", "blk_len", "test_mode", "callsign_in"):
+            self.assertIn(key, Recording.written)
+
+
 class ConditionsRefresh(unittest.TestCase):
     """A phone's position wobbles from one reading to the next; a refresh must still find the spots it kept, and Refresh must forget them."""
 
