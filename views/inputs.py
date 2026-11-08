@@ -204,7 +204,8 @@ def example_banner(ss):
     if which == "long":
         st.info("This is an example: a real long WSPR test by Dale, N3HXZ (20m, 26 August 2026). A Performer (B) and a 17 ft whip "
                 "on a 5:1 unun (A) took turns in 30 minute blocks from 12:00 UTC. As in his write-up at "
-                "[n3hxz.net](https://www.n3hxz.net/), only receivers with 40 or more reports on each antenna are used.")
+                "[n3hxz.net](https://www.n3hxz.net/), only receivers with 40 or more reports on each antenna are used. The slider "
+                "is set to 40 for this example; your own long tests open at 20.")
     elif which == "quick":
         st.info("This is an example: a real WSPR test from K5OHY on 4 October 2026. A 40m loop (A) and a 20m dipole (B) took turns "
                 "on 12 two-minute transmissions from 18:00 UTC, in the order A, B, B, A.")

@@ -122,6 +122,10 @@ The picture follows five receivers through one A transmission and the B transmis
 
 **Has it settled?** Raise the slider one step at a time and watch the average, biggest and smallest gain at the top of the tab. When they stop moving, the result has settled (it has *converged*) and you can trust it more. If they keep moving, the test is too short or too few receivers heard it. Keep at least 5 to 10 receivers: with fewer, a handful of stations decide the answer, and it can look settled only because almost nothing is left. The **Data used** box on the Result tab shows how many receivers each setting leaves.
 
+A long test behaves differently. Because it runs for hours, the band can open or close to different parts of the world during it, so the average gain may keep moving even when you have plenty of reports. If the line has not flattened, look at **One receiver over time** (on the Receiver by receiver tab) before deciding you need more data. Dale finds long tests are usually settled between 20 and 40 reports per antenna at each receiver.
+
+**Looking at part of a long test.** You can analyze any slice of a long test to see how a time of day behaves. In *How this test was set up*, set *First block starts at* to a time when antenna A went on, and *Number of blocks* to the length you want: with 30 minute blocks, 6 blocks is a 3 hour slice. Start each slice where your A, B pattern starts over (any time A goes on for A, B, A, B; every fourth block for A, B, B, A), and use whole A-and-B pairs. A smaller slice has fewer reports per receiver, so lower the slider to match.
+
 **How many transmissions?** Dale, N3HXZ, ran the same pair of antennas as 16, 12 and 8 transmissions. In his tests:
 
 - Shortening the test changed the average gain much more than the slider did: the shorter the run, the lower and less steady the gain.

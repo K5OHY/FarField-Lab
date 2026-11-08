@@ -404,6 +404,20 @@ class ComparePage(unittest.TestCase):
         self.assertIn(f"{other} average gain", labels)
         self.assertIn(f"{watched} average gain", labels)
 
+    def test_a_long_test_says_the_band_can_open_or_close_and_a_short_one_does_not(self):
+        long = page("compare_page").run()
+        open_example(long, "long")
+        self.assertEqual(errors(long), [])
+        text = " ".join(m.value for m in long.main.markdown)
+        self.assertIn("In a long test the lines may never flatten completely", text)
+        self.assertIn("it can fade and close", text)  # a closing band drifts the average the other way
+        self.assertIn("One receiver over time", text)
+        banner = " ".join(i.value for i in long.main.info)
+        self.assertIn("The slider is set to 40 for this example; your own long tests open at 20.", banner)
+        quick = page("compare_page").run()
+        open_example(quick, "quick")
+        self.assertNotIn("In a long test the lines may never flatten completely", " ".join(m.value for m in quick.main.markdown))
+
     def test_the_dashboard_follows_octants_or_quadrants(self):
         at = page("compare_page").run()
         open_example(at, "long")
@@ -542,7 +556,7 @@ class ComparePage(unittest.TestCase):
         self.assertGreater(len(settings), 4)
         self.assertLess(len(settings), 20)  # steps of 5, not every number
         reading = " ".join(m.value for m in at.main.markdown)
-        self.assertIn("a long test aims for 20 reports", reading)  # why it opens where it does
+        self.assertIn("usually settled somewhere between 20 and 40 reports per antenna", reading)  # what to expect of a long test
 
     def test_the_maps_are_drawn_once_and_not_again_when_the_page_redraws(self):
         """Drawing the maps is the slowest part of the page, and they do not depend on the slider or the switch."""

@@ -419,7 +419,9 @@ def _blocks_test(spots, all_stamps):
     test_link.apply_blocks(st.session_state, sig)
     st.session_state.setdefault(f"blk_n_{sig}", default_blocks)
     n_blocks = int(c2.number_input("Number of blocks", 2, 40, step=2, key=f"blk_n_{sig}",
-                                   help="Count every block, A and B together: A for 30 minutes then B for 30 is 2."))
+                                   help="Count every block, A and B together: A for 30 minutes then B for 30 is 2. To look at part of a long test, "
+                                        "use fewer blocks and set First block starts at to a time when antenna A went on "
+                                        "(3 hours of 30 minute blocks is 6)."))
     patterns = {"A, B, A, B \u2026": "ABAB", "A, B, B, A \u2026": "ABBA"}
     order = c4.radio("Block order", list(patterns), key="blk_order", horizontal=True,
                      help="Starting with A. A, B, B, A balances which antenna goes first.")
@@ -1146,12 +1148,12 @@ def _leave_out_box(kind, units):
     return (WSPR_FLOOR_DB if floor_on else None), near * (KM_PER_MILE if units == "mi" else 1.0), weak_pct, note
 
 
-def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None, opened=None, settled=False):
+def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None, opened=None, settled=False, long_test=False):
     """The monitoring dashboard: the few numbers to watch as the slider moves, to see whether the result has settled.
     `every` is the receivers left at this slider setting; `reference` is the receivers left where the slider opens, which is
     what picks the direction to watch (so the choice does not hop about as the slider moves). `pairwise` is (receivers, average
     gain) taken pair by pair, for a test that alternates; None when the test is not judged that way. `trend` is the result at each
-    slider setting (slider_trend), shown as a chart and a table with the setting `chosen` marked, and `opened` where the slider opened (`settled` when it opened there because the result settles, not on a fixed default)."""
+    slider setting (slider_trend), shown as a chart and a table with the setting `chosen` marked, and `opened` where the slider opened (`settled` when it opened there because the result settles, not on a fixed default). `long_test` swaps in the note for long blocks, where the band changing is the likelier reason a line keeps moving."""
     signed_db = lambda v: "–" if v is None or pd.isna(v) else f"{v:+.1f} dB"  # noqa: E731
     gr = gain_readout(every)
     ss = st.session_state
@@ -1207,6 +1209,16 @@ def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None, o
                         f"fewer {noun}s are left, so the range widens, and the ones left are the nearer, stronger ones. The weak, far "
                         "ones are gone, and they are where reports near WSPR's floor (about \u221228 dB) are partly missing because "
                         "they cannot be decoded, which pulls the gap toward zero. So the gain reads higher.\n"
+                        + (
+                        "- **The setting to trust.** In a long test the lines may never flatten completely. Over hours the band keeps "
+                        "changing: it can open to other parts of the world, such as Europe coming alive late in the day, or it can fade "
+                        "and close to places that were coming in well earlier. Either one changes which "
+                        f"{noun}s hear you and how strongly, so the average gain can drift up or down as the test goes on. A line that "
+                        "keeps drifting is usually the band changing, not a sign that you need more reports. To check, open **Receiver by "
+                        f"receiver** and look at **One {noun} over time**: if the same {noun}s get stronger or weaker on both antennas as the "
+                        "test goes on, it is the band. In Dale's experience a long test is usually settled somewhere between "
+                        f"{DALE_MIN_SPOTS} and {DALE_SITE_MIN} reports per antenna at each {noun}. Keep at least 5 to 10 {noun}s whatever you pick."
+                        if long_test else
                         "- **The setting to trust** is where the grey band stops jumping and the lines flatten, with plenty of "
                         f"{noun}s left. "
                         + (f"The slider opens there, as long as at least {SETTLED_MIN_RECEIVERS} are left. " if settled else
@@ -1214,7 +1226,7 @@ def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None, o
                            f"method), or the most that still leaves enough {noun}s. " if opened is not None and opened >= 5 else
                            f"The slider opens at {opened} here, because no setting settled with at least {SETTLED_MIN_RECEIVERS} "
                            f"{noun}s left. ")
-                        + "Keep at least 5 to 10 whatever you pick.")
+                        + "Keep at least 5 to 10 whatever you pick."))
                     st.pyplot(slider_trend_chart(shown, chosen, opened), width="stretch")
                     if chosen is not None:
                         st.caption(f"The summary and all the tabs use {chosen} or more reports ({len(every)} {noun}s). Turn that off with "
@@ -1704,7 +1716,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                     with dash_slot:
                         _dashboard(every, opening, noun, pair_by_pair_gain(every, fa, fb, locs, home, an["power"]["offset"])
                                    if an["paired"] else None, cached_trend[1], min_reports, auto_min,
-                                   st.session_state.get("_auto_min_step") is not None)
+                                   st.session_state.get("_auto_min_step") is not None, bool(sep.get("blocks")))
                         st.caption("The summary's number is the average over every receiver compared"
                                    f"{', taking each one pair by pair' if an['paired'] else ''}, so it can differ from the "
                                    "average and the typical gain here, most when a few receivers gain far more than the rest.")
