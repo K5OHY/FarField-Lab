@@ -869,20 +869,31 @@ class LowBands(unittest.TestCase):
         self.assertEqual(get_band(14097.0), "20m")   # the HF bands are unchanged
         self.assertEqual(get_band(1838.0), "160m")
         self.assertEqual(get_band(300.0), "unknown")  # between the two, in no amateur band
+        self.assertEqual(get_band(70091.0), "4m")     # the VHF and UHF WSPR frequencies, as the app holds them (kHz)
+        self.assertEqual(get_band(144490.5), "2m")
+        self.assertEqual(get_band(432300.0), "70cm")
+        self.assertEqual(get_band(1296500.0), "23cm")
+        self.assertEqual(get_band(50293.0), "6m")     # 6m is unchanged
+        self.assertEqual(get_band(88000.0), "unknown")  # the FM broadcast band is in none of them
 
     def test_wspr_live_numbers_them_minus_one_and_zero(self):
         import wspr_data
-        self.assertEqual(wspr_data.STATION_BAND_CODES["2200m"], -1)
-        self.assertEqual(wspr_data.STATION_BAND_CODES["630m"], 0)
-        self.assertEqual(wspr_data.STATION_BAND_CODES["20m"], 14)
+        self.assertEqual(wspr_data.band_filter("2200m"), "band = -1")
+        self.assertEqual(wspr_data.band_filter("630m"), "band = 0")
+        self.assertEqual(wspr_data.band_filter("20m"), "band = 14")  # an HF band is one code, as before
+        # a VHF or UHF band takes a run of codes (wspr.live numbers by the first digits of the frequency)
+        self.assertEqual(wspr_data.band_filter("4m"), "band = 70")
+        self.assertEqual(wspr_data.band_filter("2m"), "band BETWEEN 144 AND 147")
+        self.assertEqual(wspr_data.band_filter("70cm"), "band BETWEEN 420 AND 449")
+        self.assertEqual(wspr_data.band_filter("23cm"), "band BETWEEN 1240 AND 1299")
 
     def test_the_band_conditions_page_never_asks_for_them(self):
         """That page asks wspr.live for every code in BAND_CODES; 630m has about 160,000 spots a day and would crowd out the HF ones."""
         import wspr_data
-        self.assertNotIn("630m", wspr_data.BAND_CODES)
-        self.assertNotIn("2200m", wspr_data.BAND_CODES)
-        self.assertNotIn(0, cond.CODE_TO_BAND)
-        self.assertNotIn(-1, cond.CODE_TO_BAND)
+        for band in ("2200m", "630m", "4m", "2m", "70cm", "23cm"):
+            self.assertNotIn(band, wspr_data.BAND_CODES)
+        for code in (-1, 0, 70, 144, 432, 1296):
+            self.assertNotIn(code, cond.CODE_TO_BAND)
 
     def test_a_station_load_asks_for_the_right_band(self):
         import wspr_data
@@ -899,16 +910,24 @@ class LowBands(unittest.TestCase):
         with mock.patch.object(wspr_data.requests, "get", fake_get):
             spots, _ = wspr_data.fetch_wspr_spots("SV8ANW", datetime(2026, 11, 7), datetime(2026, 11, 8), band="630m")
             wspr_data.fetch_listening("630m", datetime(2026, 11, 7), datetime(2026, 11, 8))
-        self.assertIn("band = 0", seen[0])
-        self.assertIn("band = 0", seen[1])
+            wspr_data.fetch_wspr_spots("SV8ANW", datetime(2026, 10, 28), datetime(2026, 10, 29), band="2m")
+            wspr_data.fetch_listening("2m", datetime(2026, 10, 28), datetime(2026, 10, 29))
+        self.assertIn("band = 0 AND", seen[0])
+        self.assertIn("band = 0 AND", seen[1])
         self.assertEqual(list(spots["band"]), ["630m"])   # not "unknown"
+        self.assertIn("band BETWEEN 144 AND 147", seen[2])  # 2m: wspr.live files it under 144, 145 and 146
+        self.assertIn("band BETWEEN 144 AND 147", seen[3])
 
     def test_they_come_first_in_the_band_list_and_the_order(self):
         import session_report
         import ui_common
         self.assertEqual(list(ui_common.BAND_COLORS)[:3], ["2200m", "630m", "160m"])
         self.assertEqual(session_report.BAND_ORDER[:3], ["2200m", "630m", "160m"])
-        self.assertEqual(session_report.band_list(pd.DataFrame({"band": ["20m", "630m", "unknown"]})), ["630m", "20m", "unknown"])
+        self.assertEqual(list(ui_common.BAND_COLORS)[-5:], ["6m", "4m", "2m", "70cm", "23cm"])
+        self.assertEqual(session_report.BAND_ORDER[-5:], ["6m", "4m", "2m", "70cm", "23cm"])
+        self.assertEqual(session_report.band_list(pd.DataFrame({"band": ["2m", "20m", "630m", "unknown"]})),
+                         ["630m", "20m", "2m", "unknown"])
+        self.assertEqual(set(ui_common.BAND_COLORS), set(session_report.BAND_ORDER))  # every band has a colour and a place
 
 
 if __name__ == "__main__":

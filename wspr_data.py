@@ -23,10 +23,18 @@ MAX_LISTEN_ROWS = 600_000
 # wspr.live numbers its bands by the first digits of the frequency; see https://wspr.live
 BAND_CODES = {"160m": 1, "80m": 3, "60m": 5, "40m": 7, "30m": 10, "20m": 14, "17m": 18,
               "15m": 21, "12m": 24, "10m": 28, "6m": 50}
-# 2200m and 630m are numbered -1 and 0. They are kept out of BAND_CODES on purpose: the Band conditions page asks wspr.live for every
-# code in that table, and 630m alone has about 160,000 spots a day, which would crowd out the HF spots that page is about.
-LF_BAND_CODES = {"2200m": -1, "630m": 0}
-STATION_BAND_CODES = {**LF_BAND_CODES, **BAND_CODES}  # every band a station can be loaded or compared on
+# The bands below HF and above 6m, as the first and last wspr.live code each one uses. A VHF/UHF band takes several codes (2m is
+# 144, 145 and 146; 70cm is 430, 432, 439 and so on). They are kept out of BAND_CODES on purpose: the Band conditions page asks
+# wspr.live for every code in that table, and 630m alone has about 160,000 spots a day, which would crowd out the HF spots it is about.
+OTHER_BAND_CODES = {"2200m": (-1, -1), "630m": (0, 0), "4m": (70, 70), "2m": (144, 147), "70cm": (420, 449), "23cm": (1240, 1299)}
+# every band a station can be loaded or compared on, as (first code, last code)
+STATION_BAND_CODES = {**OTHER_BAND_CODES, **{band: (code, code) for band, code in BAND_CODES.items()}}
+
+
+def band_filter(band):
+    """The SQL test for one band's spots, e.g. 'band = 14' or 'band BETWEEN 144 AND 147'. The numbers come from the tables above."""
+    lo, hi = STATION_BAND_CODES[band]
+    return f"band = {lo}" if lo == hi else f"band BETWEEN {lo} AND {hi}"
 # wspr.live only honours a bare ?query= (no bound parameters), so anything that goes into the SQL is
 # checked first. WSPR callsigns are letters, digits and '/'.
 CALL_RE = re.compile(r"^[A-Z0-9]{1,6}(/[A-Z0-9]{1,4})?$|^[A-Z0-9]{1,4}/[A-Z0-9]{1,6}$")
@@ -64,7 +72,7 @@ def fetch_wspr_spots(tx_call, start, end, band=None, timeout=90):
     start, end = _utc_naive(start), _utc_naive(end)
     if end <= start:
         raise WsprError("The end time must be after the start time.")
-    band_sql = f" AND band = {STATION_BAND_CODES[band]}" if band in STATION_BAND_CODES else ""
+    band_sql = f" AND {band_filter(band)}" if band in STATION_BAND_CODES else ""
     query = (
         "SELECT time, tx_sign, tx_loc, rx_sign, rx_loc, rx_lat, rx_lon, frequency, power, snr, drift "
         f"FROM wspr.rx WHERE tx_sign = '{call}'{band_sql} "
@@ -118,7 +126,7 @@ def fetch_listening(band, start, end, timeout=120):
     if band not in STATION_BAND_CODES:
         raise WsprError(f"{band!r} is not a band wspr.live knows.")
     start, end = _utc_naive(start), _utc_naive(end)
-    query = (f"SELECT time, rx_sign FROM wspr.rx WHERE band = {STATION_BAND_CODES[band]} "
+    query = (f"SELECT time, rx_sign FROM wspr.rx WHERE {band_filter(band)} "
              f"AND time BETWEEN '{start:%Y-%m-%d %H:%M:%S}' AND '{end:%Y-%m-%d %H:%M:%S}' "
              f"GROUP BY time, rx_sign LIMIT {MAX_LISTEN_ROWS} FORMAT JSONCompact")
     try:

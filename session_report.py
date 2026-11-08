@@ -15,7 +15,7 @@ from compare_stats import locate, receiver_table
 from rbn_data import country_continent, country_location
 from world_map import REACH_CMAP, SNR_CMAP
 
-BAND_ORDER = ["2200m", "630m", "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"]
+BAND_ORDER = ["2200m", "630m", "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "4m", "2m", "70cm", "23cm"]
 BIN_MIN = 10           # spots are grouped into blocks of this many minutes to see when you were being heard
 GAP_BINS = 3           # a pause of more than this many blocks ends one stretch of activity and starts the next
 THIN = 10              # a band with fewer spots than this is flagged: its numbers are only a hint
