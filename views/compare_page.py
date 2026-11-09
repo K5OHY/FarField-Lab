@@ -6,6 +6,8 @@ from ui_common import RBN_SNR_SCALE, brand_strip, SPLIT_FREQ, SPLIT_LOG, WSPR_SN
 from views import inputs, test_link
 from views.compare_view import compare_view
 
+WSPRADAR_URL = "https://www.wspradar.org/"  # a different method (same-cycle, two transmitters)
+
 STEPS_CSS = """<style>
 .cs { display:flex; flex-wrap:wrap; gap:10px; margin:4px 0 14px 0; }
 .cs div { flex:1 1 200px; border:1px solid rgba(128,128,128,.3); background:rgba(128,128,128,.07); border-radius:12px;
@@ -54,6 +56,8 @@ def _how_to_test():
         "3. Load the spots and confirm which frequency was A and which was B.\n\n"
         "RBN is a rough check: skimmers report a CQ a minute or more after it was sent, so the two antennas can only be told "
         "apart by frequency. WSPR is better for a careful test.")
+    st.caption("These steps use one transmitter and a switch. If you can send both antennas at the same time, on two transmitters in "
+               f"the same WSPR cycle, [WSPRadar]({WSPRADAR_URL}) by Markus (DL1MKS) is built for that kind of test.")
 
 
 CARDS_CSS = """<style>

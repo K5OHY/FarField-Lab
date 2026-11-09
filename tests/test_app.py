@@ -209,6 +209,13 @@ class ComparePage(unittest.TestCase):
             self.assertIn(how, text)
             self.assertIn(title, text)
 
+    def test_the_compare_page_points_to_wspradar_for_same_cycle_tests(self):
+        at = page("compare_page").run()
+        text = " ".join(c.value for c in at.main.caption)
+        self.assertIn("https://www.wspradar.org/", text)
+        self.assertIn("Markus (DL1MKS)", text)
+        self.assertIn("https://www.wspradar.org/", (__import__("pathlib").Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8"))
+
     def test_every_example_opens_from_its_card(self):
         from views import inputs
         for key, _, _, _ in inputs.COMPARE_EXAMPLES:

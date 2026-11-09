@@ -106,6 +106,10 @@ Call CQ with the first antenna on one frequency, then with the other antenna on 
 
 Send plenty of CQs on each side, at the same power and speed (or enter the power under **Power**).
 
+### A different way to test: WSPRadar
+
+FarField Lab compares two antennas one after the other: one transmitter, an A/B switch, and the same receivers hearing both. If you can send both antennas at the same time, on two transmitters in the same WSPR cycle, [WSPRadar](https://www.wspradar.org/) by Markus (DL1MKS) is built for that: synchronized, same-cycle benchmarking, with its own method and documentation. The two go about the same job in different ways, so use whichever suits your equipment.
+
 ### What happens to each receiver
 
 ![What happens to the receivers in one pair of transmissions](images/two-transmissions.png)
