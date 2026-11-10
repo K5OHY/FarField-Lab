@@ -28,12 +28,18 @@ def _name(kind, key, suffix):
     return folder() / f"{kind}_{digest}{suffix}"
 
 
-def _prune():
+def _prune(keep=()):
+    """Deletes the least recently used files until the folder is under MAX_BYTES, but never the files in `keep`, which were just
+    written. File times are coarse (about 15 ms on Windows), so files saved close together can share one time, and the order among
+    them is then arbitrary: without this, the file just saved could be the one that goes."""
+    protected = {Path(k).name for k in keep}
     files = sorted((f for f in folder().iterdir() if f.is_file()), key=lambda f: f.stat().st_mtime)
     total = sum(f.stat().st_size for f in files)
     for f in files:
         if total <= MAX_BYTES:
             break
+        if f.name in protected:
+            continue
         total -= f.stat().st_size
         f.unlink(missing_ok=True)
 
@@ -63,7 +69,7 @@ def put_frame(kind, key, frame, meta=None):
         tmp_info.write_text(json.dumps(meta or {}), encoding="utf-8")
         os.replace(tmp_data, data)
         os.replace(tmp_info, info)  # the meta file goes last: get_frame needs both
-        _prune()
+        _prune((data, info))
     except Exception:
         pass
 
@@ -85,7 +91,7 @@ def put_bytes(kind, key, content):
         tmp = path.with_name(path.name + ".part")
         tmp.write_bytes(content)
         os.replace(tmp, path)
-        _prune()
+        _prune((path,))
     except Exception:
         pass
 

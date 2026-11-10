@@ -768,13 +768,35 @@ class DownloadsAreRemembered(unittest.TestCase):
         self.assertTrue(meta["truncated"])
         self.assertIsNone(disk_cache.get_frame("t", "another key"))
 
+    def _old_file(self, name, seconds_old):
+        """A cached file made `seconds_old` seconds ago, with that file time set exactly, so the test does not depend on the clock."""
+        path = disk_cache._name("b", name, ".bin")
+        path.write_bytes(bytes(1000))
+        when = (datetime.now(timezone.utc).timestamp() - seconds_old)
+        os.utime(path, (when, when))
+        return path
+
     def test_the_folder_is_trimmed_oldest_first(self):
+        for n in range(5):  # k0 is the oldest, k4 the newest
+            self._old_file(f"k{n}", seconds_old=(5 - n) * 100)
         with mock.patch.object(disk_cache, "MAX_BYTES", 3000):
-            for n in range(6):
-                disk_cache.put_bytes("b", f"k{n}", bytes(1000))
-            kept = [n for n in range(6) if disk_cache.get_bytes("b", f"k{n}") is not None]
-        self.assertLessEqual(len(kept), 3)
-        self.assertIn(5, kept)
+            disk_cache.put_bytes("b", "k5", bytes(1000))  # six files of 1000 bytes: the three oldest go
+        kept = [n for n in range(6) if disk_cache.get_bytes("b", f"k{n}") is not None]
+        self.assertEqual(kept, [3, 4, 5])
+
+    def test_the_file_just_saved_is_never_the_one_trimmed(self):
+        """File times are coarse, so older files can share the newest's time. The new one must still survive."""
+        same = datetime.now(timezone.utc).timestamp()
+        for n in range(5):
+            path = self._old_file(f"k{n}", seconds_old=0)
+            os.utime(path, (same, same))
+        with mock.patch.object(disk_cache, "MAX_BYTES", 3000):
+            for i in range(30):  # the order among tied files is arbitrary, so try many different new files
+                disk_cache.put_bytes("b", f"new{i}", bytes(1000))
+                self.assertIsNotNone(disk_cache.get_bytes("b", f"new{i}"), i)
+                for n in range(5):  # put the older ones back at the same time
+                    path = self._old_file(f"k{n}", seconds_old=0)
+                    os.utime(path, (same, same))
 
     def test_a_finished_wspr_period_is_fetched_once(self):
         start = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=30)
