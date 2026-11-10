@@ -226,6 +226,14 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         self.assertGreaterEqual(sum(c.value == maps.ZOOM_HINT for c in at.main.caption), 2, "the two maps on Compare")
 
+    def test_a_skimmer_with_a_slash_is_placed_and_the_page_says_so(self):
+        """K5OHY's 23 Oct 2025 spots include KW7MM/7, which RBN's list does not have; KW7MM, the callsign it is built on, is there."""
+        at = page_after_example("spots_page", "map").run()
+        self.assertEqual(errors(at), [])
+        text = " ".join(c.value for c in at.main.caption)
+        self.assertNotIn("No location for KW7MM/7", text)
+        self.assertIn("KW7MM/7 shown at KW7MM's location", text)
+
     def test_every_example_opens_from_its_card(self):
         from views import inputs
         for key, _, _, _ in inputs.COMPARE_EXAMPLES:

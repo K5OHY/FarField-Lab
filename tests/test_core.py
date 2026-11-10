@@ -948,5 +948,32 @@ class MapWheelZoom(unittest.TestCase):
         self.assertIn("wheel", maps.ZOOM_HINT)
 
 
+class SlashSkimmerLocations(unittest.TestCase):
+    """A skimmer such as KW7MM/7 that RBN's list does not have is placed where KW7MM is; a prefix form is not guessed."""
+    LOCS = {"KW7MM": (32.5, -110.9), "KW7MM-2": (32.4, -111.0), "W6ELA": (36.0, -121.0), "DL8LAS": (50.0, 8.0)}
+
+    def test_a_call_with_a_suffix_is_placed_at_its_base_callsign(self):
+        self.assertEqual(cs.locate("KW7MM/7", self.LOCS), self.LOCS["KW7MM"])
+        self.assertEqual(cs.locate("KW7MM/P", self.LOCS), self.LOCS["KW7MM"])
+        self.assertEqual(cs.locate("KW7MM/7-2", self.LOCS), self.LOCS["KW7MM"])
+        self.assertEqual(cs.placed_by_base("KW7MM/7", self.LOCS), "KW7MM")
+
+    def test_names_the_list_has_are_not_touched(self):
+        self.assertEqual(cs.locate("KW7MM-2", self.LOCS), self.LOCS["KW7MM-2"])
+        self.assertEqual(cs.locate("DL8LAS-3", self.LOCS), self.LOCS["DL8LAS"])  # the existing '-#' rule
+        self.assertIsNone(cs.placed_by_base("KW7MM-2", self.LOCS))
+        self.assertIsNone(cs.placed_by_base("DL8LAS-3", self.LOCS))
+        self.assertEqual(cs.locate("KW7MM", {**self.LOCS, "KW7MM/7": (1.0, 2.0)}), self.LOCS["KW7MM"])
+        self.assertEqual(cs.locate("KW7MM/7", {**self.LOCS, "KW7MM/7": (1.0, 2.0)}), (1.0, 2.0))  # a name of its own wins
+        self.assertIsNone(cs.placed_by_base("KW7MM/7", {**self.LOCS, "KW7MM/7": (1.0, 2.0)}))
+
+    def test_a_prefix_form_or_an_unknown_call_is_not_guessed(self):
+        self.assertIsNone(cs.locate("F/W6ELA", self.LOCS))   # a station abroad, not where W6ELA lives
+        self.assertIsNone(cs.locate("7/KW7MM", self.LOCS))
+        self.assertIsNone(cs.locate("ZZ9ZZ/7", self.LOCS))
+        self.assertIsNone(cs.locate("KW7MM/", self.LOCS))
+        self.assertIsNone(cs.placed_by_base("F/W6ELA", self.LOCS))
+
+
 if __name__ == "__main__":
     unittest.main()

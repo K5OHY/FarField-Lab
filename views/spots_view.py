@@ -4,7 +4,7 @@ import streamlit as st
 
 import session_report as sr
 from charts import _scorecard_display, bearing_chart
-from compare_stats import locate as skimmer_location
+from compare_stats import locate as skimmer_location, placed_by_base
 from data_sources import skimmer_data
 from maps import ZOOM_HINT, _single_points, build_map, compute_stats
 from pdfs import single_report_pdf
@@ -175,6 +175,7 @@ def spots_page():
     with tab_map:
         stats = compute_stats(spots, locs, home)
         missing = {s for s in spots["spotter"].unique() if skimmer_location(s, locs) is None}
+        placed = sorted((s, b) for s in spots["spotter"].unique() if (b := placed_by_base(s, locs)))  # shown at the base callsign's place
 
         k = KM_PER_MILE if units == "mi" else 1
         c = st.columns(5)
@@ -186,7 +187,9 @@ def spots_page():
         st.caption(f":material/location_on: {who} · {label}"
                    + (f" · ⚠️ No location for {', '.join(sorted(missing)[:5])}"
                       f"{f' and {len(missing) - 5} more' if len(missing) > 5 else ''}"
-                      f" (not in RBN's skimmer list), so not shown on the map" if missing else ""))
+                      f" (not in RBN's skimmer list), so not shown on the map" if missing else "")
+                   + (f" · ℹ️ {', '.join(f'{s} shown at {b}' + chr(39) + 's location' for s, b in placed[:3])}"
+                      f"{f' and {len(placed) - 3} more' if len(placed) > 3 else ''}" if placed else ""))
 
         m = build_map(spots, locs, home, label, ss.callsign, show_all and not wspr, tiles, units, stats["farthest"],
                       scale=scale, noun=noun)

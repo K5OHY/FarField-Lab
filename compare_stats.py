@@ -44,9 +44,32 @@ DISTANCE_EDGES = {"mi": [0, 300, 1000, 2000, 4000, 6000], "km": [0, 500, 1500, 3
 
 # ------------------------------------------------------------------ locations and tables
 
+def _base_callsign(name):
+    """The callsign a 'CALL/suffix' name is built on: 'KW7MM' from 'KW7MM/7', 'W1AW' from 'W1AW/4'. None for anything else, and
+    in particular for the prefix form 'F/W6ELA', which is a station abroad and must not be put where W6ELA lives."""
+    head, slash, tail = name.partition("/")
+    if slash and tail and len(head) > len(tail) and any(c.isdigit() for c in head) and any(c.isalpha() for c in head):
+        return head
+    return None
+
+
 def locate(spotter, locs):
-    """(lat, lon) of a spotter, tolerating the '-#' suffix used for extra skimmers at one site."""
-    return locs.get(spotter) or locs.get(spotter.split("-")[0])
+    """(lat, lon) of a spotter: its own place, or the same name without the '-#' suffix used for extra skimmers at one site, or,
+    for a name such as 'KW7MM/7' that the skimmer list does not have, the place of the callsign it is built on ('KW7MM'). That last
+    step is a guess (a station with a slash can be portable somewhere else), so `placed_by_base` says when it was used."""
+    found = locs.get(spotter) or locs.get(spotter.split("-")[0])
+    if found:
+        return found
+    base = _base_callsign(spotter)
+    return (locs.get(base) or locs.get(base.split("-")[0])) if base else None
+
+
+def placed_by_base(spotter, locs):
+    """The callsign whose place `locate` used for `spotter`, or None when the spotter has a place of its own (or none at all)."""
+    if locs.get(spotter) or locs.get(spotter.split("-")[0]):
+        return None
+    base = _base_callsign(spotter)
+    return base if base and locate(spotter, locs) else None
 
 
 @lru_cache(maxsize=50000)
