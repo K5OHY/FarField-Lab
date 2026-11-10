@@ -216,6 +216,16 @@ class ComparePage(unittest.TestCase):
         self.assertIn("Markus (DL1MKS)", text)
         self.assertIn("https://www.wspradar.org/", (__import__("pathlib").Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8"))
 
+    def test_the_maps_say_how_to_zoom_with_the_wheel(self):
+        import maps
+        spots = page_after_example("spots_page", "map").run()
+        self.assertEqual(errors(spots), [])
+        self.assertTrue(any(c.value == maps.ZOOM_HINT for c in spots.main.caption), "My spots map")
+        at = page("compare_page").run()
+        open_example(at, "quick")
+        self.assertEqual(errors(at), [])
+        self.assertGreaterEqual(sum(c.value == maps.ZOOM_HINT for c in at.main.caption), 2, "the two maps on Compare")
+
     def test_every_example_opens_from_its_card(self):
         from views import inputs
         for key, _, _, _ in inputs.COMPARE_EXAMPLES:

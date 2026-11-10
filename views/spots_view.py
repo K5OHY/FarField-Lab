@@ -6,7 +6,7 @@ import session_report as sr
 from charts import _scorecard_display, bearing_chart
 from compare_stats import locate as skimmer_location
 from data_sources import skimmer_data
-from maps import _single_points, build_map, compute_stats
+from maps import ZOOM_HINT, _single_points, build_map, compute_stats
 from pdfs import single_report_pdf
 from ui_common import BANNER, BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, WSPR_SNR_SCALE, _views
 from views import inputs
@@ -192,6 +192,7 @@ def spots_page():
                       scale=scale, noun=noun)
         map_html = m.get_root().render()
         st.iframe(map_html, height=720)
+        st.caption(ZOOM_HINT)
 
         # The PDF is built when the button is clicked, outside this script run, where st.session_state is not available,
         # so everything it needs is read here and captured.

@@ -72,7 +72,7 @@ from compare_stats import (
     split_by_labels,
 )
 from data_sources import load_listening
-from maps import build_map, compute_stats
+from maps import ZOOM_HINT, build_map, compute_stats
 from pdfs import compare_report_pdf
 from ui_common import KM_PER_MILE, SPLIT_FREQ, _pretty_date, _views, clean_name, esc
 from views import test_link
@@ -1925,6 +1925,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                 with col:
                     st.markdown(f"#### {icon} {names[side]}")
                     st.iframe(html, height=620)
+                    st.caption(ZOOM_HINT)
                     st.download_button(f":material/download: Download map {side}", html,
                                        f"FarFieldLab_map_{callsign}_{file_date}_{slug}.html", "text/html", key=f"dl_{side}")
 

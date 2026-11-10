@@ -930,5 +930,23 @@ class LowBands(unittest.TestCase):
         self.assertEqual(set(ui_common.BAND_COLORS), set(session_report.BAND_ORDER))  # every band has a colour and a place
 
 
+class MapWheelZoom(unittest.TestCase):
+    """The mouse wheel scrolls the page past a map, and zooms the map only after a click on it."""
+
+    def test_every_map_starts_with_the_wheel_off_and_a_click_turns_it_on(self):
+        import maps
+        for tiles in maps.TILE_STYLES:
+            html = maps.base_map((32.0, -102.0), tiles).get_root().render()
+            self.assertIn('"scrollWheelZoom": false', html, tiles)                      # off when the map is drawn
+            self.assertIn("map.scrollWheelZoom.disable();", html, tiles)
+            self.assertIn("map.on('mousedown', function () { map.scrollWheelZoom.enable(); });", html, tiles)
+            self.assertIn("window.addEventListener('blur', function () { map.scrollWheelZoom.disable(); });", html, tiles)
+
+    def test_the_hint_tells_people_what_to_do(self):
+        import maps
+        self.assertIn("Click the map", maps.ZOOM_HINT)
+        self.assertIn("wheel", maps.ZOOM_HINT)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -219,11 +219,29 @@ def spot_popup_html(spotter, g, dist, units, scale=RBN_SNR_SCALE):
     return header + "<br>" + style + "".join(inputs) + "".join(tabs) + "".join(panels)
 
 
+ZOOM_HINT = "Click the map, then use the mouse wheel to zoom. Click anywhere else and the wheel scrolls the page again."
+
+
+def click_to_zoom(m):
+    """The mouse wheel scrolls the page while the pointer passes over a map (so a map in the way never grabs the scroll), and
+    zooms the map once the visitor has clicked or dragged it. Clicking anywhere outside the map takes the focus away from the map's
+    frame, and the wheel goes back to scrolling the page. A map saved as its own page works the same way, with a click to switch the
+    wheel on."""
+    m.get_root().script.add_child(folium.Element(f"""
+      window.addEventListener('load', function () {{
+        var map = {m.get_name()};
+        map.scrollWheelZoom.disable();
+        map.on('mousedown', function () {{ map.scrollWheelZoom.enable(); }});
+        window.addEventListener('blur', function () {{ map.scrollWheelZoom.disable(); }});
+      }});"""))
+    return m
+
+
 def base_map(home, tiles):
     base, labels = TILE_STYLES[tiles]
     if base == "OpenStreetMap":
-        return folium.Map(location=home, zoom_start=3, tiles=base, control_scale=True, scroll_wheel_zoom=False)
-    m = folium.Map(location=home, zoom_start=3, tiles=None, control_scale=True, scroll_wheel_zoom=False)
+        return click_to_zoom(folium.Map(location=home, zoom_start=3, tiles=base, control_scale=True, scroll_wheel_zoom=False))
+    m = click_to_zoom(folium.Map(location=home, zoom_start=3, tiles=None, control_scale=True, scroll_wheel_zoom=False))
     folium.TileLayer(base, attr=_ESRI_ATTR, name=tiles, max_zoom=16).add_to(m)
     if labels:
         folium.TileLayer(labels, attr=_ESRI_ATTR, name="Labels", overlay=True, max_zoom=16).add_to(m)
