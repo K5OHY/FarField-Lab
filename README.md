@@ -89,6 +89,8 @@ Open **Compare antennas** in the menu. It shows three steps: load your spots, sa
 
 A WSPR transmission lasts about 110 seconds of each 2-minute slot, so there is a short break between transmissions. Flip the antenna switch in that break.
 
+The numbered steps below are for the **After every transmission** option. For **In long blocks**, see *Long tests* under them.
+
 1. Connect the transmitter to an A/B coax switch with one antenna on each output. Use one band, one power and one callsign for the whole test.
 2. Let the transmitter send in every slot. If it can send an extra packet between cycles (for example a 6-character locator option), turn that off.
 3. Wait for the transmission to end, flip the switch, and let the next one start. Go **A, B, A, B** or **A, B, B, A**, always starting on A. Note the time of the first transmission.
@@ -96,9 +98,9 @@ A WSPR transmission lasts about 110 seconds of each 2-minute slot, so there is a
 5. Wait about 5 minutes, pick the date, and click Load spots.
 6. Under **Your test**, set **Transmissions in your test** (every 2-minute cycle on either antenna counts: A then B is 2), and **Starting at** if it was not the latest test. It shows how small a difference that many pairs can reliably show. Check the **Order** and the Antenna column match your notes, and read the result. Fix any row, or clear it to leave it out.
 
-**Long tests.** For a long, time-averaged test (one antenna for 30 minutes or an hour, then the other, over several hours), choose **In long blocks** under *Your test*, then give the start time, minutes per block and number of blocks. Every transmission in a block counts for that block's antenna, and each receiver's reports on A and on B are compared as a whole. Aim for 20 or more reports per receiver on each antenna. Shorter blocks of 10 or 20 minutes can work as well: what matters is running enough blocks to get at least 20 reports per antenna at each of enough receivers to see the big picture, and propagation decides how long that takes. You can keep clicking **Load spots** while you collect and watch the **Data used** box (the count of receivers with 20 or more reports on each antenna) to see when enough is enough. The start time can be typed (12:30 or 1230), even if nothing was heard at that minute. The From of each block can be edited in the table (each block ends when the next one starts, so that is all you need; untick the box to set the To times yourself), and for uneven blocks you can paste a schedule, one block per line like `16:40-17:12 A`. A test that runs past midnight UTC needs **Date range** under Period, with To set to the next day; the page says so if the blocks run past the spots loaded.
+For **After every transmission**, use an even number of transmissions: an odd one has no partner and is left out. (In long blocks nothing is paired, so this does not apply.)
 
-Use an even number of transmissions: an odd one has no partner and is left out.
+**Long tests.** For a long, time-averaged test (one antenna for 30 minutes or an hour, then the other, over several hours), choose **In long blocks** under *Your test*, then give the start time, minutes per block and number of blocks. Every transmission in a block counts for that block's antenna, and each receiver's reports on A and on B are compared as a whole. Aim for 20 or more reports per receiver on each antenna. Shorter blocks of 10 or 20 minutes can work as well: what matters is running enough blocks to get at least 20 reports per antenna at each of enough receivers to see the big picture, and propagation decides how long that takes. You can keep clicking **Load spots** while you collect and watch the **Data used** box (the count of receivers with 20 or more reports on each antenna) to see when enough is enough. The start time can be typed (12:30 or 1230), even if nothing was heard at that minute. The From of each block can be edited in the table (each block ends when the next one starts, so that is all you need; untick the box to set the To times yourself), and for uneven blocks you can paste a schedule, one block per line like `16:40-17:12 A`. A test that runs past midnight UTC needs **Date range** under Period, with To set to the next day; the page says so if the blocks run past the spots loaded.
 
 ### With RBN
 
@@ -112,13 +114,15 @@ FarField Lab compares two antennas one after the other: one transmitter, an A/B 
 
 ### What happens to each receiver
 
-![What happens to the receivers in one pair of transmissions](images/two-transmissions.png)
+This section and the picture are for the **After every transmission** option. With **In long blocks** nothing is paired: each receiver's reports on A and on B over all the blocks are compared as a whole. The rules about being on the band, hearing both antennas and the slider's minimum reports still apply.
+
+![What happens to the receivers in one pair of transmissions (After every transmission option)](images/two-transmissions.png)
 
 The picture follows five receivers through one A transmission and the B transmission after it. A receiver that **heard both** antennas, enough times, is **used for strength**: the difference between its two reports is what the result is built from. A receiver that heard only one side counts for **reach** (which antenna was heard by more receivers) but not for strength. A receiver that was not **on the band** (it decoded nothing on this band in your slots) is not counted at all, because a miss from a receiver that was tuned elsewhere says nothing about your antennas. And a receiver that heard both only once is dropped by the **slider** (below), because one report is too thin to trust. A real test repeats this for every pair of transmissions.
 
 ### How long should my test be, and what does the slider do?
 
-**The slider.** On the **Receiver by receiver** tab, *Only receivers with at least this many reports on each antenna* sets how many times a receiver must have heard each antenna to count. A receiver that heard you once can be swayed by one lucky report; one that heard you ten times gives a steadier answer. Raising the slider keeps fewer receivers but more trustworthy ones. It also helps with the weak-signal limit: reports near WSPR's decoding floor are never decoded for the weaker antenna, so receivers at the edge make the two antennas look closer together than they are. The switch *Use these settings for the summary and the other tabs too* sends the same setting to the summary and the other tabs.
+**The slider** (both options). On the **Receiver by receiver** tab, *Only receivers with at least this many reports on each antenna* sets how many times a receiver must have heard each antenna to count. A receiver that heard you once can be swayed by one lucky report; one that heard you ten times gives a steadier answer. Raising the slider keeps fewer receivers but more trustworthy ones. It also helps with the weak-signal limit: reports near WSPR's decoding floor are never decoded for the weaker antenna, so receivers at the edge make the two antennas look closer together than they are. The switch *Use these settings for the summary and the other tabs too* sends the same setting to the summary and the other tabs.
 
 **Where the slider opens.** On a short test with alternating transmissions it opens at the lowest setting where one more step moves the average gain, and the summary's pair-by-pair figure, by less than 0.25 dB, with at least 30 receivers left. If nothing settles it opens at 2. On a long-blocks test it opens at 20 reports (Dale's method), falling back to 10, 5 or 2 when too few receivers remain. The table *How the result changes as the slider rises*, in the dashboard, shows every setting for a test of up to about 40 transmissions (steps of 5 for a longer one), so you can see for yourself where it settles. The numbers can keep rising as the slider goes up: the receivers dropped first are the weak, far ones, where reports near WSPR's floor are partly missing, which squeezes the gap toward zero.
 
@@ -130,7 +134,7 @@ A long test behaves differently. Because it runs for hours, the band can open or
 
 **Looking at part of a long test.** You can analyze any slice of a long test to see how a time of day behaves. In *How this test was set up*, set *First block starts at* to a time when antenna A went on, and *Number of blocks* to the length you want: with 30 minute blocks, 6 blocks is a 3 hour slice. Start each slice where your A, B pattern starts over (any time A goes on for A, B, A, B; every fourth block for A, B, B, A), and use whole A-and-B pairs. A smaller slice has fewer reports per receiver, so lower the slider to match.
 
-**How many transmissions?** Dale, N3HXZ, ran the same pair of antennas as 16, 12 and 8 transmissions. In his tests:
+**How many transmissions?** This section is for the **After every transmission** option. For **In long blocks**, aim for 20 or more reports per receiver on each antenna (see *Long tests* above). Dale, N3HXZ, ran the same pair of antennas as 16, 12 and 8 transmissions. In his tests:
 
 - Shortening the test changed the average gain much more than the slider did: the shorter the run, the lower and less steady the gain.
 - For a small difference of 2 to 3 dB, plan on 16 transmissions or more. Dale has never got a relative gain more accurate than about 1 dB either way, so a difference that small is hard to pin down.
