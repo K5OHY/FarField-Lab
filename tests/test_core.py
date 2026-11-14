@@ -997,5 +997,26 @@ class SlashSkimmerLocations(unittest.TestCase):
         self.assertIsNone(cs.placed_by_base("F/W6ELA", self.LOCS))
 
 
+class FarApart(unittest.TestCase):
+    """The count behind the floor hint: receivers whose two averages are 20 dB or more apart, whichever antenna is stronger."""
+
+    def table(self, gaps):
+        return pd.DataFrame({"gap": gaps}, index=[f"R{i}" for i in range(len(gaps))])
+
+    def test_counts_both_directions_and_the_edge(self):
+        self.assertEqual(cs.far_apart(self.table([25.0, -22.5, 20.0, -20.0, 19.9, 0.0, -3.0])), (4, 7))
+
+    def test_a_different_distance_can_be_asked_for(self):
+        self.assertEqual(cs.far_apart(self.table([12.0, -15.0, 3.0]), db=10), (2, 3))
+
+    def test_an_empty_or_missing_table_is_zero(self):
+        self.assertEqual(cs.far_apart(self.table([])), (0, 0))
+        self.assertEqual(cs.far_apart(None), (0, 0))
+        self.assertEqual(cs.far_apart(pd.DataFrame({"snr_a": [1.0]})), (0, 0))
+
+    def test_the_suggested_rule_is_the_20_percent_one(self):
+        self.assertEqual((cs.FAR_APART_DB, cs.SUGGESTED_WEAK_PCT), (20, 20))
+
+
 if __name__ == "__main__":
     unittest.main()

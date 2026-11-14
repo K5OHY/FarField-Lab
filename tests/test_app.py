@@ -1119,6 +1119,75 @@ class SetupSurvivesOtherPages(unittest.TestCase):
         self.assertEqual(at.number_input[0].value, 40)
 
 
+class FloorHint(unittest.TestCase):
+    """Dale N3HXZ (November 2026): warn when receivers hear one antenna 20 dB or more stronger than the other, since those are the
+    likeliest to have reports at WSPR's floor, and suggest dropping stations with more than 20% of their reports there."""
+    SCRIPT = chr(10).join([
+        "import sys", "sys.path.insert(0, r'%s')" % HERE,
+        "import pandas as pd", "import streamlit as st", "from views import compare_view as cv",
+        "ss = st.session_state",
+        "far, calm = ss.get('far', 3), 3",
+        "a_snr, b_snr = ss.get('a_snr', -2), ss.get('b_snr', -28)",
+        "names = ['FAR%d' % i for i in range(far)] + ['CALM%d' % i for i in range(calm)]",
+        "rows_a = [(n, a_snr if n.startswith('FAR') else -10) for n in names for _ in range(8)]",
+        "rows_b = [(n, b_snr if n.startswith('FAR') else -12) for n in names for _ in range(8)]",
+        "full_a = pd.DataFrame(rows_a, columns=['spotter', 'snr'])",
+        "full_b = pd.DataFrame(rows_b, columns=['spotter', 'snr'])",
+        "gap = full_a.groupby('spotter')['snr'].median() - full_b.groupby('spotter')['snr'].median()",
+        "table = pd.DataFrame({'gap': gap})",
+        "kind = ss.get('kind', 'WSPR')",
+        "cv._floor_hint(table, full_a, full_b, kind, 'receiver', int(ss.get('avg_weak', 0)))",
+        "st.number_input('Drop', 0, 100, key='avg_weak')"])
+
+    def start(self, **state):
+        at = AppTest.from_string(self.SCRIPT, default_timeout=60)
+        for key, value in state.items():
+            at.session_state[key] = value
+        return at.run()
+
+    def hint(self, at):
+        return [i.value for i in at.info if "hear one antenna" in i.value]
+
+    def button(self, at):
+        return [b for b in at.button if b.key == "floor_hint_apply"]
+
+    def test_the_hint_counts_the_far_apart_receivers_and_offers_20_percent(self):
+        at = self.start()
+        self.assertEqual(errors(at), [])
+        text = self.hint(at)
+        self.assertEqual(len(text), 1)
+        self.assertIn("3 of 6 receivers hear one antenna 20 dB or more stronger", text[0])
+        self.assertIn("more than 20% of their reports at the floor, which would drop 3 receivers", text[0])
+        self.assertEqual(len(self.button(at)), 1)
+
+    def test_one_click_sets_the_rule_and_the_hint_goes(self):
+        at = self.start()
+        self.button(at)[0].click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["avg_weak"], 20)
+        self.assertEqual(self.hint(at), [])
+        self.assertEqual(self.button(at), [])
+
+    def test_no_hint_once_the_rule_is_already_on(self):
+        self.assertEqual(self.hint(self.start(avg_weak=30)), [])
+
+    def test_no_hint_for_rbn(self):
+        self.assertEqual(self.hint(self.start(kind="RBN")), [])
+
+    def test_no_hint_for_only_one_or_two_far_apart_receivers(self):
+        self.assertEqual(self.hint(self.start(far=2)), [])
+
+    def test_no_hint_when_the_rule_would_drop_nothing(self):
+        at = self.start(a_snr=5, b_snr=-20)  # 25 dB apart, but nothing is at the floor
+        self.assertEqual(self.hint(at), [])
+
+    def test_it_does_not_matter_which_antenna_is_the_weak_one(self):
+        # A at the floor and B strong: the gap is about -26 dB, and still counts
+        at = self.start(a_snr=-28, b_snr=-2)
+        self.assertEqual(len(self.hint(at)), 1)
+
+
 class WholeApp(unittest.TestCase):
     def test_the_menu_has_the_four_pages(self):
         at = AppTest.from_file(os.path.join(HERE, "web.py"), default_timeout=600).run()

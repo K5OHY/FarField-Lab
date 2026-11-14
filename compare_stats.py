@@ -142,6 +142,20 @@ def mostly_weak(spots_a, spots_b, weak_pct):
     return set(share[share > weak_pct].index)
 
 
+FAR_APART_DB = 20           # receivers whose two averages are this far apart are the likeliest to have reports at the floor
+SUGGESTED_WEAK_PCT = 20     # the rejection setting to suggest starting with (Dale, N3HXZ)
+
+
+def far_apart(table, db=FAR_APART_DB):
+    """How many of the receivers in `table` (one row per receiver that heard both sides, with a `gap` column, A minus B in dB)
+    have averages `db` or more apart, whichever antenna is stronger. When one antenna is that much weaker at a receiver, its
+    reports sit at or near WSPR's floor, where the weakest ones go missing and the gap is squeezed, so those receivers are the
+    likeliest to have a lot of reports at the floor. Returns (how many, out of how many)."""
+    if table is None or len(table) == 0 or "gap" not in table:
+        return 0, 0
+    return int((table["gap"].abs() >= db).sum()), int(len(table))
+
+
 def station_gains(spots_a, spots_b, locs, home, method="snr", min_spots=1, offset=0.0, floor=None, min_km=0.0, weak_pct=0):
     """One row per located receiver that heard both sides: each side's average SNR there, how many reports that rests on, and
     where the receiver is. `method` is 'snr' (the middle of the dB reports) or 'linear' (the reports turned into power,

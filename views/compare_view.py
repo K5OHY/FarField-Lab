@@ -53,6 +53,10 @@ from compare_stats import (
     direction_degrees,
     ENOUGH_RECEIVERS,
     WSPR_FLOOR_DB,
+    FAR_APART_DB,
+    SUGGESTED_WEAK_PCT,
+    far_apart,
+    mostly_weak,
     EQUAL_DB,
     SLOT_NOISE_DB,
     analyze,
@@ -1148,6 +1152,37 @@ def _leave_out_box(kind, units):
     return (WSPR_FLOOR_DB if floor_on else None), near * (KM_PER_MILE if units == "mi" else 1.0), weak_pct, note
 
 
+FLOOR_HINT_MIN = 3  # fewer far-apart receivers than this is not worth a hint
+
+
+def _set_weak_pct(pct):
+    st.session_state["avg_weak"] = pct
+
+
+def _floor_hint(table, full_a, full_b, kind, noun, weak_pct):
+    """A hint above the Receiver by receiver results when some receivers hear one antenna FAR_APART_DB or more stronger than the
+    other, which is where reports at WSPR's floor are most likely, and the rule that drops stations with many reports at the
+    floor would remove some of them. It offers that rule at SUGGESTED_WEAK_PCT with one click. Nothing is shown for RBN, once
+    the rule is already on, or when the rule would not drop anything."""
+    if kind != "WSPR" or weak_pct:
+        return
+    n, total = far_apart(table)
+    if n < FLOOR_HINT_MIN:
+        return
+    dropped = len(mostly_weak(full_a, full_b, SUGGESTED_WEAK_PCT) & set(table.index))
+    if not dropped:
+        return
+    st.info(f"**{n} of {total} {noun}s hear one antenna {FAR_APART_DB:g} dB or more stronger than the other.** Receivers like "
+            f"these often have many reports at WSPR's floor (about −28 dB), where the weaker antenna's reports go missing and "
+            f"the gap looks smaller than it really is. A good first step is to drop the stations with more than "
+            f"{SUGGESTED_WEAK_PCT}% of their reports at the floor, which would drop {dropped} {noun}{'s' if dropped != 1 else ''}.")
+    st.button(f"Drop stations with over {SUGGESTED_WEAK_PCT}% of their reports at the floor", key="floor_hint_apply",
+              on_click=_set_weak_pct, args=(SUGGESTED_WEAK_PCT,),
+              help="This sets *Drop a station if more than this % of its reports are at the floor*, in *Leave out some reports "
+                   "or receivers* above, and you can change it there. It changes this tab and the Linear average tab; the "
+                   "summary changes only if the switch below is on.")
+
+
 def _dashboard(every, reference, noun, pairwise=None, trend=None, chosen=None, opened=None, settled=False, long_test=False):
     """The monitoring dashboard: the few numbers to watch as the slider moves, to see whether the result has settled.
     `every` is the receivers left at this slider setting; `reference` is the receivers left where the slider opens, which is
@@ -1629,6 +1664,7 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
                                                            st.container())  # in the order they are read
             with leave_slot:  # drawn first: what it leaves out decides everything the dashboard and the slider show
                 avg_floor, avg_min_km, weak_pct, avg_note = _leave_out_box(kind, units)
+                _floor_hint(an["shared_all"], full_a, full_b, kind, noun, weak_pct)
             apply_slot.toggle("Use these settings for the summary and the other tabs too", key=_APPLY_KEY,
                               help="Off, the summary counts every receiver that heard both antennas, and the settings here only "
                                    "change this tab. On, the summary, the scoreboard's strength figures, the direction and distance "
