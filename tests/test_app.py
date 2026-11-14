@@ -1188,6 +1188,33 @@ class FloorHint(unittest.TestCase):
         self.assertEqual(len(self.hint(at)), 1)
 
 
+class OptionBoxColour(unittest.TestCase):
+    """Dale N3HXZ (November 2026): the boxes that open to options are easy to miss while scrolling, so they are tinted. The style
+    finds each box by its key, so the key in the page and the name in the style must match."""
+    BOXES = {"more_box": os.path.join("views", "inputs.py"), "setup_box": os.path.join("views", "compare_view.py"),
+             "leave_box": os.path.join("views", "compare_view.py")}
+
+    def test_each_option_box_has_its_key_and_its_style(self):
+        import ui_common
+        for key, path in self.BOXES.items():
+            with open(os.path.join(HERE, path), encoding="utf-8") as f:
+                self.assertIn(f'key="{key}"', f.read(), key)
+            self.assertIn(f'.st-key-{key} [data-testid="stExpander"] details', ui_common.CSS, key)
+
+    def test_the_read_only_boxes_are_not_tinted(self):
+        import ui_common
+        for key in ("dash_box",):
+            self.assertNotIn(f".st-key-{key}", ui_common.CSS)
+
+    def test_the_pages_still_draw_with_the_keys(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        self.assertEqual(errors(at), [])
+        labels = [e.label for e in at.main.expander] + [e.label for e in at.sidebar.expander]
+        for start in ("More settings", "Leave out some reports or receivers", "How this test was set up"):
+            self.assertTrue(any(label.startswith(start) for label in labels), start)
+
+
 class WholeApp(unittest.TestCase):
     def test_the_menu_has_the_four_pages(self):
         at = AppTest.from_file(os.path.join(HERE, "web.py"), default_timeout=600).run()

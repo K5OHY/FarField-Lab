@@ -408,7 +408,7 @@ def view_controls(ss, cfg, pick, kind, comparing=False):
             help=("Only show spots between these times. It follows the spots you loaded." if kind == "WSPR" else None))
     min_snr = -100 if kind == "WSPR" else st.slider("Minimum SNR (dB)", 0, 40, cfg.get("min_snr", 0))
 
-    with st.expander("More settings"):
+    with st.expander("More settings", key="more_box"):
         styles = list(TILE_STYLES)
         tiles = st.selectbox("Map style", styles, index=pick(styles, "tiles"))
         show_all = st.checkbox("Show all skimmers", value=cfg.get("show_all", False) and kind == "RBN", disabled=kind == "WSPR",

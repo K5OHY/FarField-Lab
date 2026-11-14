@@ -124,6 +124,16 @@ CSS = """
   iframe { border-radius: 12px; }
   div[data-testid="stImage"] img { border-radius: 12px; }
   div[data-testid="stTooltipContent"] { max-width: 15rem; white-space: normal; }
+  /* The boxes that open to options (More settings, the test setup, Leave out some reports) are tinted with a bar on the left, so
+     they are not missed when scrolling. Translucent blue, so it reads on both the light and the dark theme. */
+  .st-key-more_box [data-testid="stExpander"] details,
+  .st-key-setup_box [data-testid="stExpander"] details,
+  .st-key-leave_box [data-testid="stExpander"] details {
+      background: rgba(30, 91, 255, .10); border: 1px solid rgba(30, 91, 255, .45); border-left: 5px solid #1E5BFF;
+  }
+  .st-key-more_box [data-testid="stExpander"] summary,
+  .st-key-setup_box [data-testid="stExpander"] summary,
+  .st-key-leave_box [data-testid="stExpander"] summary { font-weight: 600; }
 </style>
 """
 

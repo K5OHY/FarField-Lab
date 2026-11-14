@@ -1313,7 +1313,8 @@ def compare_view(spots, locs, home, label, callsign, file_date, tiles, show_all,
     scroll_now = bool(st.session_state.pop("_scroll_top", False))  # the result is drawn above the setup: bring it into view
     confirmed = bool(st.session_state.get("setup_ok"))
     with setup:  # open until you say it is right, then it folds away and the result is all you see
-        box = st.expander("How this test was set up" if confirmed else "Check how this test was set up", expanded=not confirmed)
+        box = st.expander("How this test was set up" if confirmed else "Check how this test was set up", expanded=not confirmed,
+                          key="setup_box")
     with box:
         if confirmed:
             st.caption("Change anything here and the result above updates.")
