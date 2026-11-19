@@ -152,9 +152,9 @@ def stretches(log, gap_min=SESSION_GAP_MIN):
     return sorted(out, key=lambda s: s[1])
 
 
-def bands_in_order(log):
-    """The bands of a log in the order they were first used, so a session that stepped down the bands reads from top to bottom."""
-    return list(log.groupby("band")["time"].min().sort_values().index)
+def bands_top_down(log):
+    """The bands of a log from the highest frequency down, so 10m comes first and 40m after it."""
+    return sorted(log["band"].unique(), key=_rank, reverse=True)
 
 
 # ------------------------------------------------------------------------------------------------------------ signal reports
@@ -247,6 +247,16 @@ def region_table(worked, spots, locs):
     return out.loc[[r for r in REGION_ORDER if r in out.index]]
 
 
+DX_FIRST = ["Europe", "Africa", "Asia", "Oceania", "South America", "Mexico, Caribbean & Central America", "Canada", "US West", "US Central",
+            "US East", "Other"]
+NEAR_REGIONS = ("Canada", "US West", "US Central", "US East", "Other")   # anything else is DX for this table
+
+
+def contact_region(call, state=""):
+    """The region a contact is in: where in the US (from its state), Canada, or the country group the callsign belongs to."""
+    return region_of(call, STATE_CENTRES.get(str(state).upper()))
+
+
 # ------------------------------------------------------------------------------------------- the skimmers that were listening
 
 def listening_from_zip(raw, start, end):
@@ -291,13 +301,13 @@ def _note(contacts, page, actual):
 def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", antenna_db=0.0):
     """Sets the log beside the spots and the WSPR picture, band by band.
 
-    log        the contacts (parse_adif); only those in `mode` are used, since RBN hears CW (and RTTY)
+    log        the contacts (parse_adif); only those in `mode` are compared, since RBN hears CW (and RTTY), but the others are counted
     spots      your spots from RBN: spotter, band, snr, time
     wspr_for   function(start, end) -> the WSPR spots of the stations near you in that time (conditions.fetch_nearby's table)
     listening  the skimmers that were listening (listening_from_zip), or None
     locs       the skimmer locations {callsign: (lat, lon)}
-    Returns {'bands': table with one row per band, 'overall': dict, 'matches': the receivers matched for strength, 'cells': the
-    band and region cells}."""
+    Returns {'bands': table with one row per band, highest band first, 'regions': a table with one row per band and region, 'overall':
+    dict, 'matches': the receivers matched for strength, 'cells': the band and region cells for each stretch}."""
     own = log[log["mode"] == mode]
     region_of_base = {}
     for call, place in locs.items():
@@ -306,6 +316,7 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
     spots = spots.assign(region=spots["b"].map(region_of_base))
     listening = None if listening is None or listening.empty else listening.assign(region=listening["b"].map(region_of_base)).dropna(subset=["region"])
     cells, matches, spotted_by_band, no_picture = [], [], {}, set()
+    on_sets, spot_sets = {}, {}     # the distinct skimmers on the band, and that spotted you, for each band and region
     for band, first, last, _ in stretches(own):
         t0, t1 = first - pd.Timedelta(minutes=WINDOW_PAD_MIN), last + pd.Timedelta(minutes=WINDOW_PAD_MIN)
         g = spots[(spots["band"] == band) & (spots["time"] >= t0) & (spots["time"] <= t1)]
@@ -326,6 +337,10 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
             continue
         lst = listening[(listening["band"] == band) & (listening["slot"] >= t0.floor("15min") - pd.Timedelta(minutes=15))
                         & (listening["slot"] <= t1.floor("15min"))]
+        for region, grp in lst.groupby("region"):
+            on_sets.setdefault((band, region), set()).update(grp["b"])
+        for region, grp in g.groupby("region"):
+            spot_sets.setdefault((band, region), set()).update(grp["b"])
         n_listen, n_spot = lst.groupby("region")["b"].nunique(), g.groupby("region")["b"].nunique()
         for region in n_listen.index:
             chance, n_rx = res["chance"].loc[band].get(region, np.nan), int(res["regions_n"].loc[band].get(region, 0))
@@ -336,15 +351,16 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
     solid = cells[(cells["wspr_receivers"] >= cond.THIN) & cells["chance"].notna()]
     match = pd.concat(matches, ignore_index=True) if matches else pd.DataFrame(columns=["band", "rx", "adj", "obs"])
     match["diff"] = match["obs"] - match["adj"]
-    counts = own.groupby("band").size()
+    counts, all_counts = own.groupby("band").size(), log.groupby("band").size()
     rows = []
-    for band in bands_in_order(own):
+    for band in bands_top_down(log):
+        n_cw = int(counts.get(band, 0))
         page, actual, n_listen = _agg(solid[solid["band"] == band])
         m = match[match["band"] == band]["diff"]
         offset = float(m.median()) - TYPICAL_OFFSET_DB if len(m) >= SHOW_MATCHES else float("nan")
-        note, tone = _note(int(counts[band]), page, actual)
+        note, tone = _note(n_cw, page, actual)
         got = own.loc[own["band"] == band, "rst_rcvd"].map(s_digit)
-        rows.append({"band": band, "contacts": int(counts[band]), "skimmers": len(spotted_by_band.get(band, ())),
+        rows.append({"band": band, "contacts": n_cw, "other": int(all_counts[band]) - n_cw, "skimmers": len(spotted_by_band.get(band, ())),
                      "report": float(got.mean()) if got.notna().any() else float("nan"),
                      "page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(m),
                      "thin": 0 < len(m) < MIN_MATCHES, "note": note, "tone": tone, "no_picture": band in no_picture})
@@ -357,4 +373,26 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
                "spread_db": float(match["diff"].std()) if len(match) > 2 else float("nan"),
                "thin_listening": thin_listen, "thin_spotted": int(thin_cells["spotted"].sum()),
                "typical_offset_db": TYPICAL_OFFSET_DB}
-    return {"bands": bands, "overall": overall, "matches": match, "cells": cells}
+    return {"bands": bands, "regions": _regions(log, mode, cells, solid, on_sets, spot_sets), "overall": overall, "matches": match, "cells": cells}
+
+
+def _regions(log, mode, cells, solid, on_sets, spot_sets):
+    """One row per band and region: the contacts (all modes, and how many were in `mode`), the distinct stations worked, the distinct
+    skimmers on the band and how many of them spotted you, how many WSPR receivers the page's figure rests on (at most, in any stretch)
+    and the page's chance (nan when no stretch had enough receivers). DX regions come first."""
+    c = log.assign(region=[contact_region(call, state) for call, state in zip(log["call"], log["state"])])
+    contacts = c.groupby(["band", "region"]).agg(contacts=("call", "size"), stations=("call", "nunique"))
+    cw = c[c["mode"] == mode].groupby(["band", "region"]).size()
+    wspr = cells.groupby(["band", "region"])["wspr_receivers"].max() if len(cells) else pd.Series(dtype=float)
+    page = {}
+    for key, d in solid.groupby(["band", "region"]):
+        page[key] = float(np.average(d["chance"], weights=d["listening"])) if d["listening"].sum() else float("nan")
+    order = {r: i for i, r in enumerate(DX_FIRST)}
+    rows = []
+    for band, region in sorted(set(contacts.index) | set(on_sets), key=lambda k: (-_rank(k[0]), order.get(k[1], len(order)))):
+        key = (band, region)
+        on = len(on_sets.get(key, ()))
+        rows.append({"band": band, "region": region, "contacts": int(contacts["contacts"].get(key, 0)), "cw": int(cw.get(key, 0)),
+                     "stations": int(contacts["stations"].get(key, 0)), "on_band": on, "spotted": min(len(spot_sets.get(key, ())), on),
+                     "wspr_receivers": int(wspr.get(key, 0)), "page": page.get(key, float("nan"))})
+    return pd.DataFrame(rows, columns=["band", "region", "contacts", "cw", "stations", "on_band", "spotted", "wspr_receivers", "page"])

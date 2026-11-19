@@ -1129,7 +1129,10 @@ class LogCheck(unittest.TestCase):
         log, spots, wspr, listening, locs = self.scene()
         log = pd.concat([log, lc.parse_adif("<CALL:5>W9ZZZ <QSO_DATE:8>20261118 <TIME_ON:6>200500 <BAND:3>15m <MODE:3>SSB <EOR>")], ignore_index=True)
         out = self.run_compare(log, spots, wspr, listening, locs)
-        self.assertEqual(list(out["bands"]["band"]), ["20m"])
+        self.assertEqual(list(out["bands"]["band"]), ["15m", "20m"])             # highest band first; 15m has only the SSB contact
+        self.assertEqual(out["bands"].set_index("band").loc["15m", ["contacts", "other"]].tolist(), [0, 1])
+        self.assertEqual(out["bands"].set_index("band").loc["20m", ["contacts", "other"]].tolist(), [5, 0])
+        self.assertTrue(np.isnan(out["bands"].set_index("band").loc["15m", "page"]))       # nothing was compared on 15m
 
     def test_a_band_with_a_big_gap_and_few_spotted_is_called_worked_but_barely_spotted(self):
         out = self.run_compare(*self.scene(spotters=("K1AAA",)))   # one of six
@@ -1142,6 +1145,30 @@ class LogCheck(unittest.TestCase):
         log, spots, wspr, listening, locs = self.scene()
         out = self.run_compare(log, spots, wspr.iloc[0:0], listening, locs)
         self.assertTrue(out["bands"].iloc[0]["no_picture"])
+
+
+    def test_a_band_by_region_table_counts_distinct_skimmers_and_the_page_figure(self):
+        out = self.run_compare(*self.scene())
+        r = out["regions"]
+        row = r[(r["band"] == "20m") & (r["region"] == "US East")].iloc[0]
+        self.assertEqual((row["contacts"], row["cw"], row["stations"]), (5, 5, 5))
+        self.assertEqual((row["on_band"], row["spotted"], row["wspr_receivers"]), (6, 4, 4))
+        self.assertGreater(row["page"], 0.95)
+
+    def test_a_region_with_too_few_wspr_receivers_has_no_page_figure_but_still_shows_the_skimmers(self):
+        out = self.run_compare(*self.scene(wspr_calls=("K1AAA", "K2BBB")))
+        row = out["regions"].iloc[0]
+        self.assertTrue(np.isnan(row["page"]))
+        self.assertEqual((row["on_band"], row["spotted"]), (6, 4))
+
+    def test_dx_regions_are_listed_before_the_us_and_the_bands_run_from_the_top_down(self):
+        text = "".join(f"<CALL:{len(c)}>{c} <QSO_DATE:8>20261118 <TIME_ON:6>20{i:02d}00 <BAND:{len(b)}>{b} <MODE:2>CW <STATE:{len(s)}>{s} <EOR>\n"
+                        for i, (c, b, s) in enumerate([("W1AAA", "20m", "PA"), ("DL1ABC", "10m", ""), ("W6BBB", "10m", "CA"), ("W9CCC", "10m", "IL")]))
+        log = lc.parse_adif(text)
+        self.assertEqual(lc.bands_top_down(log), ["10m", "20m"])             # 10m on top
+        regions = lc.compare(log, pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), lambda a, b: pd.DataFrame(), None, {}, HOME, 100.0)["regions"]
+        self.assertEqual(list(regions["band"]), ["10m", "10m", "10m", "20m"])
+        self.assertEqual(list(regions[regions["band"] == "10m"]["region"]), ["Europe", "US West", "US Central"])   # DX first, then west to east
 
 
 class LogCheckPictures(unittest.TestCase):
@@ -1194,7 +1221,29 @@ class LogCheckPictures(unittest.TestCase):
         bands = pd.DataFrame([{"band": "20m", "contacts": 40, **row}, {"band": "60m", "contacts": 1, **row}])
         html = lh.band_table_html(bands)
         self.assertEqual(html.count('class="lc-brow"'), 1)
-        self.assertIn("Not shown, with fewer than 3 contacts: 60m (1).", html)
+        self.assertIn("Not shown, with fewer than 3 CW contacts: 60m (1 CW).", html)
+
+    def test_the_region_table_tags_dx_and_greys_a_region_with_no_page_figure(self):
+        regions = pd.DataFrame([
+            {"band": "10m", "region": "Europe", "contacts": 26, "cw": 24, "stations": 25, "on_band": 78, "spotted": 20, "wspr_receivers": 9, "page": 0.79},
+            {"band": "10m", "region": "Africa", "contacts": 1, "cw": 1, "stations": 1, "on_band": 13, "spotted": 4, "wspr_receivers": 1, "page": float("nan")},
+            {"band": "10m", "region": "US East", "contacts": 30, "cw": 30, "stations": 29, "on_band": 0, "spotted": 0, "wspr_receivers": 0, "page": float("nan")},
+            {"band": "20m", "region": "Europe", "contacts": 5, "cw": 5, "stations": 5, "on_band": 3, "spotted": 1, "wspr_receivers": 4, "page": 0.5}])
+        html = lh.regions_html(regions, "10m")
+        self.assertEqual(html.count('class="lc-rr"'), 3)                    # only this band's regions
+        self.assertEqual(html.count("<em>DX</em>"), 2)                      # Europe and Africa, not the US
+        self.assertIn("26 <small>(24 CW)</small>", html)                    # all modes, and how many were CW
+        self.assertIn("79%", html)
+        self.assertIn("greyed", html)                                       # Africa: one WSPR receiver
+        self.assertIn("no skimmers on the band", html)                      # US East has none in the data
+        self.assertNotIn("nan", html.lower())
+
+    def test_the_band_row_counts_other_modes_it_cannot_compare(self):
+        row = {"band": "10m", "contacts": 54, "other": 21, "skimmers": 50, "page": 0.8, "spotted": 0.2, "listening": 90, "stronger_db": 5.0,
+               "matches": 20, "thin": False, "note": "", "tone": "neutral", "no_picture": False, "report": 7.0}
+        html = lh.band_table_html(pd.DataFrame([row]))
+        self.assertIn("CW contacts", html)
+        self.assertIn("+21 other modes", html)
 
     def test_the_tiles_ask_for_the_comparison_until_it_has_been_run(self):
         s = lc.summary(self.log)

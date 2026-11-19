@@ -94,8 +94,10 @@ Load your RBN spots for the day, then open the **Log check** tab and upload an A
 How to read the band rows:
 
 - **Page vs spotted.** The page's chance of being heard in the regions with enough WSPR receivers, against the share of the skimmers that were on the band in those regions and did spot you. The second is usually lower, because a skimmer has to be tuned to you and decode you, so a gap is normal. A band marked *Worked, barely spotted* is one where you made contacts but few skimmers spotted you: RBN shows what skimmers decoded, not who heard you.
+- **CW contacts and other modes.** Only CW contacts are compared, so a band's row counts those, and says how many other-mode contacts the log has on that band. Bands run from the highest frequency down, so 10m is on top.
+- **A band by region.** Below the rows, pick a band to see it region by region, DX first: the contacts and stations worked in each region, how many skimmers were on the band there and how many spotted you, and what the page said (greyed when fewer than 3 WSPR receivers stand behind it). The row above pools every region, so a good result in one region can hide behind a poor one in another.
 - **Strength vs typical.** Skimmers that spotted you and are also WSPR receivers are matched. Their reports are set against the WSPR stations near you, restated to your power. Skimmers and WSPR receivers are different equipment, and an ordinary station reads about 10 dB higher on RBN than on the page (found from two checks of stations whose power is known), so that 10 dB is taken off. What is left is a rough hint of how much stronger or weaker than a typical station you were. A striped bar means fewer than 8 matched receivers.
-- Only CW contacts are compared, because RBN hears CW. The place used is the one in the sidebar, so if you were portable, enter that grid and load the spots again.
+- The place used is the one in the sidebar, so if you were portable, enter that grid and load the spots again.
 
 ## Compare two antennas
 

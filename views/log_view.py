@@ -20,8 +20,9 @@ def _signature(raw, power, spots):
     return (hashlib.sha1(raw).hexdigest(), float(power), len(spots), str(spots["time"].min()), str(spots["time"].max()))
 
 
-def _run(cw, spots, locs, home, power, label):
+def _run(log, spots, locs, home, power, label):
     """Fetches what the comparison needs, with progress shown, and returns lc.compare's tables (or None after saying what went wrong)."""
+    cw = log[log["mode"] == "CW"]
     start, end = cw["time"].min() - pd.Timedelta(minutes=lc.LOOKBACK_MIN), cw["time"].max() + pd.Timedelta(minutes=lc.WINDOW_PAD_MIN)
     days = tuple(sorted({f"{d:%Y%m%d}" for d in pd.date_range(start.floor("D"), end.floor("D"))}))
     with st.status("Comparing your log with RBN and WSPR…", expanded=True) as status:
@@ -29,13 +30,26 @@ def _run(cw, spots, locs, home, power, label):
             st.write("Finding the skimmers that were on the band (this reads the day's RBN file; the first time can take a minute)…")
             listening = load_rbn_listening(days, start, end)
             st.write(f"Fetching the WSPR stations within 300 miles of {label}, one stretch at a time…")
-            result = lc.compare(cw, spots, lambda a, b: load_nearby(home[0], home[1], RADIUS_KM, a, b), listening, locs, home, power)
+            result = lc.compare(log, spots, lambda a, b: load_nearby(home[0], home[1], RADIUS_KM, a, b), listening, locs, home, power)
         except (WsprError, RuntimeError) as exc:
             status.update(label="Could not finish", state="error")
             st.error(str(exc))
             return None
         status.update(label="Done", state="complete", expanded=False)
     return result
+
+
+def _regions_section(result):
+    """A band by region: pick a band, see each region's contacts, skimmers and the page's figure. It opens on the band with the most DX."""
+    shown = result["bands"][result["bands"]["contacts"] >= 3]      # the bands that have a row in the table above
+    bands, regions = list(shown["band"]), result["regions"]
+    if not bands or regions.empty:
+        return
+    dx = regions[~regions["region"].isin(lh.NEAR_REGIONS)].groupby("band")["contacts"].sum()
+    first = int(bands.index(dx.idxmax())) if len(dx) and dx.max() > 0 and dx.idxmax() in bands else 0
+    st.markdown("#### A band by region")
+    pick = st.radio("Band", bands, index=first, horizontal=True, key="log_region_band_" + "_".join(bands), label_visibility="collapsed")
+    st.html(lh.CSS + lh.regions_html(regions, pick))
 
 
 def _contacts_section(log, summary, spots, locs, home, label, who, tiles, units, signature):
@@ -116,7 +130,8 @@ def log_tab(spots, locs, home, label, kind, who="", tiles="Street", units="mi"):
                                              "The facts below come from the log alone.")
     else:
         spot_days = set(spots["time"].dt.date)
-        on_loaded = cw[cw["time"].dt.date.isin(spot_days)]
+        loaded = log[log["time"].dt.date.isin(spot_days)]
+        on_loaded = loaded[loaded["mode"] == "CW"]
         if on_loaded.empty:
             st.warning("None of the CW contacts are on a day you have loaded spots for. Load spots for "
                        f"{cw['time'].min():%d %b %Y} and come back.")
@@ -125,7 +140,7 @@ def log_tab(spots, locs, home, label, kind, who="", tiles="Street", units="mi"):
                 st.caption(f"{len(cw) - len(on_loaded)} CW contacts are on days without loaded spots and are left out of the comparison.")
             if st.button("Compare with RBN and WSPR", type="primary", key="log_compare",
                          help="Fetches the WSPR stations near you for each stretch on a band. It can take a minute or two."):
-                fresh = _run(on_loaded, spots, locs, home, power, label)
+                fresh = _run(loaded, spots, locs, home, power, label)
                 if fresh is not None:
                     st.session_state["log_result"] = {"signature": signature, "result": fresh}
                     st.rerun()
@@ -138,6 +153,7 @@ def log_tab(spots, locs, home, label, kind, who="", tiles="Street", units="mi"):
                  "skimmers on the band spotted you." if o["thin_listening"] else None,
                  f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
         st.caption(" ".join(n for n in notes if n))
+        _regions_section(result)
     _contacts_section(log, summary, spots, locs, home, label, who, tiles, units, (signature[0],))
     st.html(lh.CSS + lh.afternoon_html(log, spots))
     st.html(lh.CSS + lh.followers_html(log, summary, result["bands"] if result else None, lc.report_summary(log)))

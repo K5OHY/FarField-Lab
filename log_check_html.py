@@ -5,7 +5,7 @@ from html import escape
 import numpy as np
 import pandas as pd
 
-from log_check import bands_in_order
+from log_check import NEAR_REGIONS, bands_top_down
 
 BLUE, TEAL, AMBER = "#5B8CFF", "#19B5AE", "#F0A020"
 
@@ -29,6 +29,13 @@ CSS = """<style>
 .lc-bname{font-size:18px;font-weight:750}
 .lc-cont{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px}
 .lc-cont .bar{grid-column:1/-1;height:9px;background:var(--lane);border-radius:9px;overflow:hidden}.lc-cont .bar i{display:block;height:100%;background:var(--b);border-radius:9px}
+.lc-cont small{grid-column:1/-1;font-size:11.5px;opacity:.7}
+.lc-rh,.lc-rr{display:grid;grid-template-columns:minmax(160px,1.5fr) 96px 78px 110px 100px minmax(120px,1.2fr) 96px;gap:12px;align-items:center}
+.lc-rh{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.65;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.lc-rr{padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}.lc-rr:last-child{border-bottom:0}
+.lc-rr .rn{font-weight:650}.lc-rr .rn em{font-style:normal;font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--a);border:1px solid var(--a);border-radius:99px;padding:1px 6px;margin-left:7px}
+.lc-rr .dim{opacity:.55}.lc-rr small{opacity:.65}
+.lc-share{display:grid;grid-template-columns:1fr 40px;align-items:center;gap:8px}.lc-share div{height:8px;background:var(--lane);border-radius:8px;overflow:hidden}.lc-share i{display:block;height:100%;background:var(--t);border-radius:8px}
 .lc-cont b,.lc-sk b{font-size:17px}.lc-cont span,.lc-sk span{font-size:12px;opacity:.68}.lc-sk{display:flex;flex-direction:column;line-height:1.15}
 .lc-dumb{position:relative;height:38px}
 .lc-dumb:before{content:"";position:absolute;left:0;right:0;top:11px;height:2px;background:var(--lane);border-radius:2px}
@@ -71,7 +78,8 @@ CSS = """<style>
 .lc-facts{display:grid;gap:10px}.lc-fact{border:1px solid var(--line);border-radius:12px;padding:10px 13px}
 .lc-fact .h{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.65}.lc-fact .b{font-size:14.5px;margin-top:2px}
 .lc-fact.warn{border-color:var(--w)}.lc-fact.warn .h{color:var(--w);opacity:1}
-@media (max-width:820px){.lc-tiles{grid-template-columns:repeat(2,1fr)}.lc-two{grid-template-columns:1fr}
+@media (max-width:820px){.lc-rh{display:none}.lc-rr{grid-template-columns:1fr 1fr}.lc-rr .rn{grid-column:1/-1}.lc-rr [data-l]:before{content:attr(data-l) ": ";opacity:.6}
+.lc-tiles{grid-template-columns:repeat(2,1fr)}.lc-two{grid-template-columns:1fr}
 .lc-bh{display:none}.lc-brow{grid-template-columns:48px 1fr;grid-template-areas:"n c" "n d" ". s" ". t";gap:6px 12px}
 .lc-bname{grid-area:n}.lc-cont{grid-area:c}.lc-sk{display:none}.lc-dumb{grid-area:d}.lc-str{grid-area:s}.lc-note{grid-area:t}}
 </style>"""
@@ -135,9 +143,11 @@ def band_table_html(bands, min_contacts=3):
                         f'<b>{r.stronger_db:+.1f} dB</b></div>')
         report = (f'<span title="The average S in the reports they gave you on this band">report S{r.report:.1f}</span>'
                   if not np.isnan(r.report) else "")
+        extra = getattr(r, "other", 0)
+        other = f'<small title="Contacts in other modes are in the log but RBN cannot hear them, so they are not compared">+{extra} other mode{"s" if extra != 1 else ""}</small>' if extra else ""
         note = f'<div class="lc-note {r.tone}">{escape(r.note)}</div>' if r.note else "<div></div>"
         rows.append(f'<div class="lc-brow"><div class="lc-bname">{r.band}</div>'
-                    f'<div class="lc-cont"><div class="bar"><i style="width:{r.contacts / top * 100:.1f}%"></i></div><b>{r.contacts}</b><span>contacts</span></div>'
+                    f'<div class="lc-cont"><div class="bar"><i style="width:{r.contacts / top * 100:.1f}%"></i></div><b>{r.contacts}</b><span>CW contacts</span>{other}</div>'
                     f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span>{report}</div>{dumb}{strength}'
                     f'{note}</div>')
     return ('<div class="lc"><div class="lc-card"><h4>Band by band</h4>'
@@ -147,9 +157,39 @@ def band_table_html(bands, min_contacts=3):
             '<span>bar: stronger (blue) or weaker (amber) than a typical station at your power; striped means few matches</span></div>'
             '<div class="lc-bh"><div>Band</div><div>Contacts</div><div>Skimmers</div><div>Page vs spotted</div><div>Strength vs typical</div><div></div></div>'
             + "".join(rows)
-            + (f'<p class="sub" style="margin-top:10px">Not shown, with fewer than {min_contacts} contacts: '
-               + ", ".join(f"{r.band} ({r.contacts})" for r in few.itertuples()) + ".</p>" if len(few) else "")
+            + (f'<p class="sub" style="margin-top:10px">Not shown, with fewer than {min_contacts} CW contacts: '
+               + ", ".join(f"{r.band} ({r.contacts} CW" + (f", {r.other} other" if getattr(r, "other", 0) else "") + ")" for r in few.itertuples()) + ".</p>" if len(few) else "")
             + '</div></div>')
+
+
+def regions_html(regions, band):
+    """One band by region: the contacts, stations worked, the skimmers on the band and how many spotted you, and what the Band conditions
+    page said. DX regions come first and are tagged. A region with fewer than three WSPR receivers behind it has no page figure."""
+    d = regions[regions["band"] == band]
+    d = d[(d["contacts"] > 0) | (d["on_band"] > 0)]
+    if d.empty:
+        return '<div class="lc"><p class="muted">Nothing to show for this band.</p></div>'
+    rows = []
+    for r in d.itertuples():
+        dx = r.region not in NEAR_REGIONS
+        tag = "<em>DX</em>" if dx else ""
+        contacts = f"{r.contacts}" + (f' <small>({r.cw} CW)</small>' if r.cw != r.contacts else "")
+        if r.on_band:
+            share = r.spotted / r.on_band
+            shared = f'<div class="lc-share"><div><i style="width:{share * 100:.0f}%"></i></div><b>{share * 100:.0f}%</b></div>'
+        else:
+            shared = '<span class="dim">no skimmers on the band</span>'
+        if np.isnan(r.page):
+            page = f'<span class="dim" title="Fewer than 3 WSPR receivers in this region, so the page has no figure ({r.wspr_receivers} here)">greyed</span>'
+        else:
+            page = f'{pct(r.page)} <small>({r.wspr_receivers} WSPR rx)</small>'
+        rows.append(f'<div class="lc-rr"><div class="rn">{escape(r.region)}{tag}</div><div data-l="Contacts">{contacts}</div>'
+                    f'<div data-l="Stations">{r.stations}</div><div data-l="Skimmers on the band">{r.on_band}</div>'
+                    f'<div data-l="Spotted you">{r.spotted}</div><div data-l="Share spotted">{shared}</div><div data-l="Page said">{page}</div></div>')
+    return ('<div class="lc"><div class="lc-card"><h4>' + escape(band) + ' by region</h4>'
+            '<p class="sub">Contacts are all modes; the skimmers and the page are for CW. Skimmers are counted once each across the whole log.</p>'
+            '<div class="lc-rh"><div>Region</div><div>Contacts</div><div>Stations</div><div>Skimmers on the band</div><div>Spotted you</div>'
+            '<div>Share spotted</div><div>Page said</div></div>' + "".join(rows) + '</div></div>')
 
 
 def _ticks(t0, t1):
@@ -182,7 +222,7 @@ def _panels(log):
 
 def _panel_html(part, spots, rep, follow, title, marked):
     """One chart: a lane for each band used in `part`. `marked` is a one-item list that remembers whether the follower's label is drawn."""
-    bands = bands_in_order(part)
+    bands = bands_top_down(part)
     span = ((part["time"].max() - part["time"].min()).total_seconds() / 60) + 12
     step = _slot_minutes(span)
     freq = f"{step}min"
@@ -311,7 +351,7 @@ def followers_html(log, summary, bands=None, reports=None):
         ladder = '<p class="muted">Nobody was worked on more than one band.</p>'
     else:
         more = f'<p class="sub">and {len(rep) - 24} more</p>' if len(rep) > 24 else ""
-        ladder = ladder_html(rep, bands_in_order(log)) + more
+        ladder = ladder_html(rep, bands_top_down(log)) + more
     return ('<div class="lc"><div class="lc-card"><h4>Who followed you</h4>'
             f'<p class="sub">{len(rep)} station{"s" if len(rep) != 1 else ""} worked you on more than one band, and some notes from the log.</p>'
             f'<div class="lc-two"><div>{ladder}</div><div class="lc-facts">{"".join(facts)}</div></div></div></div>')
