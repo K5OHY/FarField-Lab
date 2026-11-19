@@ -10,15 +10,16 @@ import streamlit as st
 
 import disk_cache
 import example_data
+from conditions import fetch_nearby
+from log_check import finish_place, listening_from_zip
 from rbn_data import get_band, load_skimmers, lookup_callsign_location, maidenhead_to_latlon, refresh_skimmer_cache
 from wspr_data import clean_callsign, fetch_listening, fetch_wspr_spots
 
 
 # ----------------------------------------------------------------- data loading
 
-@st.cache_data(show_spinner=False, ttl=3600)
-def download_rbn_day(date, callsign):
-    """Download one day of RBN history and keep only spots of `callsign` (streamed, never written to disk)."""
+def rbn_day_zip(date):
+    """The bytes of one day's RBN history file (date as YYYYMMDD), from the disk cache or downloaded."""
     raw = disk_cache.get_bytes("rbnzip", date)  # a day's file never changes once published, and it serves every callsign
     if raw is None:
         resp = requests.get(f"https://data.reversebeacon.net/rbn_history/{date}.zip", timeout=180)
@@ -27,6 +28,13 @@ def download_rbn_day(date, callsign):
         resp.raise_for_status()
         raw = resp.content
         disk_cache.put_bytes("rbnzip", date, raw)
+    return raw
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def download_rbn_day(date, callsign):
+    """Download one day of RBN history and keep only spots of `callsign` (streamed, never written to disk)."""
+    raw = rbn_day_zip(date)
 
     with zipfile.ZipFile(BytesIO(raw)) as z:
         name = next((n for n in z.namelist() if n.endswith(".csv")), None)
@@ -144,3 +152,64 @@ def load_listening(band, start, end):
     if settled and len(listening.columns):
         disk_cache.put_frame("listening", key, listening, {"truncated": bool(truncated)})
     return listening, truncated
+
+
+def load_nearby(lat, lon, radius_km, start, end):
+    """WSPR spots from every transmitter within `radius_km` of a point, as the Band conditions page uses them. Like load_wspr, a period
+    that has ended is remembered on disk, because it will not change and wspr.live allows the whole site only 20 requests a minute."""
+    key = f"{lat:.3f}|{lon:.3f}|{radius_km:.0f}|{pd.Timestamp(start):%Y-%m-%d %H:%M:%S}|{pd.Timestamp(end):%Y-%m-%d %H:%M:%S}"
+    settled = _settled(end)
+    if settled:
+        hit = disk_cache.get_frame("nearby", key)
+        if hit:
+            return hit[0]
+    spots, _ = fetch_nearby(lat, lon, radius_km, pd.Timestamp(start).to_pydatetime(), pd.Timestamp(end).to_pydatetime())
+    if settled and len(spots.columns):
+        disk_cache.put_frame("nearby", key, spots)
+    return spots
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_rbn_listening(days, start, end):
+    """The skimmers that spotted anyone between two times: (band, slot of 15 minutes, callsign). `days` are the YYYYMMDD files to read."""
+    frames = [listening_from_zip(rbn_day_zip(d), start, end) for d in days]
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["band", "slot", "b"])
+
+
+def _found(call, skimmers):
+    """One callsign's lookup (lat, lon, grid, source), from the disk cache when an exact answer was saved, else asked of the
+    FCC and HamDB. Only exact answers are saved: a guess at the country's centre should be asked again next time."""
+    hit = disk_cache.get_frame("callloc", call)
+    if hit and len(hit[0]):
+        row = hit[0].iloc[0]
+        return float(row["lat"]), float(row["lon"]), None if pd.isna(row["grid"]) else row["grid"], str(row["source"])
+    found = lookup_callsign_location(call, skimmers)
+    if found is not None and not str(found[3]).startswith("center of"):
+        disk_cache.put_frame("callloc", call, pd.DataFrame([{"lat": found[0], "lon": found[1], "grid": found[2], "source": found[3]}]))
+    return found
+
+
+def load_contact_places(rows, skimmers, progress=None, workers=4):
+    """Where each station in a log was, as a table indexed by call (lat, lon, level, source, grid). `rows` is a list of
+    (call, state, country). Exact answers are shown at the centre of the 4 character grid square, a miss falls back to the centre of
+    the state in the log, and a call that cannot be placed at all is left out. A few lookups run at once; `progress(done, total)` is
+    called as they finish."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    done, out = 0, {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_found, call, skimmers): (call, state, country) for call, state, country in rows}
+        for future in as_completed(futures):
+            call, state, country = futures[future]
+            try:
+                placed = finish_place(future.result(), state, country)
+            except Exception:
+                placed = finish_place(None, state, country)
+            if placed:
+                out[call] = placed
+            done += 1
+            if progress:
+                progress(done, len(rows))
+    table = pd.DataFrame.from_dict(out, orient="index", columns=["lat", "lon", "source", "level", "grid"]) if out else pd.DataFrame(
+        columns=["lat", "lon", "source", "level", "grid"])
+    table.index.name = "call"
+    return table

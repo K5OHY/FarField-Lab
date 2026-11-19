@@ -265,11 +265,15 @@ def fit_to(m, bounds):
 
 
 def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, units, farthest,
-              title=None, fit_spots=None, scale=RBN_SNR_SCALE, noun="skimmer"):
+              title=None, fit_spots=None, scale=RBN_SNR_SCALE, noun="skimmer", contacts=None, show_spots=True):
     """`title` replaces the callsign in the legend; `fit_spots` also frames those spots in the view,
     so two maps can share the same extent. `scale` is the (weak, strong) SNR range the colours span;
-    `noun` is what the stations that heard you are called (skimmer for RBN, receiver for WSPR)."""
+    `noun` is what the stations that heard you are called (skimmer for RBN, receiver for WSPR). `contacts` are the stations you worked
+    (from a log): a table with call, band, time, lat, lon, rst_rcvd, rst_sent, s and place, drawn as diamonds coloured by the report they
+    gave you. With show_spots False only the contacts are drawn."""
     k = KM_PER_MILE if units == "mi" else 1
+    if not show_spots:
+        spots, show_all, farthest = spots.iloc[0:0], False, None
     m = base_map(home, tiles)
 
     if show_all:
@@ -314,6 +318,9 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
 
     lines.add_to(m)
     dots.add_to(m)
+    has_contacts = contacts is not None and len(contacts) > 0
+    if has_contacts:
+        bounds.extend(_contacts_layer(m, contacts, home, k, units))
 
     if fit_spots is not None:
         for spotter in fit_spots["spotter"].unique():
@@ -339,7 +346,7 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
         fit_to(m, bounds)
     folium.LayerControl(collapsed=True).add_to(m)
 
-    bands_present = spots["band"].value_counts()
+    bands_present = spots["band"].value_counts() if len(spots) or not has_contacts else contacts.drop_duplicates(["call", "band"])["band"].value_counts()
     rows = "".join(
         f'<div><span style="display:inline-block;width:18px;height:4px;background:{BAND_COLORS.get(b, "#3388ff")};'
         f'margin-right:6px;vertical-align:middle;border-radius:2px"></span>{esc(b)} <span style="opacity:.6">({n})</span></div>'
@@ -352,16 +359,64 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
         f'background:{snr_color(db, scale)}88"></span></div>'
         f'<div style="opacity:.75">{db}{"+" if db == scale[1] else ""}</div></div>'
         for db in (int(round(x)) for x in np.linspace(scale[0], scale[1], 5)))
+    spot_head = f" &middot; {len(spots)} spots" if len(spots) else ""
+    snr_part = (f'<div style="margin:8px 0 4px;font-weight:600">SNR (dB)</div>'
+                f'<div style="display:flex;justify-content:space-between;width:130px">{snr_key}</div>') if len(spots) else ""
+    contact_key = _contact_key(contacts) if has_contacts else ""
     legend = f"""
     <div style="position:fixed;bottom:34px;right:12px;z-index:9999;background:rgba(255,255,255,.92);
       padding:10px 12px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.3);
       font:12px/1.5 system-ui,sans-serif;color:#222">
-      <b>{esc(title or callsign)}</b> &middot; {len(spots)} spots<div style="margin:6px 0 2px;font-weight:600">Band</div>{rows}
-      <div style="margin:8px 0 4px;font-weight:600">SNR (dB)</div>
-      <div style="display:flex;justify-content:space-between;width:130px">{snr_key}</div>
+      <b>{esc(title or callsign)}</b>{spot_head}<div style="margin:6px 0 2px;font-weight:600">Band</div>{rows}{snr_part}{contact_key}
     </div>"""
     m.get_root().html.add_child(folium.Element(legend))
     return m
+
+
+CONTACT_SCALE = (3, 9)  # the S digit of the report they gave you, from S3 (weak) to S9 (strong), on the same colours as the SNR dots
+
+
+def _contact_popup(call, g, km, units):
+    rows = "".join(f'<tr><td style="padding-right:8px">{esc(r.band)}</td><td style="padding-right:8px">{r.time:%H:%M}Z</td>'
+                   f'<td style="padding-right:8px">{esc(r.rst_rcvd or "-")}</td><td>{esc(r.rst_sent or "-")}</td></tr>'
+                   for r in g.sort_values("time").itertuples())
+    return (f'<div style="font:12px/1.4 system-ui,sans-serif"><b>{esc(call)}</b> &middot; {km:,.0f} {esc(units)}'
+            f'<table style="margin-top:4px;border-collapse:collapse"><tr style="opacity:.65"><td>Band</td><td>Time</td><td>They gave</td>'
+            f'<td>You gave</td></tr>{rows}</table><div style="opacity:.6;margin-top:4px">Shown at the {esc(g["place"].iloc[0])}</div></div>')
+
+
+def _contacts_layer(m, contacts, home, k, units):
+    """The stations you worked: a dotted path for each band, and one diamond for each station (not each contact), coloured by the best
+    report they gave you. Returns the points to fit the view to."""
+    lines = folium.FeatureGroup(name="Paths to stations you worked", show=True)
+    marks = folium.FeatureGroup(name="Stations you worked (coloured by the report they gave you)", show=True)
+    bounds = []
+    for (call, band), g in contacts.groupby(["call", "band"], sort=False):
+        path = great_circle(home, (float(g["lat"].iloc[0]), float(g["lon"].iloc[0])))
+        bounds.extend([path[0], path[-1]])
+        folium.PolyLine(path, color=BAND_COLORS.get(band, "#3388ff"), weight=1.8, opacity=0.85, dash_array="2 6").add_to(lines)
+    for call, g in contacts.groupby("call", sort=False):
+        loc = (float(g["lat"].iloc[0]), float(g["lon"].iloc[0]))
+        end = great_circle(home, loc)[-1]
+        best = g["s"].max()
+        colour = snr_color(best, CONTACT_SCALE) if best == best else "#8a8f98"
+        icon = folium.DivIcon(html=f'<div style="width:13px;height:13px;background:{colour};border:2px solid #fff;'
+                                   f'box-shadow:0 0 3px rgba(0,0,0,.7);transform:rotate(45deg)"></div>', icon_size=(13, 13), icon_anchor=(7, 7))
+        n = len(g)
+        folium.Marker(end, icon=icon, tooltip=f"{esc(call)} \u00b7 {n} contact{'s' if n != 1 else ''}",
+                      popup=folium.Popup(_contact_popup(call, g, distance_km(home, loc) / k, units), max_width=280)).add_to(marks)
+    lines.add_to(m)
+    marks.add_to(m)
+    return bounds
+
+
+def _contact_key(contacts):
+    """The legend part for the stations you worked."""
+    swatches = "".join(f'<span style="display:inline-block;width:10px;height:10px;background:{snr_color(s, CONTACT_SCALE)};'
+                       f'transform:rotate(45deg);margin:0 7px"></span>' for s in (3, 5, 7, 9))
+    n = contacts["call"].nunique()
+    return (f'<div style="margin:8px 0 3px;font-weight:600">Stations you worked ({n})</div>'
+            f'<div>{swatches}</div><div style="opacity:.7">report they gave you, S3 to S9</div>')
 
 
 def compute_stats(spots, skimmers, home):

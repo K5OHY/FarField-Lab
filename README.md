@@ -76,8 +76,26 @@ WSPR differs from RBN in a few ways: SNR is mostly negative (about -30 to +5 dB)
 - Stats above the map, a compass chart of your spots by direction below it, and a sortable spot table.
 - Map style (light, dark, satellite, street), miles or kilometres, and **Download map** (a standalone HTML file).
 - **Download report (PDF)** next to it: key numbers, the session report, direction chart and the stations that heard you.
+- A **Log check** tab (RBN spots only): upload a contact log from your logging program and see it beside the spots and the WSPR stations around you. See below.
 
 Your location comes from the grid you typed, else the RBN skimmer list, else the FCC ([callook.info](https://callook.info)), else [HamDB](https://hamdb.org), else the centre of your country (the app warns you). Enter a grid for an exact pin.
+
+### Log check
+
+Load your RBN spots for the day, then open the **Log check** tab and upload an ADIF file (most logging programs can export one) and enter the power you ran. The log is used for that visit only and is not saved.
+
+- **From the log alone:** contacts, stations, states, contacts per hour, your busiest hour, and the stations that came back on another band.
+- **A picture of the session:** one lane per band, in the order you used them. Each contact is a block, stacked in 2 minute slots, with the RBN spots for the same slots underneath.
+- **Compare with RBN and WSPR** (press the button; the first time it can take a minute or two, because it fetches the WSPR stations within 300 miles of you for each stretch on a band). For each band it shows your contacts, how many skimmers spotted you, what the Band conditions page said, and how strong the skimmers reported you.
+
+- **Place my contacts on the map** (a button below the band rows). Each station in the log is looked up at the FCC ([callook.info](https://callook.info)) and [HamDB](https://hamdb.org), the way your own callsign is, and shown at the centre of its 4 character grid square, not at an address. A station the lookups cannot place falls back to the centre of the state in the log. The first time takes a minute or two for a log of a hundred or so stations; the answers are remembered. A switch then shows the skimmers that spotted you, the stations you worked, or both on one map, with a small table of contacts and skimmers by region. Diamonds are coloured by the signal report they gave you (S3 to S9); click one for each contact and both reports.
+- **Reports.** Each band row also shows the average S in the reports they gave you on that band. Many operators send a 9 out of habit, so reports are a rough picture of your station, not a measurement, and the page never scores them against the skimmers' SNR.
+
+How to read the band rows:
+
+- **Page vs spotted.** The page's chance of being heard in the regions with enough WSPR receivers, against the share of the skimmers that were on the band in those regions and did spot you. The second is usually lower, because a skimmer has to be tuned to you and decode you, so a gap is normal. A band marked *Worked, barely spotted* is one where you made contacts but few skimmers spotted you: RBN shows what skimmers decoded, not who heard you.
+- **Strength vs typical.** Skimmers that spotted you and are also WSPR receivers are matched. Their reports are set against the WSPR stations near you, restated to your power. Skimmers and WSPR receivers are different equipment, and an ordinary station reads about 10 dB higher on RBN than on the page (found from two checks of stations whose power is known), so that 10 dB is taken off. What is left is a rough hint of how much stronger or weaker than a typical station you were. A striped bar means fewer than 8 matched receivers.
+- Only CW contacts are compared, because RBN hears CW. The place used is the one in the sidebar, so if you were portable, enter that grid and load the spots again.
 
 ## Compare two antennas
 
@@ -372,6 +390,7 @@ The **Help and README** page in the app shows this README, so the instructions a
 | `session_report.py` | Builds the session report: timeline, band-by-hour grid, scorecard and regions |
 | `conditions.py` | Band conditions: nearby WSPR stations restated for your power and mode |
 | `dashboard.py` | The HTML for the Band conditions dashboard: band tiles, sun strip, region grids and highlights |
+| `log_check.py`, `log_check_html.py`, `views/log_view.py` | The Log check tab: reads an ADIF log, sets it beside the RBN spots and the WSPR picture, and draws the band rows, the session chart and the stations that came back |
 | `space_weather.py` | Current space weather from NOAA and a short plain reading of it |
 | `ionosphere.py` | MUF and foF2 near you from the nearest working ionosondes (GIRO data via KC2G) |
 | `example_data.py`, `examples/`, `build_examples.py` | The examples open saved copies of the real data (spots, where the station is, and for WSPR who was on the band), so they appear at once; `build_examples.py` refreshes them from the internet |

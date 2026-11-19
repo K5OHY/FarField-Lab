@@ -21,6 +21,8 @@ import compare_stats as cs  # noqa: E402
 import data_sources as ds  # noqa: E402
 import disk_cache  # noqa: E402
 import conditions as cond  # noqa: E402
+import log_check as lc  # noqa: E402
+import log_check_html as lh  # noqa: E402
 import dashboard as dash  # noqa: E402
 import example_data  # noqa: E402
 import ionosphere as iono  # noqa: E402
@@ -1016,6 +1018,295 @@ class FarApart(unittest.TestCase):
 
     def test_the_suggested_rule_is_the_20_percent_one(self):
         self.assertEqual((cs.FAR_APART_DB, cs.SUGGESTED_WEAK_PCT), (20, 20))
+
+
+class LogCheck(unittest.TestCase):
+    """The log check: reading an ADIF file, the facts from the log alone, and setting it beside spots and WSPR (made-up data)."""
+
+    ADIF = ("Header text\n<ADIF_VER:5>3.1.5 <EOH>\n"
+            "<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:6>200000 <BAND:3>20m <MODE:2>CW <STATE:2>PA <CONT:2>NA <EOR>\n"
+            "<call:5>W2BBB <qso_date:8>20261118 <time_on:4>2001 <band:3>20M <mode:2>CW <state:2>NY <eor>\n"
+            "<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:6>201000 <FREQ:6>14.060 <MODE:2>CW <STATE:2>PA <CONT:2>NA <EOR>\n"
+            "<CALL:5>W3CCC <QSO_DATE:8>20261118 <TIME_ON:6>203000 <BAND:3>15m <MODE:3>SSB <CONT:2>NA <EOR>\n"
+            "<CALL:5>W4DDD <QSO_DATE:8>20261118 <TIME_ON:6>203500 <BAND:3>15m <MODE:2>CW <CONT:2>OC <EOR>\n"
+            "<CALL:5>W5EEE <QSO_DATE:8>20261118 <BAND:3>20m <MODE:2>CW <EOR>\n"        # no time: left out
+            "<STATION_CALLSIGN:5>K5OHY <QSO_DATE:8>20261118 <TIME_ON:6>204000 <BAND:3>20m <EOR>\n")  # no call: left out
+
+    def test_the_contacts_are_read_with_their_lengths_and_either_case(self):
+        log = lc.parse_adif(self.ADIF)
+        self.assertEqual(list(log["call"]), ["W1AAA", "W2BBB", "W1AAA", "W3CCC", "W4DDD"])
+        self.assertEqual(log["time"].iloc[1], pd.Timestamp("2026-11-18 20:01:00"))  # a four digit time has no seconds
+        self.assertEqual(list(log["band"]), ["20m", "20m", "20m", "15m", "15m"])  # the third had only a frequency, 14.060 MHz
+        self.assertEqual(log["state"].iloc[0], "PA")
+
+    def test_a_file_with_no_contacts_is_refused(self):
+        with self.assertRaises(ValueError):
+            lc.parse_adif("<ADIF_VER:5>3.1.5 <EOH>\n")
+
+    def test_a_file_without_a_header_still_reads(self):
+        log = lc.parse_adif("<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:6>200000 <BAND:3>40m <MODE:2>CW <EOR>")
+        self.assertEqual(len(log), 1)
+
+    def test_the_facts_from_the_log_alone(self):
+        log = lc.parse_adif(self.ADIF)
+        s = lc.summary(log)
+        self.assertEqual((s["contacts"], s["stations"], s["states"]), (5, 4, 2))
+        self.assertEqual(s["best_hour"], 5)  # all five contacts fall in the hour from 20:00
+        self.assertAlmostEqual(s["longest_gap_min"], 20.0)
+        rep = lc.repeat_stations(log)
+        self.assertEqual(len(rep), 0)  # W1AAA came back, but on the same band
+        self.assertEqual(lc.same_band_repeats(log), 1)
+
+    def test_stations_that_come_back_on_another_band_are_found_in_band_order(self):
+        text = "".join(f"<CALL:5>{c} <QSO_DATE:8>20261118 <TIME_ON:6>{t} <BAND:3>{b} <MODE:2>CW <EOR>\n" for c, t, b in
+                        [("W1AAA", "200000", "10m"), ("W1AAA", "201000", "40m"), ("W1AAA", "202000", "20m"), ("W2BBB", "203000", "20m")])
+        rep = lc.repeat_stations(lc.parse_adif(text))
+        self.assertEqual(list(rep.index), ["W1AAA"])
+        self.assertEqual(rep["bands"].iloc[0], ["40m", "20m", "10m"])  # lowest frequency first, the order the app lists bands in
+
+    def test_a_long_pause_on_a_band_starts_a_new_stretch(self):
+        text = "".join(f"<CALL:5>W{i}AAA <QSO_DATE:8>20261118 <TIME_ON:6>{t} <BAND:3>20m <MODE:2>CW <EOR>\n"
+                        for i, t in enumerate(["200000", "201000", "210000"]))
+        stretches = lc.stretches(lc.parse_adif(text))
+        self.assertEqual([(b, n) for b, _, _, n in stretches], [("20m", 2), ("20m", 1)])
+
+    def test_the_skimmers_that_were_listening_are_read_from_the_day_file(self):
+        csv = ("callsign,de_pfx,de_cont,freq,band,dx,dx_pfx,dx_cont,cqz,mode,db,date,speed,tx_mode\n"
+               "K1AAA-2,K,NA,14050.0,20m,W9XYZ,K,NA,5,CQ,10,2026-11-18 20:05:00,20,CW\n"
+               "K1AAA-2,K,NA,14050.0,20m,W9XYZ,K,NA,5,CQ,10,2026-11-18 20:10:00,20,CW\n"
+               "K2BBB,K,NA,7050.0,40m,W9XYZ,K,NA,5,CQ,10,2026-11-18 20:20:00,20,CW\n"
+               "K3CCC,K,NA,14050.0,20m,W9XYZ,K,NA,5,CQ,10,2026-11-18 23:50:00,20,CW\n")  # outside the hours asked for
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as z:
+            z.writestr("20261118.csv", csv)
+        got = lc.listening_from_zip(buffer.getvalue(), pd.Timestamp("2026-11-18 20:00"), pd.Timestamp("2026-11-18 21:00"))
+        self.assertEqual(sorted(zip(got["band"], got["b"])), [("20m", "K1AAA"), ("40m", "K2BBB")])  # the -2 is dropped, a repeat counts once
+
+    # ---- setting the log beside spots and WSPR
+    def scene(self, spotters=("K1AAA", "K2BBB", "K3CCC", "K5EEE"), wspr_calls=("K1AAA", "K2BBB", "K3CCC", "K4DDD"), obs=22.0):
+        """Five CW contacts on 20m between 20:00 and 20:10; four WSPR stations hear a nearby transmitter at +15 dB margin; six skimmers
+        are listening in US East and `spotters` spotted you."""
+        log = lc.parse_adif("".join(f"<CALL:5>W{i}AAA <QSO_DATE:8>20261118 <TIME_ON:6>20{i:02d}00 <BAND:3>20m <MODE:2>CW <EOR>\n" for i in range(5)))
+        spots = pd.DataFrame({"spotter": list(spotters), "band": "20m", "snr": obs, "time": pd.Timestamp("2026-11-18 20:05:00")})
+        wspr = pd.DataFrame({"time": pd.Timestamp("2026-11-18 19:50:00"), "tx": "W9TX", "tx_lat": 31.1, "tx_lon": -102.1, "rx": list(wspr_calls),
+                             "rx_lat": 40.0, "rx_lon": -75.0, "band": "20m", "power": 30.0, "snr": -10.0})
+        calls = ["K1AAA", "K2BBB", "K3CCC", "K4DDD", "K5EEE", "K6FFF"]
+        locs = {c: (40.0, -75.0) for c in calls}
+        listening = pd.DataFrame({"band": "20m", "slot": pd.Timestamp("2026-11-18 20:00"), "b": calls})
+        return log, spots, wspr, listening, locs
+
+    def run_compare(self, log, spots, wspr, listening, locs):
+        return lc.compare(log, spots, lambda a, b: wspr[(wspr["time"] > a) & (wspr["time"] <= b)], listening, locs, HOME, 100.0)
+
+    def test_the_page_chance_is_set_against_the_share_of_listening_skimmers_that_spotted_you(self):
+        out = self.run_compare(*self.scene())
+        row = out["bands"].iloc[0]
+        self.assertEqual((row["band"], row["contacts"], row["skimmers"], row["listening"]), ("20m", 5, 4, 6))
+        self.assertGreater(row["page"], 0.95)               # a +15 dB margin, with 8 dB of error allowed
+        self.assertAlmostEqual(row["spotted"], 4 / 6)       # four of the six listening skimmers spotted you
+        self.assertEqual(row["note"], "")
+
+    def test_strength_is_the_skimmers_reading_minus_the_page_figure_minus_the_typical_offset(self):
+        out = self.run_compare(*self.scene())
+        row = out["bands"].iloc[0]
+        self.assertEqual(row["matches"], 3)  # K1AAA, K2BBB and K3CCC both spotted you and are WSPR receivers
+        # the page figure at those receivers is +10 dB (-10 dB heard, a 30 dBm transmitter restated to 100 W = 50 dBm); they read 22: 12 above
+        self.assertAlmostEqual(row["stronger_db"], 12.0 - lc.TYPICAL_OFFSET_DB)
+        self.assertTrue(row["thin"])  # three matches are fewer than MIN_MATCHES
+
+    def test_too_few_matches_give_no_strength(self):
+        out = self.run_compare(*self.scene(spotters=("K1AAA", "K5EEE")))
+        self.assertTrue(np.isnan(out["bands"].iloc[0]["stronger_db"]))
+
+    def test_regions_with_too_few_wspr_receivers_are_left_out_of_the_percentages(self):
+        out = self.run_compare(*self.scene(wspr_calls=("K1AAA", "K2BBB")))
+        row = out["bands"].iloc[0]
+        self.assertTrue(np.isnan(row["page"]))
+        self.assertEqual(out["overall"]["thin_listening"], 6)   # all six listening skimmers are in a region the page greys
+        self.assertEqual(out["overall"]["thin_spotted"], 4)
+
+    def test_only_cw_contacts_are_compared(self):
+        log, spots, wspr, listening, locs = self.scene()
+        log = pd.concat([log, lc.parse_adif("<CALL:5>W9ZZZ <QSO_DATE:8>20261118 <TIME_ON:6>200500 <BAND:3>15m <MODE:3>SSB <EOR>")], ignore_index=True)
+        out = self.run_compare(log, spots, wspr, listening, locs)
+        self.assertEqual(list(out["bands"]["band"]), ["20m"])
+
+    def test_a_band_with_a_big_gap_and_few_spotted_is_called_worked_but_barely_spotted(self):
+        out = self.run_compare(*self.scene(spotters=("K1AAA",)))   # one of six
+        row = out["bands"].iloc[0]
+        self.assertEqual((row["note"], row["tone"]), ("Worked, barely spotted", "warn"))
+        out = self.run_compare(*self.scene(spotters=("K1AAA", "K2BBB", "K3CCC", "K4DDD", "K5EEE", "K6FFF")))
+        self.assertEqual(out["bands"].iloc[0]["note"], "Page and skimmers agree")
+
+    def test_a_log_with_no_wspr_in_the_hour_reports_that(self):
+        log, spots, wspr, listening, locs = self.scene()
+        out = self.run_compare(log, spots, wspr.iloc[0:0], listening, locs)
+        self.assertTrue(out["bands"].iloc[0]["no_picture"])
+
+
+class LogCheckPictures(unittest.TestCase):
+    """The HTML for the log check: nothing breaks when numbers are missing, and the chart has a block for every contact."""
+
+    def setUp(self):
+        self.log = lc.parse_adif("".join(
+            f"<CALL:5>{c} <QSO_DATE:8>20261118 <TIME_ON:6>{t} <BAND:3>{b} <MODE:2>CW <CONT:2>{k} <EOR>\n"
+            for c, t, b, k in [("W1AAA", "200000", "10m", "NA"), ("W1AAA", "201000", "15m", "NA"), ("W1AAA", "202000", "20m", "NA"),
+                               ("W2BBB", "202100", "20m", "NA"), ("KH6DE", "202200", "20m", "OC")]))
+
+    def test_the_chart_has_one_block_for_each_contact_and_names_the_follower(self):
+        html = lh.afternoon_html(self.log, None)
+        self.assertEqual(html.count('class="lc-b'), 5)
+        self.assertEqual(html.count('class="lc-b rep'), 3)  # W1AAA's three contacts
+        self.assertIn("W1AAA: 3 bands", html)
+
+    def two_day_log(self):
+        rows = [("20261112", f"{17 + i // 60:02d}{i % 60:02d}00", "20m") for i in range(0, 180, 3)]       # day one: 60 contacts in 3 hours
+        rows += [("20261113", f"{13 + i // 60:02d}{i % 60:02d}00", "40m") for i in range(0, 360, 4)]      # day two, 12 hours later: 90 contacts in 6 hours
+        return lc.parse_adif("".join(f"<CALL:6>W{n:05d} <QSO_DATE:8>{d} <TIME_ON:6>{t} <BAND:3>{b} <MODE:2>CW <EOR>\n" for n, (d, t, b) in enumerate(rows)))
+
+    def test_a_log_over_two_days_is_drawn_as_two_charts_with_visible_blocks(self):
+        import re
+        log = self.two_day_log()
+        html = lh.afternoon_html(log, None)
+        self.assertEqual(html.count('class="lc-ph"'), 2)            # the 12 hour pause starts a second chart
+        self.assertEqual(html.count('class="lc-b'), 150)            # every contact has a block
+        widths = {float(w) for w in re.findall(r"width:max\(3px, calc\(([\d.]+)%", html)}
+        self.assertTrue(all(w > 0 for w in widths))
+        self.assertEqual(len(widths), 2)                            # each chart sizes its slots to its own length
+        self.assertIn("2 stretches of activity", html)
+
+    def test_a_block_is_never_narrower_than_a_few_pixels(self):
+        self.assertEqual(lh._slot_minutes(120), 2)                  # a short session keeps 2 minute slots
+        self.assertGreater(lh._slot_minutes(600), 2)                # a long one uses wider slots so blocks stay readable
+        self.assertEqual(lh._slot_minutes(10 ** 6), lh.SLOTS[-1])
+
+    def test_the_band_table_survives_missing_numbers(self):
+        bands = pd.DataFrame([{"band": "20m", "contacts": 5, "skimmers": 3, "page": float("nan"), "spotted": float("nan"), "listening": 0,
+                               "stronger_db": float("nan"), "matches": 0, "thin": False, "note": "", "tone": "neutral", "no_picture": True,
+                               "report": float("nan")}])
+        html = lh.band_table_html(bands)
+        self.assertNotIn("nan", html.lower())
+        self.assertIn("no WSPR picture", html)
+
+    def test_a_band_with_one_contact_is_named_under_the_table_not_given_a_row(self):
+        row = {"skimmers": 3, "page": 0.8, "spotted": 0.4, "listening": 10, "stronger_db": 2.0, "matches": 9, "thin": False, "note": "",
+               "tone": "neutral", "no_picture": False, "report": float("nan")}
+        bands = pd.DataFrame([{"band": "20m", "contacts": 40, **row}, {"band": "60m", "contacts": 1, **row}])
+        html = lh.band_table_html(bands)
+        self.assertEqual(html.count('class="lc-brow"'), 1)
+        self.assertIn("Not shown, with fewer than 3 contacts: 60m (1).", html)
+
+    def test_the_tiles_ask_for_the_comparison_until_it_has_been_run(self):
+        s = lc.summary(self.log)
+        self.assertIn("Compare", lh.tiles_html(s, None, 1))
+        self.assertIn("+7", lh.tiles_html(s, {"stronger_db": 7.2, "matches": 40}, 1))
+
+    def test_the_notes_name_stations_outside_north_america(self):
+        html = lh.followers_html(self.log, lc.summary(self.log))
+        self.assertIn("KH6DE", html)
+        self.assertIn("W1AAA", html)
+
+
+class LogCheckReportsAndPlaces(unittest.TestCase):
+    """Signal reports in the log, and placing the stations you worked on a map (made-up data, no network)."""
+
+    def log(self):
+        rows = [("W1AAA", "20m", "599", "579", "PA"), ("W2BBB", "20m", "559", "599", "NY"), ("W1AAA", "40m", "579", "599", "PA"),
+                ("VE3CCC", "20m", "-12", "-08", "ON"), ("W4DDD", "15m", "", "", "FL")]
+        return lc.parse_adif("".join(
+            f"<CALL:{len(c)}>{c} <QSO_DATE:8>20261118 <TIME_ON:6>20{i:02d}00 <BAND:{len(b)}>{b} <MODE:2>CW <RST_RCVD:{len(r)}>{r} <RST_SENT:{len(t)}>{t} "
+            f"<STATE:{len(s)}>{s} <EOR>\n" for i, (c, b, r, t, s) in enumerate(rows)))
+
+    def test_the_s_digit_of_a_report(self):
+        self.assertEqual([lc.s_digit(x) for x in ("599", "579", "59", "339")], [9.0, 7.0, 9.0, 3.0])
+        for odd in ("", "-12", "+05", "000", "699", "5", "5999", "abc"):
+            self.assertTrue(np.isnan(lc.s_digit(odd)), odd)
+
+    def test_reports_are_read_from_the_log_both_ways(self):
+        log = self.log()
+        self.assertEqual(list(log["rst_rcvd"]), ["599", "559", "579", "-12", ""])  # what they gave you
+        self.assertEqual(list(log["rst_sent"]), ["579", "599", "599", "-08", ""])  # what you gave them
+
+    def test_the_report_summary_counts_only_usable_reports(self):
+        r = lc.report_summary(self.log())
+        self.assertEqual((r["n"], r["s9"]), (3, 1))
+        self.assertAlmostEqual(r["received"], (9 + 5 + 7) / 3)
+        self.assertAlmostEqual(r["sent"], (7 + 9 + 9) / 3)
+        self.assertEqual(r["weakest"], 5.0)
+
+    def test_a_contact_is_shown_at_the_centre_of_its_grid_square_not_at_the_address(self):
+        lat, lon, grid = lc.snap_to_grid4(42.0123, -87.8456)
+        self.assertEqual(grid, "EN62")
+        self.assertEqual((lat, lon), (42.5, -87.0))   # the middle of EN62: 2 degrees wide, 1 high
+
+    def test_a_lookup_that_only_found_the_country_falls_back_to_the_state(self):
+        guess = (39.8, -98.6, None, "center of United States (approximate - enter a grid for accuracy)")
+        placed = lc.finish_place(guess, "FL", "United States")
+        self.assertEqual((placed["level"], placed["source"]), ("state", "centre of FL"))
+        self.assertEqual((placed["lat"], placed["lon"]), lc.STATE_CENTRES["FL"])
+        self.assertEqual(lc.finish_place(guess, "", "United States")["level"], "country")  # no state to use
+        self.assertEqual(lc.finish_place(guess, "FL", "Venezuela")["level"], "country")   # a state code means nothing outside North America
+        self.assertIsNone(lc.finish_place(None, "", ""))
+
+    def test_an_exact_lookup_is_snapped_and_named_by_its_source(self):
+        placed = lc.finish_place((42.0123, -87.8456, "EN62ab", "FCC (callook.info)"), "IL", "United States")
+        self.assertEqual((placed["level"], placed["source"], placed["grid"]), ("grid", "FCC", "EN62"))
+
+    def places(self):
+        return pd.DataFrame({"lat": [42.5, 40.5], "lon": [-77.0, -75.0], "level": ["grid", "state"], "source": ["FCC", "centre of NY"]},
+                            index=pd.Index(["W1AAA", "W2BBB"], name="call"))
+
+    def test_the_contacts_with_a_place_are_kept_with_their_reports(self):
+        worked = lc.where_worked(self.log(), self.places())
+        self.assertEqual(sorted(worked["call"]), ["W1AAA", "W1AAA", "W2BBB"])   # VE3CCC and W4DDD could not be placed
+        self.assertEqual(list(worked.sort_values("time")["s"]), [9.0, 5.0, 7.0])
+        self.assertIn("grid square", worked["place"].iloc[0])
+
+    def test_the_region_table_sets_contacts_beside_skimmers(self):
+        worked = lc.where_worked(self.log(), self.places())
+        spots = pd.DataFrame({"spotter": ["K1AAA-2", "K1AAA", "K9ZZZ"], "band": "20m", "snr": 10, "time": pd.Timestamp("2026-11-18 20:05")})
+        table = lc.region_table(worked, spots, {"K1AAA-2": (40.0, -75.0), "K9ZZZ": (40.0, -100.0)})
+        self.assertEqual(table.loc["US East"].to_dict(), {"contacts": 3, "stations": 2, "skimmers": 1})  # K1AAA twice is one skimmer
+        self.assertEqual(table.loc["US Central", "contacts"], 0)
+        self.assertEqual(table.loc["US Central", "skimmers"], 1)
+
+    def test_placing_contacts_asks_each_call_once_and_remembers_exact_answers(self):
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(os.environ, {"RBN_CACHE_DIR": folder}):
+            asked = []
+
+            def lookup(call, skimmers=None):
+                asked.append(call)
+                return {"W1AAA": (42.0, -87.8, "EN62", "FCC (callook.info)"), "W4DDD": (39.8, -98.6, None, "center of United States (approximate)")}.get(call)
+
+            seen = []
+            rows = [("W1AAA", "PA", "United States"), ("W4DDD", "FL", "United States"), ("K0NOPE", "", "")]
+            with mock.patch.object(ds, "lookup_callsign_location", lookup):
+                table = ds.load_contact_places(rows, {}, progress=lambda done, total: seen.append((done, total)), workers=1)
+                self.assertEqual(sorted(table.index), ["W1AAA", "W4DDD"])  # K0NOPE could not be placed at all
+                self.assertEqual((table.loc["W1AAA", "level"], table.loc["W4DDD", "level"]), ("grid", "state"))
+                self.assertEqual(seen[-1], (3, 3))
+                asked.clear()
+                ds.load_contact_places(rows, {}, workers=1)
+            self.assertEqual(sorted(asked), ["K0NOPE", "W4DDD"])  # the exact answer for W1AAA came from the disk, the guesses are asked again
+
+    def test_the_map_shows_the_stations_you_worked_coloured_by_report(self):
+        from maps import build_map
+        worked = lc.where_worked(self.log(), self.places())
+        spots = pd.DataFrame({"spotter": ["K1AAA"], "band": "20m", "snr": 12.0, "freq": 14050.0, "time": pd.Timestamp("2026-11-18 20:05")})
+        html = build_map(spots, {"K1AAA": (40.0, -75.0)}, HOME, "DM81wx", "K5OHY", False, "Street", "mi", None, contacts=worked).get_root().render()
+        self.assertIn("Stations you worked", html)
+        self.assertIn("W1AAA", html)
+        self.assertIn("They gave", html)          # the popup lists the reports
+        only = build_map(spots.iloc[0:0], {}, HOME, "DM81wx", "K5OHY", False, "Street", "mi", None, contacts=worked, show_spots=False).get_root().render()
+        self.assertNotIn("SNR (dB)", only)         # no skimmer key when only contacts are shown
+        self.assertIn("Stations you worked", only)
+
+    def test_the_facts_panel_mentions_reports_only_with_enough_of_them(self):
+        log = lc.parse_adif("".join(f"<CALL:5>W{i}AAA <QSO_DATE:8>20261118 <TIME_ON:6>20{i:02d}00 <BAND:3>20m <MODE:2>CW <RST_RCVD:3>599 <RST_SENT:3>579 <EOR>\n"
+                                    for i in range(6)))
+        self.assertIn("S9.0", lh.followers_html(log, lc.summary(log), None, lc.report_summary(log)))
+        few = log.iloc[:3]
+        self.assertNotIn("Operators often send", lh.followers_html(few, lc.summary(few), None, lc.report_summary(few)))
 
 
 if __name__ == "__main__":

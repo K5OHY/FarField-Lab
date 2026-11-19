@@ -10,6 +10,7 @@ from maps import ZOOM_HINT, _single_points, build_map, compute_stats
 from pdfs import single_report_pdf
 from ui_common import BANNER, BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, WSPR_SNR_SCALE, _views
 from views import inputs
+from views.log_view import log_tab
 from world_map import MAX_KM, MIN_CELL, azimuth_map_figure, fit_radius_km
 
 
@@ -171,7 +172,7 @@ def spots_page():
     if wspr and ss.loaded_at is not None:
         st.caption(f":material/schedule: Loaded at {ss.loaded_at:%H:%M} UTC. The newest transmission in it is at "
                    f"{ss.raw['time'].max():%H:%M} UTC. Sent something since? Click **Load spots** again.")
-    tab_map, tab_report = st.tabs([":material/map: Map & direction", ":material/event_note: Session report"])
+    tab_map, tab_report, tab_log = st.tabs([":material/map: Map & direction", ":material/event_note: Session report", ":material/fact_check: Log check"])
     with tab_map:
         stats = compute_stats(spots, locs, home)
         missing = {s for s in spots["spotter"].unique() if skimmer_location(s, locs) is None}
@@ -228,3 +229,5 @@ def spots_page():
                          width="stretch", hide_index=True)
     with tab_report:
         _session_report_view(all_bands, locs, home, units, noun, band_choice)
+    with tab_log:
+        log_tab(ss.raw, locs, home, label, ss.kind, who, view.tiles, units)

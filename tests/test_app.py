@@ -180,8 +180,16 @@ class MySpotsPage(unittest.TestCase):
         self.assertEqual(at.session_state["kind"], "RBN")
         self.assertEqual(at.session_state["day_in"], date(2025, 10, 23))
         self.assertGreater(len(at.session_state["raw"]), 50)
-        self.assertEqual(len(at.tabs), 2)  # Map & direction, Session report
+        self.assertEqual(len(at.tabs), 3)  # Map & direction, Session report, Log check
         self.assertTrue(any("call=K5OHY" in c.value for c in at.sidebar.code))
+
+    def test_the_log_check_tab_asks_for_a_log_and_does_not_break_the_page(self):
+        at = page("spots_page").run()
+        click(at, "Try an example")
+        self.assertEqual(errors(at), [])
+        tab = at.tabs[2]
+        self.assertTrue(any(m.value.startswith("Upload the log of a session") for m in tab.markdown))
+        self.assertEqual([b.label for b in tab.button], [])  # the Compare button only appears once a log is loaded
 
     @needs_network
     def test_a_shared_link_loads_the_spots(self):
