@@ -105,6 +105,26 @@ def _run(log, spots, locs, home, power, label):
     return result
 
 
+def _conditions(log, home, power, label, digest):
+    """The grid of how open each band looked while you were on the air, kept for this log, power and place. It needs only WSPR, so it works
+    on the day of the activation, before RBN has published its file."""
+    key = (digest, float(power), round(home[0], 3), round(home[1], 3))
+    held = st.session_state.get("log_conditions")
+    if held and held["key"] == key:
+        return held["grid"]
+    with st.status(f"Looking at how open each band was near {label}…", expanded=True) as status:
+        try:
+            st.write("Fetching the WSPR stations within 300 miles of you for the hours of the activation…")
+            grid = lc.conditions_grid(log, lambda a, b: load_nearby(home[0], home[1], RADIUS_KM, a, b), home, power)
+        except (WsprError, RuntimeError) as exc:
+            status.update(label="Could not work out the band conditions", state="error")
+            st.error(str(exc))
+            return None
+        status.update(label="Band conditions worked out", state="complete", expanded=False)
+    st.session_state["log_conditions"] = {"key": key, "grid": grid}
+    return grid
+
+
 def _default_band(bands, regions):
     """The index of the band to open on: the one with the most DX contacts, else the first."""
     dx = regions[~regions["region"].isin(lh.NEAR_REGIONS)].groupby("band")["contacts"].sum()
@@ -248,7 +268,7 @@ def log_page():
     tiles_slot.html(lh.CSS + lh.tiles_html(summary, None, len(rep)))
     # The page is laid out in this order whatever order the work finishes in: who followed you, the progress, the session chart, the maps,
     # and last the comparison with RBN and the band conditions page.
-    followers_slot, work, chart_slot, maps_slot, compare_slot = (st.container() for _ in range(5))
+    followers_slot, work, chart_slot, conditions_slot, maps_slot, compare_slot = (st.container() for _ in range(6))
     with followers_slot:
         st.html(lh.CSS + lh.followers_html(log, summary))
         if len(rep) > 24:
@@ -269,6 +289,11 @@ def log_page():
             spots, missing = _rbn_spots(digest, call, days)
     with chart_slot:
         st.html(lh.CSS + lh.afternoon_html(log, spots))
+    with conditions_slot:
+        grid_of_conditions = _conditions(log, home, power, label, digest) if len(days) <= MAX_DAYS else None
+        if grid_of_conditions is not None and len(grid_of_conditions):
+            st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, lc.condition_mode(log),
+                                                _visitor_timezone()))
     result = None
     with work:
         if not cw.empty:

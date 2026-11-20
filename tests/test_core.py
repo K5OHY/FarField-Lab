@@ -1394,6 +1394,93 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual(sorted(table.index), ["DL1ABC", "VK2XYZ", "W1AAA"])
         self.assertEqual((table.loc["DL1ABC", "level"], table.loc["W1AAA", "level"]), ("country", "grid"))
 
+    def cond_log(self, mode="CW", extra_days=False):
+        rows = [("W1AAA", "2000", "20m"), ("W2BBB", "2010", "20m"), ("W3CCC", "2040", "20m"), ("W4DDD", "2105", "15m")]
+        if extra_days:
+            rows.append(("W5EEE", "2005", "20m"))
+        text = "".join(f"<CALL:5>{c} <QSO_DATE:8>{'20261119' if (extra_days and c == 'W5EEE') else '20261118'} <TIME_ON:4>{t} <BAND:3>{b} "
+                       f"<MODE:{len(mode)}>{mode} <EOR>" + chr(10) for c, t, b in rows)
+        return lc.parse_adif(text)
+
+    def cond_wspr(self):
+        """WSPR spots near home on 20m: 30 receivers, half strong and half far below the threshold, heard at 20:10 and 20:40 and 21:10."""
+        recs = []
+        for i in range(30):
+            for t in ("2026-11-18 20:10", "2026-11-18 20:40", "2026-11-18 21:10"):
+                recs.append({"time": pd.Timestamp(t), "tx": "N5TX", "tx_lat": 31.0, "tx_lon": -102.0, "rx": f"RX{i}", "rx_lat": 35.0 + i * 0.1,
+                             "rx_lon": -90.0, "band": "20m", "power": 37.0, "snr": 10.0 if i % 2 == 0 else -30.0})
+        return pd.DataFrame(recs)
+
+    def test_the_conditions_mode_is_the_one_most_contacts_were_made_in(self):
+        self.assertEqual(lc.condition_mode(self.cond_log("CW")), "CW")
+        self.assertEqual(lc.condition_mode(self.cond_log("USB")), "SSB")
+        self.assertEqual(lc.condition_mode(self.cond_log("FT8")), "FT8")
+        self.assertEqual(lc.condition_mode(self.cond_log("RTTY")), "CW")                    # something the page has no threshold for
+
+    def test_a_pause_of_hours_starts_a_new_conditions_picture(self):
+        self.assertEqual(len(lc.condition_panels(self.cond_log())), 1)
+        panels = lc.condition_panels(self.cond_log(extra_days=True))
+        self.assertEqual(len(panels), 2)                                                    # the 19 Nov contact is a day later
+        self.assertEqual(panels[0], (pd.Timestamp("2026-11-18 20:00"), pd.Timestamp("2026-11-18 21:00")))
+
+    def test_the_conditions_grid_counts_receivers_and_contacts_for_each_half_hour(self):
+        asked = []
+        wspr = self.cond_wspr()
+
+        def wspr_for(a, b):
+            asked.append((a, b))
+            return wspr[(wspr["time"] > a) & (wspr["time"] <= b)]
+
+        grid = lc.conditions_grid(self.cond_log(), wspr_for, HOME, 100.0)
+        self.assertEqual(sorted(grid["band"].unique()), ["15m", "20m"])
+        self.assertEqual(list(grid["slot"].unique()), list(pd.date_range("2026-11-18 20:00", "2026-11-18 21:00", freq="30min")))
+        g20 = grid[grid["band"] == "20m"].set_index("slot")
+        self.assertEqual(int(g20.loc[pd.Timestamp("2026-11-18 20:00"), "contacts"]), 2)    # the 20:00 and the 20:10 contact
+        self.assertEqual(int(g20.loc[pd.Timestamp("2026-11-18 20:30"), "contacts"]), 1)
+        self.assertEqual(int(g20.loc[pd.Timestamp("2026-11-18 20:00"), "receivers"]), 30)
+        self.assertAlmostEqual(g20.loc[pd.Timestamp("2026-11-18 20:30"), "share"], 0.5, delta=0.1)   # half of them are strong enough
+        self.assertTrue(grid[grid["band"] == "15m"]["share"].isna().all())                  # no WSPR on 15m: too few to say
+        self.assertTrue(all((b - a) <= pd.Timedelta(hours=lc.FETCH_CHUNK_H) for a, b in asked))   # fetched in chunks, never in one huge query
+
+    def test_the_conditions_notes_compare_each_band_with_itself(self):
+        slots = pd.date_range("2026-11-18 20:00", periods=6, freq="30min")
+        rows = []
+        for band, shares, contacts in (("10m", [0.5, 0.6, 0.9, 0.95, 0.97, 0.97], [8, 0, 0, 0, 0, 0]),
+                                       ("15m", [0.95, 0.93, 0.95, 0.96, 0.94, 0.95], [0, 6, 0, 0, 0, 0]),
+                                       ("20m", [0.42, 0.40, 0.45, 0.44, 0.41, 0.43], [0, 0, 9, 0, 0, 0]),
+                                       ("40m", [0.9, 0.7, 0.6, 0.5, 0.4, 0.3], [0, 0, 0, 0, 0, 0])):
+            for slot, share, n in zip(slots, shares, contacts):
+                rows.append({"panel": 0, "slot": slot, "band": band, "receivers": 50, "good": int(share * 50), "share": share, "contacts": n})
+        notes = lc.conditions_notes(pd.DataFrame(rows))
+        text = " ".join(lead + " " + rest for lead, rest in notes)
+        self.assertIn("15m stayed above 90% the whole time", text)
+        self.assertIn("10m looked better at other times", text)
+        self.assertIn("about 50%", text)                                                    # what it was when you worked it
+        self.assertNotIn("On 15m", text)                                                    # already said to be wide open, so no second line
+        self.assertIn("20m stayed steady. It sat at about 45% the whole time you were on it (9 contacts)", text)
+        self.assertIn("40m was fading", text)
+        self.assertNotIn("nan", text.lower())
+        self.assertEqual(lc.conditions_notes(pd.DataFrame(columns=["panel", "slot", "band", "receivers", "good", "share", "contacts"])), [])
+        one = pd.DataFrame([{"panel": 0, "slot": slots[0], "band": "20m", "receivers": 90, "good": 60, "share": 0.65, "contacts": 5}])
+        self.assertEqual(lc.conditions_notes(one), [])                                      # one box is not enough to call a band steady
+
+    def test_the_conditions_picture_shows_percentages_contacts_and_hatches_thin_boxes(self):
+        slots = pd.date_range("2026-11-18 20:00", periods=2, freq="30min")
+        grid = pd.DataFrame([{"panel": 0, "slot": slots[0], "band": "20m", "receivers": 300, "good": 99, "share": 0.33, "contacts": 12},
+                             {"panel": 0, "slot": slots[1], "band": "20m", "receivers": 300, "good": 120, "share": 0.4, "contacts": 0},
+                             {"panel": 0, "slot": slots[0], "band": "10m", "receivers": 4, "good": 3, "share": float("nan"), "contacts": 2},
+                             {"panel": 0, "slot": slots[1], "band": "10m", "receivers": 30, "good": 29, "share": 0.97, "contacts": 0}])
+        html = lh.conditions_html(grid, [("20m looked weak.", "It was at 33%.")], 75.0, "CW", "America/Chicago")
+        self.assertIn("Band conditions while you were on the air", html)
+        self.assertIn("33%", html)
+        self.assertIn("97%", html)
+        self.assertIn("<i></i>12</em>", html)                                               # the 12 contacts of the first half hour
+        self.assertEqual(html.count('class="cell few"'), 1)                                 # the box with 4 receivers is hatched
+        self.assertIn("14:00 local", html)                                                  # 20:00Z in Chicago
+        self.assertIn("20m looked weak.", html)
+        self.assertNotIn("nan", html.lower())
+        self.assertLess(html.index("20m</div>"), html.index("10m</div>"))                   # the bands run in the order of the grid
+
     def test_a_day_without_an_rbn_file_says_when_it_will_have_one(self):
         utc = lc.rbn_ready_message(["20261120"])
         self.assertIn("20 Nov will be ready after 00:02 UTC on 21 Nov", utc)

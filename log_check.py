@@ -446,3 +446,110 @@ def _regions(log, mode, cells, solid, on_sets, spot_sets):
                      "stations": int(contacts["stations"].get(key, 0)), "on_band": on, "spotted": min(len(spot_sets.get(key, ())), on),
                      "wspr_receivers": int(wspr.get(key, 0)), "page": page.get(key, float("nan"))})
     return pd.DataFrame(rows, columns=["band", "region", "contacts", "cw", "stations", "on_band", "spotted", "wspr_receivers", "page"])
+
+
+# ------------------------------------------------------------------------------------------------- band conditions while you were on the air
+
+CONDITIONS_SLOT_MIN = 30     # one box of the picture
+CONDITIONS_GAP_H = 4         # a pause this long in the log starts a new picture
+MIN_PICTURE_RECEIVERS = 20   # fewer WSPR receivers than this behind a box and it is shown as too thin to say
+FETCH_CHUNK_H = 5            # WSPR is fetched this many hours at a time, so a long activation stays well under the row limit
+STEADY_SPREAD = 0.10         # a band whose share stayed within this (10 points) of itself all evening is called steady
+BIG_CHANGE = 0.15            # a band has risen or fallen by this much (15 points) between the start and the end of the activation
+_MODE_OF = {"CW": "CW", "SSB": "SSB", "USB": "SSB", "LSB": "SSB", "AM": "SSB", "FM": "SSB", "FT8": "FT8", "FT4": "FT8"}
+
+
+def condition_mode(log):
+    """The mode the conditions picture is worked out for: the one most of the contacts were made in, as the conditions page knows it
+    (CW, SSB or FT8), and CW when that is something else."""
+    counts = log["mode"].map(lambda m: _MODE_OF.get(str(m).upper(), "CW")).value_counts()
+    return str(counts.index[0]) if len(counts) else "CW"
+
+
+def condition_panels(log):
+    """The first and last half hour of each stretch of activity in the log, as a list of (first, last), cut at pauses of CONDITIONS_GAP_H hours."""
+    slots = pd.Series(sorted(log["time"].dt.floor(f"{CONDITIONS_SLOT_MIN}min").unique()))
+    new = (slots.diff() > pd.Timedelta(hours=CONDITIONS_GAP_H)).cumsum()
+    return [(g.iloc[0], g.iloc[-1]) for _, g in slots.groupby(new)]
+
+
+def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
+    """How open each band looked while you were on the air: one row per panel, half hour and band with the number of WSPR receivers heard
+    near you, how many of them a signal like yours would have reached (the conditions page's 'good'), their share (nan when fewer than
+    MIN_PICTURE_RECEIVERS stand behind it) and the contacts you made on that band in that half hour. Each half hour uses the hour of WSPR
+    spots up to its end, as the conditions page does. `wspr_for(start, end)` gives the WSPR spots between two times."""
+    mode = mode or condition_mode(log)
+    bands = bands_top_down(log)
+    log = log.assign(slot=log["time"].dt.floor(f"{CONDITIONS_SLOT_MIN}min"))
+    made = log.groupby(["slot", "band"]).size()
+    rows = []
+    for panel, (first, last) in enumerate(condition_panels(log)):
+        start, end = first - timedelta(minutes=LOOKBACK_MIN), last + timedelta(minutes=CONDITIONS_SLOT_MIN)
+        frames, t = [], start
+        while t < end:
+            t2 = min(t + timedelta(hours=FETCH_CHUNK_H), end)
+            part = wspr_for(t, t2)
+            if len(part):
+                frames.append(part[part["band"].isin(bands)])
+            t = t2
+        wspr = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        for slot in pd.date_range(first, last, freq=f"{CONDITIONS_SLOT_MIN}min"):
+            res = (cond.analyze(wspr, home, power_w, mode, (slot + timedelta(minutes=CONDITIONS_SLOT_MIN)).to_pydatetime(), LOOKBACK_MIN,
+                                antenna_db, 3.0) if len(wspr) else None)
+            for band in bands:
+                receivers = good = 0
+                if res is not None and not res["bands"].empty and band in res["bands"].index:
+                    receivers, good = int(res["bands"].loc[band, "Receivers"]), int(res["bands"].loc[band, "Good"])
+                share = good / receivers if receivers >= MIN_PICTURE_RECEIVERS else float("nan")
+                rows.append({"panel": panel, "slot": slot, "band": band, "receivers": receivers, "good": good, "share": share,
+                             "contacts": int(made.get((slot, band), 0))})
+    return pd.DataFrame(rows, columns=["panel", "slot", "band", "receivers", "good", "share", "contacts"])
+
+
+def _pc(x):
+    return f"{x * 100:.0f}%"
+
+
+def conditions_notes(grid, max_lines=6):
+    """What the picture says in plain words, as a list of (lead, rest) pairs. Every line compares a band with itself, or states what a box
+    says, because bands differ in how many far receivers they have and so cannot be fairly set side by side."""
+    g = grid[grid["share"].notna()]
+    if g.empty:
+        return []
+    notes = []
+    when = (lambda t: f"{t:%d %b %H:%M}Z") if g["panel"].nunique() > 1 else (lambda t: f"{t:%H:%M}Z")     # the date too when the log has several days
+    # bands that stayed wide open the whole time they could be judged
+    steady = [b for b, d in g.groupby("band") if len(d) >= 4 and d["share"].min() >= 0.9]
+    steady = sorted(steady, key=lambda b: _rank(b), reverse=True)
+    if steady:
+        names = ", ".join(steady[:-1]) + (" and " if len(steady) > 1 else "") + steady[-1]
+        notes.append((f"{names} stayed above 90% the whole time.", "Nearly every WSPR receiver near you would have heard a signal like yours."))
+    # the bands you spent most contacts on: were you there when it looked best?
+    totals = grid.groupby("band")["contacts"].sum().sort_values(ascending=False)
+    for band in totals.index[:3]:
+        n = int(totals[band])
+        d = g[g["band"] == band]
+        worked = d[d["contacts"] > 0]
+        if n < 5 or worked.empty or len(d) < 3 or band in steady:      # too few boxes to say anything, or already called wide open
+            continue
+        avg = float(np.average(worked["share"], weights=worked["contacts"]))
+        top = d.loc[d["share"].idxmax()]
+        if d["share"].max() - d["share"].min() < STEADY_SPREAD:
+            notes.append((f"{band} stayed steady.", f"It sat at about {_pc(avg)} the whole time you were on it ({n} contacts)."))
+        elif top["share"] - avg >= BIG_CHANGE:
+            notes.append((f"{band} looked better at other times.", f"You worked it at about {_pc(avg)} ({n} contacts); it reached {_pc(top['share'])} in the "
+                                                                   f"half hour from {when(top['slot'])}."))
+        else:
+            notes.append((f"On {band} you were there when it looked its best.", f"{n} contacts at about {_pc(avg)}, and it peaked at {_pc(top['share'])}."))
+    # bands that rose or fell, in the longest stretch of activity
+    if len(g):
+        panel = g.groupby("panel").size().idxmax()
+        moves = []
+        for band, d in g[g["panel"] == panel].sort_values("slot").groupby("band"):
+            if len(d) >= 4:
+                start, end = float(d["share"].iloc[:2].mean()), float(d["share"].iloc[-2:].mean())
+                if abs(end - start) >= BIG_CHANGE:
+                    moves.append((abs(end - start), band, start, end))
+        for _, band, start, end in sorted(moves, reverse=True)[:2]:
+            notes.append((f"{band} was {'improving' if end > start else 'fading'}:", f"from about {_pc(start)} at the start to about {_pc(end)} by the end."))
+    return notes[:max_lines]

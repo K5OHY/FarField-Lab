@@ -75,6 +75,20 @@ CSS = """<style>
 .lc-lad .cd.ln:before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;background:var(--a);opacity:.75}
 .lc-lad .cd.l0:before{left:50%}.lc-lad .cd.l1:before{right:50%}
 .lc-lad .cd i{position:relative;width:13px;height:13px;border-radius:50%;background:var(--b);border:2.2px solid var(--a)}
+.lc-cgw{overflow-x:auto;margin-top:8px}
+.lc-cg{display:grid;grid-template-columns:42px repeat(var(--k),minmax(0,1fr));gap:4px;align-items:stretch;min-width:calc(42px + var(--k) * 44px)}
+.lc-cg.dense .th span{display:none}.lc-cg.dense .th b{font-size:10.5px}.lc-cg.dense .cell .p{font-size:11.5px}
+.lc-cg.dense .cell em{font-size:9px;padding:0 4px 0 3px;right:1px;bottom:1px}
+.lc-cg .th{text-align:center;line-height:1.2}.lc-cg .th b{display:block;font-size:12.5px}.lc-cg .th span{font-size:10.5px;opacity:.6}
+.lc-cg .bl{display:flex;align-items:center;font-weight:700;font-size:13.5px}
+.lc-cg .cell{position:relative;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line)}
+.lc-cg .cell .p{font-size:15px;font-weight:700}
+.lc-cg .cell.few{background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(128,128,128,.28) 5px 6px)}.lc-cg .cell.few .p{opacity:.45;font-weight:500}
+.lc-cg .cell em{position:absolute;right:3px;bottom:2px;font-style:normal;font-size:10.5px;font-weight:700;background:Canvas;color:CanvasText;border-radius:99px;padding:0 6px 0 4px;display:flex;align-items:center;gap:3px;border:1px solid var(--line)}
+.lc-cg .cell em i{display:inline-block;width:7px;height:7px;background:var(--a);transform:rotate(45deg);border:1px solid Canvas}
+.lc-ramp{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:12px 0 4px;font-size:12px;opacity:.8}
+.lc-ramp b{display:inline-block;width:130px;height:9px;border-radius:6px;background:linear-gradient(90deg,rgba(32,178,170,.15),rgba(32,178,170,.95));vertical-align:middle;margin:0 6px}
+.lc-says{margin:12px 0 0;padding-left:20px}.lc-says li{margin:6px 0;font-size:14px}
 .lc-two{display:grid;grid-template-columns:minmax(280px,1.05fr) 1fr;gap:20px;align-items:start}
 .lc-facts{display:grid;gap:10px}.lc-fact{border:1px solid var(--line);border-radius:12px;padding:10px 13px}
 .lc-fact .h{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.65}.lc-fact .b{font-size:14.5px;margin-top:2px}
@@ -115,6 +129,59 @@ def tiles_html(s, overall, repeats):
             + strength
             + _tile(repeats, "--g", "came back on another band", "stations worked on 2 or more bands")
             + '</div></div>')
+
+
+def _teal(share):
+    """A teal that deepens with the share of receivers that would hear you."""
+    return f"rgba(32,178,170,{0.12 + 0.80 * float(share) ** 1.6:.2f})"
+
+
+def conditions_html(grid, notes, power_w, mode="CW", tz_name=None):
+    """The picture of how open each band looked while you were on the air: a box for each band and half hour, shaded by the share of nearby
+    WSPR receivers that would have heard you, with your contacts on top, and the lines that say it in words. `tz_name` (the visitor's time
+    zone) adds the local time under each UTC time."""
+    from zoneinfo import ZoneInfo
+    all_bands = list(grid.drop_duplicates("band")["band"])
+    panels = []
+    for panel, d in grid.groupby("panel"):
+        slots = sorted(d["slot"].unique())
+        by = {(r.band, r.slot): r for r in d.itertuples()}
+        bands = [b for b in all_bands if d.loc[d["band"] == b, "contacts"].sum() > 0 or d.loc[d["band"] == b, "share"].notna().any()]   # no empty rows
+
+        def local(s):
+            try:
+                return f"{pd.Timestamp(s).tz_localize('UTC').astimezone(ZoneInfo(tz_name)):%H:%M}" if tz_name else ""
+            except Exception:
+                return ""
+        head = "<div></div>" + "".join(f'<div class="th"><b>{pd.Timestamp(s):%H:%M}</b>' + (f"<span>{local(s)} local</span>" if local(s) else "") + "</div>"
+                                       for s in slots)
+        cells = []
+        for b in bands:
+            cells.append(f'<div class="bl">{escape(b)}</div>')
+            for s in slots:
+                r = by[(b, s)]
+                pill = f'<em><i></i>{r.contacts}</em>' if r.contacts else ""
+                if np.isnan(r.share):
+                    cells.append(f'<div class="cell few" title="{escape(b)} {pd.Timestamp(s):%H:%M}Z: only {r.receivers} WSPR receivers, too few to say; '
+                                 f'{r.contacts} contacts"><span class="p">&ndash;</span>{pill}</div>')
+                else:
+                    cells.append(f'<div class="cell" style="background:{_teal(r.share)}" title="{escape(b)} {pd.Timestamp(s):%H:%M}Z: {r.good} of {r.receivers} '
+                                 f'WSPR receivers would hear you; {r.contacts} contacts"><span class="p">{pct(r.share)}</span>{pill}</div>')
+        title = f'<p class="sub" style="margin:14px 0 0"><b>{pd.Timestamp(slots[0]):%a %d %b}</b> (UTC)</p>' if grid["panel"].nunique() > 1 else ""
+        dense = " dense" if len(slots) > 10 else ""
+        panels.append(title + f'<div class="lc-cgw"><div class="lc-cg{dense}" style="--k:{len(slots)}">{head}{"".join(cells)}</div></div>')
+    says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(lead)}</b> {escape(rest)}</li>" for lead, rest in notes) + "</ul>") if notes else ""
+    return ('<div class="lc"><div class="lc-card"><h4>Band conditions while you were on the air</h4>'
+            f'<p class="sub">How open each band looked from where you were, at {power_w:g} W using {escape(mode)}: the share of the WSPR receivers heard near you that a '
+            'signal like yours would have reached, in the hour up to the end of each half hour. Your contacts are the amber diamonds.</p>'
+            + "".join(panels)
+            + '<div class="lc-ramp"><span>fewer<b></b>more receivers would hear you</span><span>hatched: too few WSPR receivers to say</span>'
+              '<span><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> contacts in that half hour</span></div>'
+            + says
+            + '<p class="sub" style="margin-top:10px">An estimate from WSPR stations within 300 miles of you, restated to your power. Use it to compare a band with itself over time '
+              'and one hour with another. It is not an exact chance of a contact (the percentages run high), and bands cannot be fairly compared with each other: '
+              'a band with many distant receivers, such as 20m, always shows a lower share.</p>'
+            '</div></div>')
 
 
 def band_table_html(bands, min_contacts=3):
