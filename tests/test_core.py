@@ -1473,17 +1473,16 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual(lc._note(2, 0.9, 0.0), ("", "neutral"))                           # two contacts, nobody spotted: too little to say
         self.assertEqual(lc._note(3, 0.9, 0.0), ("Worked, barely spotted", "warn"))        # three is enough
 
-    def test_contacts_are_coloured_by_the_bands_they_were_worked_on(self):
+    def test_contacts_are_coloured_by_report_and_ringed_when_they_followed_you(self):
         from maps import build_map
         worked = lc.where_worked(self.log(), self.places())
         worked = worked.assign(bands_worked=worked["call"].map({"W1AAA": 3, "W2BBB": 1}))
         none = pd.DataFrame({"spotter": [], "band": [], "snr": [], "freq": [], "time": pd.to_datetime([])})
-        html = build_map(none, {}, HOME, "DM81wx", "K5OHY", False, "Street", "mi", None, contacts=worked,
-                         show_spots=False, contact_paths=False).get_root().render()
-        self.assertIn("#c0392b", html)                                                      # three or more bands
-        self.assertIn("#8a8f98", html)                                                      # one band
-        self.assertIn("worked on 3 bands", html)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        ringed = build_map(none, {}, HOME, "DM81wx", "K5OHY", False, "Street", "mi", None, contacts=worked, show_spots=False,
+                           contact_paths=False).get_root().render()
+        plain = build_map(none, {}, HOME, "DM81wx", "K5OHY", False, "Street", "mi", None, contacts=worked.drop(columns="bands_worked"),
+                          show_spots=False, contact_paths=False).get_root().render()
+        self.assertEqual(ringed.count("0 0 0 2.5px #111"), 1)                               # only W1AAA (three bands) has the ring
+        self.assertEqual(plain.count("0 0 0 2.5px #111"), 0)                                # no ring when the log does not say
+        self.assertIn("#8b0000", ringed)                                                    # the colour is still the report (S9 is dark red)
+        self.assertIn("worked on 3 bands", ringed)

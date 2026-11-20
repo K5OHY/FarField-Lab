@@ -185,7 +185,8 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     left.caption(f"{heard['spotter'].nunique()} skimmers between {lo:%H:%M}Z and {hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
                  if len(heard) else f"No RBN spots on {pick} while you were working it.")
     right.caption(f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
-                  + ". Grey: worked on this band only. Amber: on two bands. Red: on three or more. Click one for the contacts. "
+                  + ". Colour is the report they gave you, from weak (green) to strong (red), grey where the log has none. "
+                    "A black ring marks a station that worked you on more than one band. Click one for the contacts. "
                     "Each is at the centre of its grid square, state or country.")
 
 
