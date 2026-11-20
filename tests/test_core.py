@@ -1247,7 +1247,7 @@ class LogCheckPictures(unittest.TestCase):
 
     def test_the_tiles_ask_for_the_comparison_until_it_has_been_run(self):
         s = lc.summary(self.log)
-        self.assertIn("once the comparison finishes", lh.tiles_html(s, None, 1))
+        self.assertIn("from the RBN comparison below", lh.tiles_html(s, None, 1))
         self.assertIn("+7", lh.tiles_html(s, {"stronger_db": 7.2, "matches": 40}, 1))
 
     def test_the_notes_name_stations_outside_north_america(self):
@@ -1361,6 +1361,15 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual(asked, ["W1AAA"])                                                  # only the American station was looked up
         self.assertEqual(sorted(table.index), ["DL1ABC", "VK2XYZ", "W1AAA"])
         self.assertEqual((table.loc["DL1ABC", "level"], table.loc["W1AAA", "level"]), ("country", "grid"))
+
+    def test_a_day_without_an_rbn_file_says_when_it_will_have_one(self):
+        utc = lc.rbn_ready_message(["20261120"])
+        self.assertIn("20 Nov will be ready after 00:02 UTC on 21 Nov", utc)
+        self.assertNotIn("(", utc)                                                          # no local time when the zone is not known
+        here = lc.rbn_ready_message(["20261120"], "America/Chicago")
+        self.assertIn("(Fri 20 Nov, 6:02 PM CST)", here)                                     # the evening before, in the visitor's own time
+        self.assertIn("21 Nov", lc.rbn_ready_message(["20261119", "20261120"]))              # the latest missing day decides
+        self.assertNotIn("(", lc.rbn_ready_message(["20261120"], "Not/AZone"))              # an unknown zone name is ignored
 
     def test_a_map_can_leave_out_the_dotted_paths_and_frame_the_points_it_is_given(self):
         from maps import build_map

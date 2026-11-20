@@ -12,7 +12,8 @@ What is compared, band by band, for the stretches of the log where you were on a
 import io
 import re
 import zipfile
-from datetime import timedelta
+from datetime import timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -94,6 +95,24 @@ def parse_adif(text):
     if not rows:
         raise ValueError("No contacts with a call, a date, a time and a band were found in that file.")
     return pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+
+
+RBN_FILE_DELAY_MIN = 2     # RBN builds a UTC day's history file at 00:02 UTC the next day (seen on the files of 16 to 19 Nov 2026)
+
+
+def rbn_ready_message(days, tz_name=None):
+    """Why a day of the log has no RBN file yet and when it will have one, in a sentence. `days` are YYYYMMDD strings (the latest one decides
+    the time); `tz_name` is the visitor's time zone (such as America/Chicago), used to say the time where they are as well as in UTC."""
+    last = pd.Timestamp(max(days))
+    ready = last + pd.Timedelta(days=1, minutes=RBN_FILE_DELAY_MIN)
+    when = f"{ready:%H:%M} UTC on {ready:%d %b}"
+    try:
+        local = ready.tz_localize(timezone.utc).astimezone(ZoneInfo(tz_name)) if tz_name else None
+    except Exception:   # an unknown zone name: say it in UTC only
+        local = None
+    here = f" ({local:%a %d %b, %I:%M %p}".replace(" 0", " ") + f" {local:%Z})" if local is not None else ""
+    return (f"RBN makes each UTC day's file just after the day ends, so {last:%d %b} will be ready after {when}{here}. "
+            "Come back then, and this log will be compared.")
 
 
 def log_origin(log):

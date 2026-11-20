@@ -38,6 +38,14 @@ def _where(grid, call, skimmers):
     return found[0], found[1], f"{found[2] or 'near ' + call} (where {call} is registered)"
 
 
+def _visitor_timezone():
+    """The visitor's time zone name from their browser, or None when it is not known."""
+    try:
+        return st.context.timezone
+    except Exception:
+        return None
+
+
 def _rbn_spots(raw_key, call, days):
     """Your RBN spots for the log's days, kept for this log and callsign. Returns (spots, the days RBN has no file for)."""
     saved = st.session_state.get("log_spots")
@@ -51,7 +59,8 @@ def _rbn_spots(raw_key, call, days):
                 frames.append(download_rbn_day(day, call))
             except RuntimeError:
                 missing.append(day)
-        status.update(label="RBN spots read", state="complete", expanded=False)
+        status.update(label="RBN spots read" if len(missing) < len(days) else "RBN has no file for this log yet",
+                      state="complete" if len(missing) < len(days) else "error", expanded=False)
     spots = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     st.session_state["log_spots"] = {"key": (raw_key, call), "spots": spots, "missing": missing}
     return spots, missing
@@ -227,11 +236,14 @@ def log_page():
         spots, missing = _rbn_spots(digest, call, days)
     result = None
     if not cw.empty:
-        for day in missing:
-            st.caption(f"RBN has no file for {day[:4]}-{day[4:6]}-{day[6:]} yet, so that day is left out of the comparison.")
+        if missing:
+            when = lc.rbn_ready_message(missing, _visitor_timezone())
+            names = ", ".join(f"{pd.Timestamp(d):%d %b}" for d in missing)
+            if len(missing) < len(days):
+                st.caption(f"RBN has no file for {names} yet, so that part of the log is left out of the comparison. {when}")
         loaded = log[~log["time"].dt.strftime("%Y%m%d").isin(missing)]
         if loaded[loaded["mode"] == "CW"].empty:
-            st.warning("RBN has no file for any day of this log yet. Try again a day later.")
+            st.warning(f"RBN has no file for {names} yet. {when} The facts from the log alone are below.")
         elif spots.empty:
             st.warning(f"RBN has no spots for {call} on {'that day' if len(days) == 1 else 'those days'}. Check the callsign above: it must "
                        "match what you sent (a /P or /M counts). The facts below come from the log alone.")

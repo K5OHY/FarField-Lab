@@ -82,7 +82,7 @@ Your location comes from the grid you typed, else the RBN skimmer list, else the
 
 ### Log check
 
-Open **Log check** in the menu and upload an ADIF file (most logging programs can export one). Everything else comes from the log: your callsign and grid square are filled in from it (change them if they are wrong), and the days are read from its dates. The page then downloads your RBN spots for those days and fetches the WSPR picture on its own. The only thing it asks you for is the power you ran, which a log does not say. The log is used for that visit only and is not saved. A log of up to four days is compared.
+Open **Log check** in the menu and upload an ADIF file (most logging programs can export one). Everything else comes from the log: your callsign and grid square are filled in from it (change them if they are wrong), and the days are read from its dates. The page then downloads your RBN spots for those days and fetches the WSPR picture on its own. The only thing it asks you for is the power you ran, which a log does not say. The log is used for that visit only and is not saved. A log of up to four days is compared. RBN makes each UTC day's file at 00:02 UTC the next day, so a log works from then on; before that the page says when it will be ready and shows the facts from the log alone.
 
 - **From the log alone:** contacts, stations, states, contacts per hour, your busiest hour, and the stations that came back on another band.
 - **A picture of the session:** one lane per band, in the order you used them. Each contact is a block, stacked in 2 minute slots, with the RBN spots for the same slots underneath.
