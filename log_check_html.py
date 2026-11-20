@@ -100,7 +100,7 @@ def tiles_html(s, overall, repeats):
     if s["states"]:
         where += f" · {s['states']} states or provinces"
     if overall is None:
-        strength = _tile("–", "--a", "stronger than a typical station", "press <b>Compare</b> to work this out")
+        strength = _tile("–", "--a", "stronger than a typical station", "worked out once the comparison finishes")
     elif np.isnan(overall["stronger_db"]):
         strength = _tile("–", "--a", "stronger than a typical station", f"too few receivers matched ({overall['matches']})")
     else:

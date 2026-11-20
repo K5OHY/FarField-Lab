@@ -89,10 +89,20 @@ def parse_adif(text):
             mode = f["SUBMODE"].upper()
         rows.append({"call": f["CALL"].upper(), "time": when, "band": band, "mode": mode, "state": f.get("STATE", "").upper(),
                      "country": f.get("COUNTRY", ""), "cont": f.get("CONT", "").upper(), "pota_ref": f.get("POTA_REF", ""),
-                     "rst_sent": f.get("RST_SENT", ""), "rst_rcvd": f.get("RST_RCVD", "")})
+                     "rst_sent": f.get("RST_SENT", ""), "rst_rcvd": f.get("RST_RCVD", ""),
+                     "station": (f.get("STATION_CALLSIGN") or f.get("OPERATOR") or "").upper(), "my_grid": f.get("MY_GRIDSQUARE", "")})
     if not rows:
         raise ValueError("No contacts with a call, a date, a time and a band were found in that file.")
     return pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+
+
+def log_origin(log):
+    """(callsign, grid) the log says it was made with: the most common station callsign and the most common grid square of the operator,
+    or an empty string for either when the log does not carry it (some logging programs leave them out)."""
+    def common(column):
+        values = log[column][log[column] != ""] if column in log else []
+        return str(values.mode().iloc[0]) if len(values) else ""
+    return common("station"), common("my_grid")
 
 
 # ------------------------------------------------------------------------------------------------- facts from the log alone

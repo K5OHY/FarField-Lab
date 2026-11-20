@@ -11,8 +11,8 @@ import streamlit as st
 import disk_cache
 import example_data
 from conditions import fetch_nearby
-from log_check import finish_place, listening_from_zip
-from rbn_data import get_band, load_skimmers, lookup_callsign_location, maidenhead_to_latlon, refresh_skimmer_cache
+from log_check import _NORTH_AMERICA, finish_place, listening_from_zip
+from rbn_data import country_location, get_band, load_skimmers, lookup_callsign_location, maidenhead_to_latlon, refresh_skimmer_cache
 from wspr_data import clean_callsign, fetch_listening, fetch_wspr_spots
 
 
@@ -189,15 +189,32 @@ def _found(call, skimmers):
     return found
 
 
-def load_contact_places(rows, skimmers, progress=None, workers=4):
+def _place_without_lookup(call, state, country):
+    """A contact the FCC and HamDB cannot know about (the log says it is outside North America) at the centre of its country, or None.
+    Asking those two services about a European callsign only costs the time of two failed requests."""
+    guess = country_location(call)
+    return finish_place((guess[0], guess[1], None, f"center of {guess[2]}") if guess else None, state, country)
+
+
+def load_contact_places(rows, skimmers, progress=None, workers=6):
     """Where each station in a log was, as a table indexed by call (lat, lon, level, source, grid). `rows` is a list of
     (call, state, country). Exact answers are shown at the centre of the 4 character grid square, a miss falls back to the centre of
-    the state in the log, and a call that cannot be placed at all is left out. A few lookups run at once; `progress(done, total)` is
-    called as they finish."""
+    the state in the log, and a call that cannot be placed at all is left out. Stations the log puts outside North America are placed at
+    the centre of their country without a lookup. A few lookups run at once; `progress(done, total)` is called as they finish."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     done, out = 0, {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_found, call, skimmers): (call, state, country) for call, state, country in rows}
+        futures = {}
+        for call, state, country in rows:
+            if country in _NORTH_AMERICA:
+                futures[pool.submit(_found, call, skimmers)] = (call, state, country)
+            else:
+                placed = _place_without_lookup(call, state, country)
+                if placed:
+                    out[call] = placed
+                done += 1
+        if progress and done:
+            progress(done, len(rows))
         for future in as_completed(futures):
             call, state, country = futures[future]
             try:

@@ -1,4 +1,5 @@
-"""The Log check tab on My spots: upload a contact log (ADIF) and see it beside your RBN spots and the WSPR stations near you."""
+"""The Log check page: upload a contact log (ADIF) and the callsign, place and days come from the log. The RBN spots and the WSPR stations
+near you are fetched, and the log is set beside them."""
 import hashlib
 
 import pandas as pd
@@ -6,18 +7,54 @@ import streamlit as st
 
 import log_check as lc
 import log_check_html as lh
-from data_sources import load_contact_places, load_nearby, load_rbn_listening
-from maps import build_map
-from ui_common import KM_PER_MILE
+from compare_stats import locate as skimmer_location
+from data_sources import download_rbn_day, load_contact_places, load_nearby, load_rbn_listening, skimmer_data
+from maps import build_map, great_circle
+from rbn_data import lookup_callsign_location, maidenhead_to_latlon
+from ui_common import BANNER, KM_PER_MILE
 from wspr_data import WsprError
 
 RADIUS_KM = 300 * KM_PER_MILE   # the WSPR stations counted as "near you", as on the Band conditions page
 MAX_LOG_BYTES = 5_000_000
+MAX_DAYS = 4                    # each day is a large file to read, so a log is limited to a few days
 
 
-def _signature(raw, power, spots):
-    """What a finished comparison was made from, so a new file, a new power or new spots start again."""
-    return (hashlib.sha1(raw).hexdigest(), float(power), len(spots), str(spots["time"].min()), str(spots["time"].max()))
+def _signature(raw, power, call, grid, spots):
+    """What a finished comparison was made from, so a new file, power, callsign, place or spots start again."""
+    return (hashlib.sha1(raw).hexdigest(), float(power), call, grid, len(spots), str(spots["time"].min()), str(spots["time"].max()))
+
+
+def _where(grid, call, skimmers):
+    """(lat, lon, label) of where you operated: the grid square when there is one, otherwise where the callsign is registered."""
+    if grid:
+        try:
+            lat, lon = maidenhead_to_latlon(grid)
+        except ValueError:
+            raise RuntimeError(f"\"{grid}\" is not a grid square. Use something like DM81wx, or leave it empty to use where the callsign is registered.")
+        return lat, lon, grid
+    found = lookup_callsign_location(call, skimmers)
+    if not found:
+        raise RuntimeError(f"The log does not say where you were and no location was found for {call}. Type your grid square above.")
+    return found[0], found[1], f"{found[2] or 'near ' + call} (where {call} is registered)"
+
+
+def _rbn_spots(raw_key, call, days):
+    """Your RBN spots for the log's days, kept for this log and callsign. Returns (spots, the days RBN has no file for)."""
+    saved = st.session_state.get("log_spots")
+    if saved and saved["key"] == (raw_key, call):
+        return saved["spots"], saved["missing"]
+    frames, missing = [], []
+    with st.status(f"Reading the Reverse Beacon Network files for {call}…", expanded=True) as status:
+        for i, day in enumerate(days):
+            st.write(f"Day {i + 1} of {len(days)}: {day[:4]}-{day[4:6]}-{day[6:]} (the first time a day can take a minute)")
+            try:
+                frames.append(download_rbn_day(day, call))
+            except RuntimeError:
+                missing.append(day)
+        status.update(label="RBN spots read", state="complete", expanded=False)
+    spots = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
+    st.session_state["log_spots"] = {"key": (raw_key, call), "spots": spots, "missing": missing}
+    return spots, missing
 
 
 def _run(log, spots, locs, home, power, label):
@@ -39,112 +76,182 @@ def _run(log, spots, locs, home, power, label):
     return result
 
 
+def _default_band(bands, regions):
+    """The index of the band to open on: the one with the most DX contacts, else the first."""
+    dx = regions[~regions["region"].isin(lh.NEAR_REGIONS)].groupby("band")["contacts"].sum()
+    return int(bands.index(dx.idxmax())) if len(dx) and dx.max() > 0 and dx.idxmax() in bands else 0
+
+
 def _regions_section(result):
     """A band by region: pick a band, see each region's contacts, skimmers and the page's figure. It opens on the band with the most DX."""
     shown = result["bands"][result["bands"]["contacts"] >= 3]      # the bands that have a row in the table above
     bands, regions = list(shown["band"]), result["regions"]
     if not bands or regions.empty:
         return
-    dx = regions[~regions["region"].isin(lh.NEAR_REGIONS)].groupby("band")["contacts"].sum()
-    first = int(bands.index(dx.idxmax())) if len(dx) and dx.max() > 0 and dx.idxmax() in bands else 0
     st.markdown("#### A band by region")
-    pick = st.radio("Band", bands, index=first, horizontal=True, key="log_region_band_" + "_".join(bands), label_visibility="collapsed")
+    pick = st.radio("Band", bands, index=_default_band(bands, regions), horizontal=True, key="log_region_band_" + "_".join(bands),
+                    label_visibility="collapsed")
     st.html(lh.CSS + lh.regions_html(regions, pick))
 
 
-def _contacts_section(log, summary, spots, locs, home, label, who, tiles, units, signature):
-    """The map of who heard you and who you worked, once the contacts have been placed, and a table of where each was."""
-    st.markdown("#### Map: who heard you and who you worked")
+def _places_for(rows, digest, skimmers):
+    """Where the stations on one band were, looked up only for the ones not looked up before. Kept for this log, so each station is
+    only looked up once however often you change band."""
     saved = st.session_state.get("log_places")
-    places = saved["places"] if saved and saved["signature"] == signature[0] else None
-    if places is None:
-        st.caption("Each station in the log is looked up at the FCC (callook.info) and HamDB, the way your own callsign is, and shown at the centre "
-                   "of its grid square, not at an address. The first time it takes a minute or two; the answers are remembered.")
-        if st.button("Place my contacts on the map", key="log_place"):
-            calls = log.drop_duplicates("call")[["call", "state", "country"]]
-            bar = st.progress(0.0, text="Looking up your contacts\u2026")
-            found = load_contact_places(list(calls.itertuples(index=False, name=None)), locs,
-                                        progress=lambda done, total: bar.progress(done / total, text=f"Looked up {done} of {total}\u2026"))
-            bar.empty()
-            st.session_state["log_places"] = {"signature": signature[0], "places": found}
-            st.rerun()
-        return
-    worked = lc.where_worked(log, places)
-    missing = log["call"].nunique() - worked["call"].nunique()
-    window = spots[(spots["time"] >= log["time"].min() - pd.Timedelta(minutes=10)) & (spots["time"] <= log["time"].max() + pd.Timedelta(minutes=10))]
-    show = st.radio("Show on the map", ["Both", "Skimmers that spotted you", "Stations you worked"], horizontal=True, key="log_map_show")
-    contacts_on, spots_on = show != "Skimmers that spotted you", show != "Stations you worked"
-    levels = places["level"].value_counts()
-    tail = f". The skimmers are those that spotted you from {window['time'].min():%H:%M}Z to {window['time'].max():%H:%M}Z." if len(window) else "."
-    st.caption(f"{worked['call'].nunique()} stations placed ({levels.get('grid', 0)} from a lookup, {levels.get('state', 0)} at the centre of "
-               f"their state, {levels.get('country', 0)} at the centre of their country)" + (f"; {missing} could not be placed" if missing else "") + tail)
-    if spots_on and window.empty:
-        st.warning("No RBN spots in the hours of this log, so only the stations you worked are shown.")
-        spots_on = False
-    m = build_map(window if spots_on else spots.iloc[0:0], locs, home, label, who, False, tiles, units, None, title=f"{who} \u00b7 log and spots",
-                  contacts=worked if contacts_on else None, show_spots=spots_on)
-    st.iframe(m.get_root().render(), height=640)
-    st.caption("Diamonds are the stations you worked, coloured by the report they gave you; click one for each contact and the reports. "
-               "Dots are the skimmers, coloured by SNR. Dotted lines are paths to the stations you worked.")
-    table = lc.region_table(worked, window, locs)
-    if len(table):
-        st.dataframe(table.rename(columns={"contacts": "Contacts", "stations": "Stations worked", "skimmers": "Skimmers that spotted you"}),
-                     width="stretch")
+    if not saved or saved["digest"] != digest:
+        saved = {"digest": digest, "places": pd.DataFrame(columns=["lat", "lon", "source", "level", "grid"]), "tried": set()}
+    todo = [r for r in rows if r[0] not in saved["tried"]]
+    if todo:
+        bar = st.progress(0.0, text="Looking up where your contacts were…")
+        found = load_contact_places(todo, skimmers, progress=lambda done, total: bar.progress(done / total, text=f"Looked up {done} of {total}…"))
+        bar.empty()
+        if len(found):
+            saved["places"] = pd.concat([saved["places"], found]) if len(saved["places"]) else found
+        saved["tried"] |= {r[0] for r in todo}
+    st.session_state["log_places"] = saved
+    return saved["places"]
 
 
-def log_tab(spots, locs, home, label, kind, who="", tiles="Street", units="mi"):
-    """The tab. `spots` are the loaded RBN spots (all bands), `locs` the skimmer locations, `home` where you were."""
-    st.markdown("Upload the log of a session (an ADIF file from your logging program) to set it beside the skimmers that heard you and "
-                "the WSPR stations around you. Your log is used for this visit only and is not saved or shared.")
-    if kind == "WSPR":
-        st.info(icon=":material/info:", body="This works with Reverse Beacon Network spots, which only hear CW. Load RBN spots for the day of the "
-                                             "log, then come back here.")
+def _view_points(home, spots, worked, locs):
+    """The points both maps are framed on, so they show the same area."""
+    points = []
+    for spotter in spots["spotter"].unique():
+        loc = skimmer_location(spotter, locs)
+        if loc:
+            points.append(great_circle(home, loc)[-1])
+    for lat, lon in zip(worked["lat"], worked["lon"]):
+        points.append(great_circle(home, (float(lat), float(lon)))[-1])
+    return points
+
+
+def _maps_section(log, result, spots, locs, home, label, who, tiles, units, digest):
+    """Two maps of one band, side by side and framed alike: the skimmers that spotted you, and the stations you worked. Shown on request,
+    because placing the stations means looking each one up."""
+    st.markdown("#### Maps: who heard you and who you worked")
+    if not st.toggle("Show the maps", key="log_maps_on",
+                     help="Looks up where each station you worked is, one band at a time. The answers are remembered, so a band is only slow the first time."):
+        st.caption("Two maps of one band, side by side: the skimmers that spotted you on the left, the stations you worked on the right. "
+                   "Switch this on to see them. It looks up where your contacts were, one band at a time.")
         return
+    shown = set(result["bands"]["band"])
+    bands = [b for b in lc.bands_top_down(log) if b in shown] or lc.bands_top_down(log)
+    first = _default_band(bands, result["regions"])
+    c1, c2 = st.columns([3, 2])
+    pick = c1.radio("Band", bands, index=first, horizontal=True, key="log_map_band_" + "_".join(bands), label_visibility="collapsed")
+    cw_only = c2.checkbox("CW contacts only", value=True, key="log_map_cw",
+                          help="Skimmers only hear CW, so the CW contacts are the ones to hold against the left map. Untick to see every contact.")
+    mine = log[log["band"] == pick]
+    shown_log = mine[mine["mode"] == "CW"] if cw_only else mine
+    rows = list(shown_log.drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
+    places = _places_for(rows, digest, locs)
+    worked = lc.where_worked(shown_log, places)
+    lo, hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
+    heard = spots[(spots["band"] == pick) & (spots["time"] >= lo) & (spots["time"] <= hi)]
+    view = _view_points(home, heard, worked, locs)
+    left, right = st.columns(2)
+    with left:
+        st.markdown(f"**Skimmers that spotted you on {pick}**")
+        st.caption(f"{heard['spotter'].nunique()} skimmers between {lo:%H:%M}Z and {hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
+                   if len(heard) else f"No RBN spots on {pick} while you were working it.")
+        st.iframe(build_map(heard, locs, home, label, who, False, tiles, units, None, title=f"{who} · heard on {pick}", view=view, show_legend=False)
+                  .get_root().render(), height=520)
+    with right:
+        st.markdown(f"**Stations you worked on {pick}**")
+        missing = shown_log["call"].nunique() - worked["call"].nunique()
+        st.caption(f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
+                   + ". Diamonds are coloured by the report they gave you; click one for the details. Each is at the centre of its grid square, "
+                     "state or country.")
+        st.iframe(build_map(spots.iloc[0:0], locs, home, label, who, False, tiles, units, None, title=f"{who} · worked on {pick}",
+                            contacts=worked if len(worked) else None, show_spots=False, contact_paths=False, view=view, show_legend=False)
+                  .get_root().render(), height=520)
+
+
+def log_page():
+    """The page."""
+    if BANNER.exists():
+        st.image(str(BANNER), width="stretch")
+    else:
+        st.title("FarField Lab")
+    st.markdown('<p class="subtitle">Upload the log of a session and see it beside the skimmers that heard you and the WSPR stations '
+                'around you. The callsign, the place and the days come from the log.</p>', unsafe_allow_html=True)
+    skimmers, _ = skimmer_data()
     file = st.file_uploader("Your log (ADIF file)", type=["adi", "adif"], key="log_file",
-                            help="Most logging programs can export one. Contacts need a call, date, time and band.")
-    if file is None:
+                            help="Most logging programs can export one. Contacts need a call, date, time and band. "
+                                 "The log is used for this visit only and is not saved or shared.")
+    if file is not None:
+        st.session_state["log_saved"] = (file.name, file.getvalue())
+    saved = st.session_state.get("log_saved")
+    if saved is None:
+        st.info(icon=":material/upload_file:", body="Upload an ADIF log to begin. Nothing else needs to be entered except the power you ran.")
         return
-    raw = file.getvalue()
+    name, raw = saved
+    if file is None:
+        st.caption(f"Showing {name}. Upload another file to replace it.")
     if len(raw) > MAX_LOG_BYTES:
-        st.error("That file is larger than 5 MB. Export just the day you want to look at.")
+        st.error("That file is larger than 5 MB. Export just the day or two you want to look at.")
         return
     try:
         log = lc.parse_adif(raw.decode("utf-8", errors="replace"))
     except ValueError as exc:
         st.error(str(exc))
         return
+    digest = hashlib.sha1(raw).hexdigest()
     cw = log[log["mode"] == "CW"]
-    summary = lc.summary(log)
-    rep = lc.repeat_stations(log)
-    c1, c2 = st.columns([1, 3])
-    power = c1.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
+    summary, rep = lc.summary(log), lc.repeat_stations(log)
+    call0, grid0 = lc.log_origin(log)
+
+    c1, c2, c3 = st.columns(3)
+    call = c1.text_input("Your callsign", value=call0, key=f"log_call_{digest[:10]}",
+                         help="Taken from the log. RBN spots are looked up under this callsign, exactly as it was sent (K5OHY/P is not K5OHY).").strip().upper()
+    grid = c2.text_input("Where you operated (grid square)", value=grid0, key=f"log_grid_{digest[:10]}",
+                         help="Taken from the log. Leave it empty to use where your callsign is registered.").strip()
+    power = c3.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
                             help="A log does not say. It is used to restate the WSPR stations' signals to your power, so enter what you ran.")
-    c2.caption(f":material/location_on: Taken from the place in the sidebar: {label}. If you operated somewhere else, put that grid in "
-               "the sidebar and click **Load spots** again. The comparison uses the CW contacts, because RBN only hears CW and RTTY.")
-    signature = _signature(raw, power, spots)
-    saved = st.session_state.get("log_result")
-    result = saved["result"] if saved and saved["signature"] == signature else None
-    st.html(lh.CSS + lh.tiles_html(summary, result["overall"] if result else None, len(rep)))
+    if not call:
+        st.warning("The log does not say which callsign it is for. Type yours above.")
+        return
+    try:
+        lat, lon, label = _where(grid, call, skimmers)
+    except RuntimeError as exc:
+        st.error(str(exc))
+        return
+    home = (lat, lon)
+    units, tiles = st.session_state.get("units_in", "mi"), "Street"
+
+    tiles_slot = st.empty()
+    tiles_slot.html(lh.CSS + lh.tiles_html(summary, None, len(rep)))
     if cw.empty:
         st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "
                                              "The facts below come from the log alone.")
+    days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
+    if len(days) > MAX_DAYS and not cw.empty:
+        st.warning(f"This log spans {len(days)} days. Each day is a large file to read, so only logs of up to {MAX_DAYS} days are compared. "
+                   "Export a shorter stretch.")
+        cw = cw.iloc[0:0]
+    if cw.empty:
+        spots, missing = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), []
     else:
-        spot_days = set(spots["time"].dt.date)
-        loaded = log[log["time"].dt.date.isin(spot_days)]
-        on_loaded = loaded[loaded["mode"] == "CW"]
-        if on_loaded.empty:
-            st.warning("None of the CW contacts are on a day you have loaded spots for. Load spots for "
-                       f"{cw['time'].min():%d %b %Y} and come back.")
+        spots, missing = _rbn_spots(digest, call, days)
+    result = None
+    if not cw.empty:
+        for day in missing:
+            st.caption(f"RBN has no file for {day[:4]}-{day[4:6]}-{day[6:]} yet, so that day is left out of the comparison.")
+        loaded = log[~log["time"].dt.strftime("%Y%m%d").isin(missing)]
+        if loaded[loaded["mode"] == "CW"].empty:
+            st.warning("RBN has no file for any day of this log yet. Try again a day later.")
+        elif spots.empty:
+            st.warning(f"RBN has no spots for {call} on {'that day' if len(days) == 1 else 'those days'}. Check the callsign above: it must "
+                       "match what you sent (a /P or /M counts). The facts below come from the log alone.")
         else:
-            if len(on_loaded) < len(cw):
-                st.caption(f"{len(cw) - len(on_loaded)} CW contacts are on days without loaded spots and are left out of the comparison.")
-            if st.button("Compare with RBN and WSPR", type="primary", key="log_compare",
-                         help="Fetches the WSPR stations near you for each stretch on a band. It can take a minute or two."):
-                fresh = _run(loaded, spots, locs, home, power, label)
-                if fresh is not None:
-                    st.session_state["log_result"] = {"signature": signature, "result": fresh}
-                    st.rerun()
+            signature = _signature(raw, power, call, grid, spots)
+            held = st.session_state.get("log_result")
+            result = held["result"] if held and held["signature"] == signature else None
+            if result is None:
+                result = _run(loaded, spots, skimmers, home, power, label)
+                if result is not None:
+                    st.session_state["log_result"] = {"signature": signature, "result": result}
     if result is not None:
+        tiles_slot.html(lh.CSS + lh.tiles_html(summary, result["overall"], len(rep)))
         st.html(lh.CSS + lh.band_table_html(result["bands"]))
         o = result["overall"]
         notes = [f"Page and skimmers: in regions with at least {lc.cond.THIN} WSPR receivers, the page's chance averaged {lh.pct(o['page'])} "
@@ -154,7 +261,7 @@ def log_tab(spots, locs, home, label, kind, who="", tiles="Street", units="mi"):
                  f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
         st.caption(" ".join(n for n in notes if n))
         _regions_section(result)
-    _contacts_section(log, summary, spots, locs, home, label, who, tiles, units, (signature[0],))
+        _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
     st.html(lh.CSS + lh.afternoon_html(log, spots))
     st.html(lh.CSS + lh.followers_html(log, summary, result["bands"] if result else None, lc.report_summary(log)))
     st.caption(f"\"Stronger than a typical station\" sets the skimmers' reports against the WSPR stations near you, restated to your power. "

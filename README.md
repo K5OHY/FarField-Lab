@@ -39,7 +39,7 @@ See where your signal is heard, how strong it is, and how conditions change. Map
 **Just looking? Open an example.** The Compare page opens with six real tests, each set up the way it was run and each labelled with how its antennas were switched:
 
 - **Switched after every transmission:** a 40m loop against a 20m dipole, 12 transmissions, and a quarter-wave vertical against a 2 element vertical on 1 November 2026, 16 transmissions with four in the middle left out (both K5OHY).
-- **Long alternating blocks:** Dale's (N3HXZ) nine-and-a-half-hour test of a Performer (tuned elevated quarter-wave) against a 17 ft whip on a 5:1 unun, switched every 30 minutes.
+- **Long alternating blocks:** Dale's (N3HXZ) nine-hour test of a Performer (tuned elevated quarter-wave) against a 17 ft whip on a 5:1 unun, switched every 30 minutes.
 - **Told apart by frequency:** a quick CW check on the Reverse Beacon Network, the same loop and dipole on 14069.5 and 14070.5 kHz (K5OHY).
 - **Each antenna has its own callsign:** two short WSPR tests by Callum (M0MCX, DX Commander) on 14 January 2026, a delta loop against a vertical, on 20m and on 40m. A is the antenna that sent first, as in his log: the delta loop (M0MCX) on 20m and the vertical (M0XXT) on 40m. Each is only three pairs of transmissions, so treat them as a demonstration of how the page works and what a short test can and cannot say, not a ruling on the antennas.
 
@@ -76,19 +76,19 @@ WSPR differs from RBN in a few ways: SNR is mostly negative (about -30 to +5 dB)
 - Stats above the map, a compass chart of your spots by direction below it, and a sortable spot table.
 - Map style (light, dark, satellite, street), miles or kilometres, and **Download map** (a standalone HTML file).
 - **Download report (PDF)** next to it: key numbers, the session report, direction chart and the stations that heard you.
-- A **Log check** tab (RBN spots only): upload a contact log from your logging program and see it beside the spots and the WSPR stations around you. See below.
+- A **Log check** page in the menu: upload a contact log from your logging program and see it beside your RBN spots and the WSPR stations around you. See below.
 
 Your location comes from the grid you typed, else the RBN skimmer list, else the FCC ([callook.info](https://callook.info)), else [HamDB](https://hamdb.org), else the centre of your country (the app warns you). Enter a grid for an exact pin.
 
 ### Log check
 
-Load your RBN spots for the day, then open the **Log check** tab and upload an ADIF file (most logging programs can export one) and enter the power you ran. The log is used for that visit only and is not saved.
+Open **Log check** in the menu and upload an ADIF file (most logging programs can export one). Everything else comes from the log: your callsign and grid square are filled in from it (change them if they are wrong), and the days are read from its dates. The page then downloads your RBN spots for those days and fetches the WSPR picture on its own. The only thing it asks you for is the power you ran, which a log does not say. The log is used for that visit only and is not saved. A log of up to four days is compared.
 
 - **From the log alone:** contacts, stations, states, contacts per hour, your busiest hour, and the stations that came back on another band.
 - **A picture of the session:** one lane per band, in the order you used them. Each contact is a block, stacked in 2 minute slots, with the RBN spots for the same slots underneath.
-- **Compare with RBN and WSPR** (press the button; the first time it can take a minute or two, because it fetches the WSPR stations within 300 miles of you for each stretch on a band). For each band it shows your contacts, how many skimmers spotted you, what the Band conditions page said, and how strong the skimmers reported you.
+- **The comparison** starts by itself once the log is read; the first time it can take a minute or two, because it reads the RBN files and fetches the WSPR stations within 300 miles of you for each stretch on a band. For each band it shows your contacts, how many skimmers spotted you, what the Band conditions page said, and how strong the skimmers reported you.
 
-- **Place my contacts on the map** (a button below the band rows). Each station in the log is looked up at the FCC ([callook.info](https://callook.info)) and [HamDB](https://hamdb.org), the way your own callsign is, and shown at the centre of its 4 character grid square, not at an address. A station the lookups cannot place falls back to the centre of the state in the log. The first time takes a minute or two for a log of a hundred or so stations; the answers are remembered. A switch then shows the skimmers that spotted you, the stations you worked, or both on one map, with a small table of contacts and skimmers by region. Diamonds are coloured by the signal report they gave you (S3 to S9); click one for each contact and both reports.
+- **Maps** (switched off until you ask). Switch on *Show the maps* and pick a band: two maps of that band appear side by side, framed on the same area. On the left are the skimmers that spotted you, coloured and sized by SNR. On the right are the stations you worked, as diamonds coloured by the report they gave you (S3 to S9). Only that band's stations are placed, so the wait is short: a station the log puts in the US is looked up at the FCC ([callook.info](https://callook.info)) and [HamDB](https://hamdb.org), the way your own callsign is, and a station elsewhere is placed at the centre of its country without any lookup. Each is shown at the centre of its 4 character grid square, state or country, not at an address. A band that has not been looked up before usually takes well under half a minute; the answers are remembered. *CW contacts only* is ticked by default, because skimmers only hear CW.
 - **Reports.** Each band row also shows the average S in the reports they gave you on that band. Many operators send a 9 out of habit, so reports are a rough picture of your station, not a measurement, and the page never scores them against the skimmers' SNR.
 
 How to read the band rows:
@@ -97,7 +97,7 @@ How to read the band rows:
 - **CW contacts and other modes.** Only CW contacts are compared, so a band's row counts those, and says how many other-mode contacts the log has on that band. Bands run from the highest frequency down, so 10m is on top.
 - **A band by region.** Below the rows, pick a band to see it region by region, DX first: the contacts and stations worked in each region, how many skimmers were on the band there and how many spotted you, and what the page said (greyed when fewer than 3 WSPR receivers stand behind it). The row above pools every region, so a good result in one region can hide behind a poor one in another.
 - **Strength vs typical.** Skimmers that spotted you and are also WSPR receivers are matched. Their reports are set against the WSPR stations near you, restated to your power. Skimmers and WSPR receivers are different equipment, and an ordinary station reads about 10 dB higher on RBN than on the page (found from two checks of stations whose power is known), so that 10 dB is taken off. What is left is a rough hint of how much stronger or weaker than a typical station you were. A striped bar means fewer than 8 matched receivers.
-- The place used is the one in the sidebar, so if you were portable, enter that grid and load the spots again.
+- The place used is the grid square in your log (or the one you type over it), so a log made portable is compared from where you were.
 
 ## Compare two antennas
 
@@ -311,7 +311,7 @@ Dale, N3HXZ, published a long WSPR test of two vertical antennas, "Comparing Per
 - The average over 500 to 1,500 miles was 3.87 dB here against 3.86 dB in his table.
 - The program also counted four more stations that met the 40-spot rule (ON5KQ, W0AY, WA3TTS and WA7LNW), so the 1,500 to 2,500 mile averages first differed (5.81 dB here against 6.06 dB). His updated paper includes those stations and agrees with this program on which ones qualify.
 
-Open the **Long alternating blocks** example in the app to see it. The automated check in `tests/test_dale_study.py` repeats the comparison against the 27 stations of the first version of his table. His article also works out the expected gain by hand from antenna measurements and compares it with the WSPR result, which is worth reading on his site, [n3hxz.net](https://www.n3hxz.net/).
+Open the **Long alternating blocks** example in the app to see it. The example uses 18 blocks (9 hours, to 21:00 UTC) at Dale's request, so its numbers differ a little from his first table, which ran to 21:30. The automated check in `tests/test_dale_study.py` repeats the comparison against the 27 stations of the first version of his table. His article also works out the expected gain by hand from antenna measurements and compares it with the WSPR result, which is worth reading on his site, [n3hxz.net](https://www.n3hxz.net/).
 
 ## Run it locally
 
@@ -392,7 +392,7 @@ The **Help and README** page in the app shows this README, so the instructions a
 | `session_report.py` | Builds the session report: timeline, band-by-hour grid, scorecard and regions |
 | `conditions.py` | Band conditions: nearby WSPR stations restated for your power and mode |
 | `dashboard.py` | The HTML for the Band conditions dashboard: band tiles, sun strip, region grids and highlights |
-| `log_check.py`, `log_check_html.py`, `views/log_view.py` | The Log check tab: reads an ADIF log, sets it beside the RBN spots and the WSPR picture, and draws the band rows, the session chart and the stations that came back |
+| `log_check.py`, `log_check_html.py`, `views/log_view.py` | The Log check page:
 | `space_weather.py` | Current space weather from NOAA and a short plain reading of it |
 | `ionosphere.py` | MUF and foF2 near you from the nearest working ionosondes (GIRO data via KC2G) |
 | `example_data.py`, `examples/`, `build_examples.py` | The examples open saved copies of the real data (spots, where the station is, and for WSPR who was on the band), so they appear at once; `build_examples.py` refreshes them from the internet |

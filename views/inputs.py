@@ -99,7 +99,7 @@ COMPARE_EXAMPLES = (
     ("vert2", "Switched after every transmission", "Quarter-wave vs 2 element vertical, 12 transmissions (K5OHY)",
      "WSPR, 20m, 1 Nov 2026. Two verticals took turns on two-minute transmissions, in the order A, B, B, A; "
      "judged on receivers with at least 3 reports on each."),
-    ("long", "Long alternating blocks", "Performer vs 17 ft whip, 9½ hours (Dale, N3HXZ)",
+    ("long", "Long alternating blocks", "Performer vs 17 ft whip, 9 hours (Dale, N3HXZ)",
      "WSPR, 20m, 26 Aug 2026. Switched every 30 minutes, and judged on receivers with 40 or more reports on each antenna."),
     ("rbn", "Told apart by frequency", "Loop vs dipole on CW (K5OHY, RBN)",
      "Reverse Beacon Network, 27 Sep 2026. Two CQs on nearby frequencies. A quick check; WSPR is the better test."),
@@ -117,7 +117,7 @@ def start_example(which):
     spots of 23 Oct 2025 on the My spots page. On the Compare page, 'rbn' is a quick CW check by frequency (27 Sep 2026, loop on 14069.5 against dipole on 14070.5), 'quick' is the same day's test of 12 transmissions alternating a 40m loop and a
     20m dipole, 'vert2' is K5OHY's quarter-wave vertical against a 2 element vertical on 1 Nov 2026 (16 transmissions, four left out), 'dxc20' and 'dxc40' are Callum's (M0MCX, DX Commander) delta loop against a vertical, each sent under its own
     callsign, on 14 Jan 2026, and 'long' is Dale N3HXZ's test of 26 Aug 2026: a Performer (tuned elevated quarter-wave) against an untuned 17 ft whip on a 5:1 unun at ground level,
-    alternating 30 minute blocks from 12:00 to 21:30 UTC, judged on stations with 40 or more reports per antenna as in his
+    alternating 30 minute blocks, 18 of them from 12:00 to 21:00 UTC (the half hour after that is left out, as Dale asked), judged on stations with 40 or more reports per antenna as in his
     write-up."""
     ss = st.session_state
     ss["callsign_b_in"] = ""  # only the two-callsign examples use a second callsign
@@ -138,6 +138,7 @@ def start_example(which):
         ss.update(callsign_in="N3HXZ", grid_in="", src_in=WSPR_SOURCE, span_in="Single day", day_in=date(2026, 8, 26),
                   band_choice="20m", cmp_name_a="17 ft whip + 5:1 unun (ground)", cmp_name_b="Performer (tuned, elevated)",
                   test_mode="In long blocks", rx_min_reports_blk=40, _example="long")
+        ss["_blk_pending"] = {"n": 18, "start": "", "paste": ""}  # 18 blocks, 9 hours: the loaded spots run a little past that
     elif which == "rbn":
         ss.update(callsign_in="K5OHY", grid_in="", src_in="Download by date", span_in="Single day", day_in=date(2026, 9, 27),
                   band_choice="20m", cmp_name_a="40m loop, 20 ft", cmp_name_b="20m dipole, 40 ft", _example="rbn")

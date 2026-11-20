@@ -1247,7 +1247,7 @@ class LogCheckPictures(unittest.TestCase):
 
     def test_the_tiles_ask_for_the_comparison_until_it_has_been_run(self):
         s = lc.summary(self.log)
-        self.assertIn("Compare", lh.tiles_html(s, None, 1))
+        self.assertIn("once the comparison finishes", lh.tiles_html(s, None, 1))
         self.assertIn("+7", lh.tiles_html(s, {"stronger_db": 7.2, "matches": 40}, 1))
 
     def test_the_notes_name_stations_outside_north_america(self):
@@ -1337,6 +1337,41 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
                 asked.clear()
                 ds.load_contact_places(rows, {}, workers=1)
             self.assertEqual(sorted(asked), ["K0NOPE", "W4DDD"])  # the exact answer for W1AAA came from the disk, the guesses are asked again
+
+    def test_the_log_says_who_and_where_you_were(self):
+        text = ("<ADIF_VER:5>3.1.4 <EOH>\n"
+                "<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:6>200000 <BAND:3>20m <MODE:2>CW <STATION_CALLSIGN:5>K5OHY <MY_GRIDSQUARE:6>DM81wx <EOR>\n"
+                "<CALL:5>W2BBB <QSO_DATE:8>20261118 <TIME_ON:6>200100 <BAND:3>20m <MODE:2>CW <STATION_CALLSIGN:5>K5OHY <MY_GRIDSQUARE:6>DM81wx <EOR>\n"
+                "<CALL:5>W3CCC <QSO_DATE:8>20261118 <TIME_ON:6>200200 <BAND:3>20m <MODE:2>CW <STATION_CALLSIGN:7>K5OHY/P <MY_GRIDSQUARE:6>DM91sl <EOR>\n")
+        self.assertEqual(lc.log_origin(lc.parse_adif(text)), ("K5OHY", "DM81wx"))            # the most common of each
+        bare = lc.parse_adif("<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:6>200000 <BAND:3>20m <MODE:2>CW <EOR>")
+        self.assertEqual(lc.log_origin(bare), ("", ""))                                     # a logger that leaves them out
+
+    def test_contacts_outside_north_america_are_placed_without_a_lookup(self):
+        asked = []
+
+        def lookup(call, skimmers=None):
+            asked.append(call)
+            return (42.0, -87.8, "EN62", "FCC (callook.info)")
+
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(os.environ, {"RBN_CACHE_DIR": folder}):
+            rows = [("W1AAA", "IL", "United States"), ("DL1ABC", "", "Germany"), ("VK2XYZ", "", "Australia")]
+            with mock.patch.object(ds, "lookup_callsign_location", lookup):
+                table = ds.load_contact_places(rows, {}, workers=1)
+        self.assertEqual(asked, ["W1AAA"])                                                  # only the American station was looked up
+        self.assertEqual(sorted(table.index), ["DL1ABC", "VK2XYZ", "W1AAA"])
+        self.assertEqual((table.loc["DL1ABC", "level"], table.loc["W1AAA", "level"]), ("country", "grid"))
+
+    def test_a_map_can_leave_out_the_dotted_paths_and_frame_the_points_it_is_given(self):
+        from maps import build_map
+        worked = lc.where_worked(self.log(), self.places())
+        none = pd.DataFrame({"spotter": [], "band": [], "snr": [], "freq": [], "time": pd.to_datetime([])})
+        with_paths = build_map(none, {}, HOME, "DM81wx", "K5OHY", False, "Street", "mi", None, contacts=worked, show_spots=False).get_root().render()
+        without = build_map(none, {}, HOME, "DM81wx", "K5OHY", False, "Street", "mi", None, contacts=worked, show_spots=False,
+                            contact_paths=False, view=[(10.0, -60.0), (50.0, 10.0)]).get_root().render()
+        self.assertTrue("\"dashArray\": \"2 6\"" in with_paths)                           # the dotted line's dash pattern
+        self.assertFalse("\"dashArray\": \"2 6\"" in without)
+        self.assertTrue("[10.0, -60.0], [50.0, 10.0]" in without)                          # the map is framed on the points it was given
 
     def test_the_map_shows_the_stations_you_worked_coloured_by_report(self):
         from maps import build_map

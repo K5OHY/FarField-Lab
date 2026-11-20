@@ -180,16 +180,15 @@ class MySpotsPage(unittest.TestCase):
         self.assertEqual(at.session_state["kind"], "RBN")
         self.assertEqual(at.session_state["day_in"], date(2025, 10, 23))
         self.assertGreater(len(at.session_state["raw"]), 50)
-        self.assertEqual(len(at.tabs), 3)  # Map & direction, Session report, Log check
+        self.assertEqual(len(at.tabs), 2)  # Map & direction, Session report
         self.assertTrue(any("call=K5OHY" in c.value for c in at.sidebar.code))
 
-    def test_the_log_check_tab_asks_for_a_log_and_does_not_break_the_page(self):
-        at = page("spots_page").run()
-        click(at, "Try an example")
+    def test_the_log_check_page_asks_for_a_log_and_nothing_else(self):
+        at = page("log_page").run()
         self.assertEqual(errors(at), [])
-        tab = at.tabs[2]
-        self.assertTrue(any(m.value.startswith("Upload the log of a session") for m in tab.markdown))
-        self.assertEqual([b.label for b in tab.button], [])  # the Compare button only appears once a log is loaded
+        self.assertTrue(any("Upload an ADIF log to begin" in i.value for i in at.info))
+        self.assertEqual([b.label for b in at.main.button], [])         # nothing to press: the comparison starts when a log is loaded
+        self.assertEqual(len(at.main.text_input), 0)                    # the callsign and grid appear once the log has been read
 
     @needs_network
     def test_a_shared_link_loads_the_spots(self):
@@ -851,12 +850,12 @@ class ComparePage(unittest.TestCase):
         for label in ("Typical gain", "Average gain", "Biggest gain", "Smallest gain"):
             self.assertIn(label, shown)
         self.assertEqual(len([s for s in at.main.selectbox if s.key == "dash_dir_a"]), 1)
-        self.assertEqual(shown["Receivers"], "31")
+        self.assertEqual(shown["Receivers"], "28")   # 18 blocks, as Dale asked; 31 with the 20 it used to open on
         slider = [s for s in at.main.slider if s.key == "rx_min_reports_blk"][0]
         slider.set_value(20)
         at.run()
         self.assertEqual(errors(at), [])
-        self.assertGreater(int({m.label: m.value for m in at.main.metric}["Receivers"]), 31)
+        self.assertGreater(int({m.label: m.value for m in at.main.metric}["Receivers"]), 28)
 
     def test_the_setup_line_says_which_blocks_the_results_use(self):
         at = page("compare_page").run()
@@ -864,7 +863,7 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         line = [c.value for c in at.main.caption if c.value.startswith("Assumed setup")]
         self.assertEqual(len(line), 1)
-        self.assertIn("these results use 20 blocks of about 30 minutes, 10 on A and 10 on B, from 12:00 to 22:00 UTC", line[0])
+        self.assertIn("these results use 18 blocks of about 30 minutes, 9 on A and 9 on B, from 12:00 to 21:00 UTC", line[0])
 
     def test_spots_you_loaded_yourself_carry_over_to_my_spots(self):
         """What you load on one page is there on the other, so you do not have to enter it twice."""

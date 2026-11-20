@@ -265,12 +265,15 @@ def fit_to(m, bounds):
 
 
 def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, units, farthest,
-              title=None, fit_spots=None, scale=RBN_SNR_SCALE, noun="skimmer", contacts=None, show_spots=True):
+              title=None, fit_spots=None, scale=RBN_SNR_SCALE, noun="skimmer", contacts=None, show_spots=True, contact_paths=True,
+              view=None, show_legend=True):
     """`title` replaces the callsign in the legend; `fit_spots` also frames those spots in the view,
     so two maps can share the same extent. `scale` is the (weak, strong) SNR range the colours span;
     `noun` is what the stations that heard you are called (skimmer for RBN, receiver for WSPR). `contacts` are the stations you worked
     (from a log): a table with call, band, time, lat, lon, rst_rcvd, rst_sent, s and place, drawn as diamonds coloured by the report they
-    gave you. With show_spots False only the contacts are drawn."""
+    gave you. With show_spots False only the contacts are drawn, and with contact_paths False they are drawn without the dotted paths.
+    `view` is a list of points to frame instead of the ones drawn, so two maps can show exactly the same area. `show_legend` False leaves
+    out the key, for a small map."""
     k = KM_PER_MILE if units == "mi" else 1
     if not show_spots:
         spots, show_all, farthest = spots.iloc[0:0], False, None
@@ -320,7 +323,7 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
     dots.add_to(m)
     has_contacts = contacts is not None and len(contacts) > 0
     if has_contacts:
-        bounds.extend(_contacts_layer(m, contacts, home, k, units))
+        bounds.extend(_contacts_layer(m, contacts, home, k, units, contact_paths))
 
     if fit_spots is not None:
         for spotter in fit_spots["spotter"].unique():
@@ -342,6 +345,8 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
         popup=f"{esc(callsign)}<br>{esc(home_label)}", tooltip=f"{esc(callsign)} ({esc(home_label)})",
     ).add_to(m)
 
+    if view:
+        bounds = [home] + list(view)
     if len(bounds) > 1:
         fit_to(m, bounds)
     folium.LayerControl(collapsed=True).add_to(m)
@@ -369,7 +374,8 @@ def build_map(spots, skimmers, home, home_label, callsign, show_all, tiles, unit
       font:12px/1.5 system-ui,sans-serif;color:#222">
       <b>{esc(title or callsign)}</b>{spot_head}<div style="margin:6px 0 2px;font-weight:600">Band</div>{rows}{snr_part}{contact_key}
     </div>"""
-    m.get_root().html.add_child(folium.Element(legend))
+    if show_legend:
+        m.get_root().html.add_child(folium.Element(legend))
     return m
 
 
@@ -385,7 +391,7 @@ def _contact_popup(call, g, km, units):
             f'<td>You gave</td></tr>{rows}</table><div style="opacity:.6;margin-top:4px">Shown at the {esc(g["place"].iloc[0])}</div></div>')
 
 
-def _contacts_layer(m, contacts, home, k, units):
+def _contacts_layer(m, contacts, home, k, units, paths=True):
     """The stations you worked: a dotted path for each band, and one diamond for each station (not each contact), coloured by the best
     report they gave you. Returns the points to fit the view to."""
     lines = folium.FeatureGroup(name="Paths to stations you worked", show=True)
@@ -394,7 +400,8 @@ def _contacts_layer(m, contacts, home, k, units):
     for (call, band), g in contacts.groupby(["call", "band"], sort=False):
         path = great_circle(home, (float(g["lat"].iloc[0]), float(g["lon"].iloc[0])))
         bounds.extend([path[0], path[-1]])
-        folium.PolyLine(path, color=BAND_COLORS.get(band, "#3388ff"), weight=1.8, opacity=0.85, dash_array="2 6").add_to(lines)
+        if paths:
+            folium.PolyLine(path, color=BAND_COLORS.get(band, "#3388ff"), weight=1.8, opacity=0.85, dash_array="2 6").add_to(lines)
     for call, g in contacts.groupby("call", sort=False):
         loc = (float(g["lat"].iloc[0]), float(g["lon"].iloc[0]))
         end = great_circle(home, loc)[-1]
