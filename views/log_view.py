@@ -188,12 +188,61 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
                     "state or country.")
 
 
+def _story(log, summary, digest, spots):
+    """Facts from the log, with one hunter selection shared by the detail and timeline."""
+    summary = dict(summary, bands=log['band'].nunique())
+    rep = lc.repeat_stations(log).rename_axis('call').reset_index()
+    rep = rep.sort_values(['k', 'contacts', 'call'], ascending=[False, False, True]).set_index('call')
+    st.html(lh.CSS + lh.tiles_html(summary, None, len(rep)))
+    counts = log.groupby('band').size()
+    best = counts.idxmax()
+    st.caption(f"Busiest hour: {summary['best_hour']} contacts from {summary['best_hour_start']:%H:%M} UTC · "
+               f"Most contacts: {best}, {counts[best]} ({counts[best] / len(log):.0%})"
+               + (f" · Park to park: {summary['park_to_park']} contacts with {summary['parks']} parks" if summary['parks'] else ''))
+    st.markdown('### Who followed you')
+    distribution = rep['k'].value_counts().sort_index(ascending=False)
+    st.write(' · '.join(f"{n} station{'s' if n != 1 else ''} on {k} bands" for k, n in distribution.items())
+             if len(rep) else 'No stations were worked on more than one band.')
+    st.caption('Each dot is a band worked. Stations are ordered by bands, contacts, then callsign.')
+    search = st.text_input('Find a hunter', key=f'hunter_search_{digest}').strip().upper()
+    filtered = rep[rep.index.str.contains(search, regex=False)] if search else rep
+    left, right = st.columns([3, 2])
+    with left:
+        all_rows = st.checkbox(f'Show all {len(filtered)} hunters', key=f'hunter_all_{digest}')
+        st.html(lh.CSS + lh.ladder_html(filtered, lc.bands_top_down(log), rows=len(filtered) if all_rows else 12))
+        if not all_rows and len(filtered) > 12:
+            st.caption(f'Showing 12 of {len(filtered)}. Select Show all to see everyone.')
+    with right:
+        options = ['All contacts'] + list(log['call'].drop_duplicates().sort_values())
+        selected = st.selectbox('Explore a station', options, key=f'hunter_pick_{digest}')
+        hunter = None if selected == 'All contacts' else selected
+        if hunter:
+            contacts = log[log['call'] == hunter].sort_values('time')
+            st.markdown(f"**{hunter} · {contacts['band'].nunique()} bands · {len(contacts)} contacts**")
+            detail = contacts[['time', 'band', 'mode', 'rst_sent', 'rst_rcvd']].copy()
+            detail['time'] = detail['time'].dt.strftime('%d %b %H:%M')
+            detail.columns = ['UTC', 'Band', 'Mode', 'Sent', 'Received']
+            st.dataframe(detail, hide_index=True, width='stretch')
+            st.caption('This station is highlighted in the session timeline below.')
+        else:
+            st.write('Choose any station to see its contacts in time order and highlight it on the timeline.')
+            sparse = counts[counts <= 3]
+            for band, n in sparse.items():
+                calls = log.loc[log['band'] == band, 'call']
+                if len(calls) and calls.isin(rep.index).all():
+                    st.info(f"All {n} contacts on {band} were with stations you also worked on other bands.")
+    st.markdown('### How the session unfolded')
+    show_rbn = st.checkbox('Show RBN spots on the timeline', value=False, key='log_timeline_rbn')
+    st.html(lh.CSS + lh.afternoon_html(log, spots if show_rbn else None, selected=hunter))
+
+
 def log_page():
     """The page."""
     if BANNER.exists():
         st.image(str(BANNER), width="stretch")
     else:
         st.title("FarField Lab")
+    st.title('Your activation story')
     st.markdown('<p class="subtitle">Upload the log of a session and see it beside the skimmers that heard you and the WSPR stations '
                 'around you. The callsign, the place and the days come from the log.</p>', unsafe_allow_html=True)
     skimmers, _ = skimmer_data()
@@ -242,58 +291,70 @@ def log_page():
     home = (lat, lon)
     units, tiles = st.session_state.get("units_in", "mi"), "Street"
 
-    tiles_slot = st.empty()
-    tiles_slot.html(lh.CSS + lh.tiles_html(summary, None, len(rep)))
-    if cw.empty:
-        st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "
-                                             "The facts below come from the log alone.")
-    days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
-    if len(days) > MAX_DAYS and not cw.empty:
-        st.warning(f"This log spans {len(days)} days. Each day is a large file to read, so only logs of up to {MAX_DAYS} days are compared. "
-                   "Export a shorter stretch.")
-        cw = cw.iloc[0:0]
-    if cw.empty:
-        spots, missing = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), []
-    else:
-        spots, missing = _rbn_spots(digest, call, days)
-    result = None
-    if not cw.empty:
-        if missing:
-            when = lc.rbn_ready_message(missing, _visitor_timezone())
-            names = ", ".join(f"{pd.Timestamp(d):%d %b}" for d in missing)
-            if len(missing) < len(days):
-                st.caption(f"RBN has no file for {names} yet, so that part of the log is left out of the comparison. {when}")
-        loaded = log[~log["time"].dt.strftime("%Y%m%d").isin(missing)]
-        if loaded[loaded["mode"] == "CW"].empty:
-            st.warning(f"RBN has no file for {names} yet. {when} The facts from the log alone are below.")
-        elif spots.empty:
-            st.warning(f"RBN has no spots for {call} on {'that day' if len(days) == 1 else 'those days'}. Check the callsign above: it must "
-                       "match what you sent (a /P or /M counts). The facts below come from the log alone.")
+    empty_spots = pd.DataFrame({'spotter': [], 'band': [], 'snr': [], 'time': pd.to_datetime([])})
+    story, maps, conditions = st.tabs(['Activation story', 'Where you reached', 'Conditions and RBN'])
+    with story:
+        cached = st.session_state.get('log_spots')
+        story_spots = cached['spots'] if cached and cached['key'] == (digest, call) else empty_spots
+        _story(log, summary, digest, story_spots)
+    with maps:
+        st.caption('Load the RBN comparison below to explore matched maps of contacts and skimmers.')
+    with conditions:
+        st.markdown('### Conditions and RBN')
+        st.caption('Experimental context for this session. These estimates are separate from the facts in your log.')
+        if not st.button('Load RBN and conditions comparison', key=f'log_compare_{digest}') and not st.session_state.get(f'log_compare_run_{digest}'):
+            return
+        st.session_state[f'log_compare_run_{digest}'] = True
+
+    with conditions:
+        if cw.empty:
+            st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "
+                                                 "The facts below come from the log alone.")
+        days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
+        if len(days) > MAX_DAYS and not cw.empty:
+            st.warning(f"This log spans {len(days)} days. Each day is a large file to read, so only logs of up to {MAX_DAYS} days are compared. "
+                       "Export a shorter stretch.")
+            cw = cw.iloc[0:0]
+        if cw.empty:
+            spots, missing = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), []
         else:
-            signature = _signature(raw, power, call, grid, spots)
-            held = st.session_state.get("log_result")
-            result = held["result"] if held and held["signature"] == signature else None
-            if result is None:
-                result = _run(loaded, spots, skimmers, home, power, label)
-                if result is not None:
-                    st.session_state["log_result"] = {"signature": signature, "result": result}
-    if result is not None:
-        tiles_slot.html(lh.CSS + lh.tiles_html(summary, result["overall"], len(rep)))
-        st.html(lh.CSS + lh.band_table_html(result["bands"]))
-        o = result["overall"]
-        notes = [f"Page and skimmers: in regions with at least {lc.cond.THIN} WSPR receivers, the page's chance averaged {lh.pct(o['page'])} "
-                 f"and {lh.pct(o['spotted'])} of the {o['listening']} skimmers on the band spotted you." if o["listening"] else None,
-                 f"Regions with too few WSPR receivers (greyed on the Band conditions page): {o['thin_spotted']} of {o['thin_listening']} "
-                 "skimmers on the band spotted you." if o["thin_listening"] else None,
-                 f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
-        st.caption(" ".join(n for n in notes if n))
-        _regions_section(result)
-        _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
-    st.html(lh.CSS + lh.afternoon_html(log, spots))
-    st.html(lh.CSS + lh.followers_html(log, summary, result["bands"] if result else None, lc.report_summary(log)))
-    st.caption(f"\"Stronger than a typical station\" sets the skimmers' reports against the WSPR stations near you, restated to your power. "
-               f"Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {lc.TYPICAL_OFFSET_DB:.0f} dB higher "
-               "on RBN than on the Band conditions page (found from two checks of stations whose power is known), and that is taken off. "
-               f"With fewer than {lc.MIN_MATCHES} matched receivers a bar is striped, and it is a hint, not a score. The percentages "
-               "compare the page's chance for each region with the share of skimmers on the band that spotted you, which is lower, because "
-               "a skimmer has to be tuned to you and decode you. A log shows who worked you; RBN only shows who a skimmer decoded.")
+            spots, missing = _rbn_spots(digest, call, days)
+        result = None
+        if not cw.empty:
+            if missing:
+                when = lc.rbn_ready_message(missing, _visitor_timezone())
+                names = ", ".join(f"{pd.Timestamp(d):%d %b}" for d in missing)
+                if len(missing) < len(days):
+                    st.caption(f"RBN has no file for {names} yet, so that part of the log is left out of the comparison. {when}")
+            loaded = log[~log["time"].dt.strftime("%Y%m%d").isin(missing)]
+            if loaded[loaded["mode"] == "CW"].empty:
+                st.warning(f"RBN has no file for {names} yet. {when} The facts from the log alone are below.")
+            elif spots.empty:
+                st.warning(f"RBN has no spots for {call} on {'that day' if len(days) == 1 else 'those days'}. Check the callsign above: it must "
+                           "match what you sent (a /P or /M counts). The facts below come from the log alone.")
+            else:
+                signature = _signature(raw, power, call, grid, spots)
+                held = st.session_state.get("log_result")
+                result = held["result"] if held and held["signature"] == signature else None
+                if result is None:
+                    result = _run(loaded, spots, skimmers, home, power, label)
+                    if result is not None:
+                        st.session_state["log_result"] = {"signature": signature, "result": result}
+        if result is not None:
+            st.html(lh.CSS + lh.band_table_html(result["bands"]))
+            o = result["overall"]
+            notes = [f"Page and skimmers: in regions with at least {lc.cond.THIN} WSPR receivers, the page's chance averaged {lh.pct(o['page'])} "
+                     f"and {lh.pct(o['spotted'])} of the {o['listening']} skimmers on the band spotted you." if o["listening"] else None,
+                     f"Regions with too few WSPR receivers (greyed on the Band conditions page): {o['thin_spotted']} of {o['thin_listening']} "
+                     "skimmers on the band spotted you." if o["thin_listening"] else None,
+                     f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
+            st.caption(" ".join(n for n in notes if n))
+            _regions_section(result)
+            with maps:
+                _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
+        st.caption(f"\"Stronger than a typical station\" sets the skimmers' reports against the WSPR stations near you, restated to your power. "
+                   f"Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {lc.TYPICAL_OFFSET_DB:.0f} dB higher "
+                   "on RBN than on the Band conditions page (found from two checks of stations whose power is known), and that is taken off. "
+                   f"With fewer than {lc.MIN_MATCHES} matched receivers a bar is striped, and it is a hint, not a score. The percentages "
+                   "compare the page's chance for each region with the share of skimmers on the band that spotted you, which is lower, because "
+                   "a skimmer has to be tuned to you and decode you. A log shows who worked you; RBN only shows who a skimmer decoded.")

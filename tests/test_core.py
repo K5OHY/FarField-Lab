@@ -1181,7 +1181,7 @@ class LogCheckPictures(unittest.TestCase):
                                ("W2BBB", "202100", "20m", "NA"), ("KH6DE", "202200", "20m", "OC")]))
 
     def test_the_chart_has_one_block_for_each_contact_and_names_the_follower(self):
-        html = lh.afternoon_html(self.log, None)
+        html = lh.afternoon_html(self.log, None, selected="W1AAA")
         self.assertEqual(html.count('class="lc-b'), 5)
         self.assertEqual(html.count('class="lc-b rep'), 3)  # W1AAA's three contacts
         self.assertIn("W1AAA: 3 bands", html)
@@ -1247,8 +1247,8 @@ class LogCheckPictures(unittest.TestCase):
 
     def test_the_tiles_ask_for_the_comparison_until_it_has_been_run(self):
         s = lc.summary(self.log)
-        self.assertIn("from the RBN comparison below", lh.tiles_html(s, None, 1))
-        self.assertIn("+7", lh.tiles_html(s, {"stronger_db": 7.2, "matches": 40}, 1))
+        self.assertIn("unique stations", lh.tiles_html(s, None, 1))
+        self.assertNotIn("typical station", lh.tiles_html(s, {"stronger_db": 7.2, "matches": 40}, 1))
 
     def test_the_notes_name_stations_outside_north_america(self):
         html = lh.followers_html(self.log, lc.summary(self.log))
@@ -1352,7 +1352,7 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertAlmostEqual(s["on_air_hours"], 8 / 60, places=3)                         # eight one minute gaps, not 24 hours
         lone = lc.summary(lc.parse_adif(self.adif(self.rec("W1AA", "2000"), self.rec("W2BB", "2200"))))
         self.assertTrue(np.isnan(lone["per_hour"]))                                         # no two contacts close enough to make a rate
-        self.assertIn("–", lh.tiles_html(lone, None, 0))
+        self.assertIn("contacts", lh.tiles_html(lone, None, 0))
 
     def test_the_page_says_how_many_records_it_read_and_why_it_left_some_out(self):
         text = self.adif(self.rec("W1AA", "2000"), "<CALL:4>W2BB <QSO_DATE:8>20261118 <BAND:3>20m <EOR>",

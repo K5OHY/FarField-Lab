@@ -66,7 +66,7 @@ CSS = """<style>
 .lc-ph{font-size:12.5px;font-weight:650;opacity:.75;margin:10px 0 6px 74px}
 .lc-chart + .lc-chart{margin-top:14px}
 .lc-axis{position:relative;height:22px;margin-left:74px}.lc-axis span{position:absolute;top:2px;transform:translateX(-50%);font-size:12px;opacity:.65}
-.lc-lad{display:grid;grid-template-columns:78px repeat(var(--k),1fr);align-items:center}
+.lc-lad{display:grid;grid-template-columns:130px repeat(var(--k),1fr);align-items:center}
 .lc-lad .hd{font-size:12px;opacity:.65;text-align:center;padding-bottom:4px}
 .lc-lad .cl{font-size:12.5px;font-weight:650;padding:3px 0 3px 8px;height:30px;line-height:24px}
 .lc-lad .cd{position:relative;height:30px;display:flex;align-items:center;justify-content:center}
@@ -96,23 +96,11 @@ def _tile(number, color, label, small, unit=""):
 
 def tiles_html(s, overall, repeats):
     """Four tiles: contacts, rate, strength against a typical station (once the comparison has been run), repeat stations."""
-    where = f"{s['stations']} stations"
-    if s["states"]:
-        where += f" · {s['states']} states or provinces"
-    if overall is None:
-        strength = _tile("–", "--a", "vs a typical WSPR station", "worked out from the RBN comparison below")
-    elif np.isnan(overall["stronger_db"]):
-        strength = _tile("–", "--a", "vs a typical WSPR station", f"too few receivers matched ({overall['matches']})")
-    else:
-        strength = _tile(f"{overall['stronger_db']:+.0f}", "--a", f"{'stronger' if overall['stronger_db'] >= 0 else 'weaker'} than a typical WSPR station",
-                         f"{overall['matches']} matched receivers · an estimate", "dB")
     return ('<div class="lc"><div class="lc-tiles">'
-            + _tile(s["contacts"], "--b", "contacts", escape(where))
-            + _tile("–" if np.isnan(s["per_hour"]) else f"{s['per_hour']:.0f}", "--t", "contacts per hour on the air",
-                    f"busiest hour {s['best_hour']} contacts, from {s['best_hour_start']:%H:%M}Z" + (" · pauses over 30 min not counted" if s["on_air_hours"] else ""),
-                    "" if np.isnan(s["per_hour"]) else "/ hour")
-            + strength
-            + _tile(repeats, "--g", "came back on another band", "stations worked on 2 or more bands")
+            + _tile(s['contacts'], '--b', 'contacts', 'all logged modes')
+            + _tile(s['stations'], '--t', 'unique stations', 'each callsign counted once')
+            + _tile(s.get('bands', 0), '--a', 'bands worked', 'across this log')
+            + _tile(repeats, '--g', 'worked multiple bands', 'stations on two or more bands')
             + '</div></div>')
 
 
@@ -247,6 +235,9 @@ def _panel_html(part, spots, rep, follow, title, marked):
     lanes = []
     for band in bands:
         n = int((part["band"] == band).sum())
+        band_tallest = int(slot[slot['band'] == band].groupby('slot').size().max())
+        mid = max(30, band_tallest * (bh + gap) + 20)
+        height = mid + DOWN + 6
         parts = [f'<div class="lc-mid" style="top:{mid}px"></div>', ticks]
         if len(sp) and band in sp.index.get_level_values(0):
             for t, c in sp[band].items():
@@ -256,7 +247,7 @@ def _panel_html(part, spots, rep, follow, title, marked):
             for j, r in enumerate(g.sort_values("time").itertuples()):
                 top = mid - 3 - (j + 1) * bh - j * gap
                 came_back = r.call in rep
-                parts.append(f'<i class="lc-b{" rep" if came_back else ""}" style="left:{left(t):.3f}%;width:{width};top:{top:.1f}px;height:{bh:.1f}px" '
+                parts.append(f'<i class="lc-b{" rep" if came_back else ""}" style="opacity:{0.22 if follow and r.call != follow else 1};left:{left(t):.3f}%;width:{width};top:{top:.1f}px;height:{bh:.1f}px" '
                              f'title="{escape(r.call)} · {band} · {r.time:%H:%M}Z{" · came back on another band" if came_back else ""}"></i>')
                 if follow and r.call == follow:
                     parts.append(f'<i class="lc-d" style="left:{left(t) + step / 2 / minutes * 100:.3f}%;top:{top - 13:.1f}px" title="{escape(follow)}"></i>')
@@ -271,11 +262,11 @@ def _panel_html(part, spots, rep, follow, title, marked):
             f'<div class="lc-axis">{axis}</div></div>')
 
 
-def afternoon_html(log, spots):
+def afternoon_html(log, spots, selected=None):
     """The session as one chart for each stretch of activity (a pause of four hours or more starts another). One lane per band: above
     its line, one block for each contact, stacked in short time slots (amber for a station that came back on another band); below it,
     the RBN spots in the same slots. Times are UTC. Built of positioned boxes, not SVG, because the page sanitizer removes SVG."""
-    rep, follow, marked = set(repeat_calls(log)), pick_follower(log), [False]
+    rep, follow, marked = set(repeat_calls(log)), selected, [False]
     panels = _panels(log)
     charts = []
     for part in panels:
@@ -283,8 +274,8 @@ def afternoon_html(log, spots):
         title = (f"{a:%a %d %b}, {a:%H:%M}Z to {z:%H:%M}Z" if a.date() == z.date() else f"{a:%a %d %b} {a:%H:%M}Z to {z:%a %d %b} {z:%H:%M}Z")
         charts.append(_panel_html(part, spots, rep, follow, title, marked))
     legend = ('<div class="lc-legend"><span><i style="background:var(--b)"></i>one block = one contact (stacked in short time slots)</span>'
-              '<span><i style="background:var(--a)"></i>that station came back on another band</span>'
-              '<span><i style="background:var(--t);opacity:.55"></i>RBN spots below the line (same slots)</span>'
+              '<span><i style="background:var(--a)"></i>station worked on multiple bands (any time in this log)</span>'
+              '<span><i style="background:var(--t);opacity:.55"></i>RBN spots below the line (separate height scale)</span>'
               + (f'<span><i class="dia"></i>{escape(follow)}</span>' if follow else "") + '</div>')
     return ('<div class="lc"><div class="lc-card"><h4>The session</h4><p class="sub">Your contacts and the spots, band by band, in time order (UTC)'
             + (f"; the log has {len(panels)} stretches of activity, each drawn on its own" if len(panels) > 1 else "") + '.</p>'
@@ -310,9 +301,9 @@ def ladder_html(rep, bands, rows=24):
         idx = [bands.index(b) for b in r["bands"] if b in bands]
         lo, hi = min(idx), max(idx)
         z = " zb" if i % 2 == 0 else ""
-        row = [f'<div class="cl{z}">{escape(call)}</div>']
+        row = [f'<div class="cl{z}">{escape(call)} <small>· {r["k"]} bands</small></div>']
         for j, b in enumerate(bands):
-            cls = "cd" + z + (" ln" if lo <= j <= hi else "") + (" l0" if j == lo else "") + (" l1" if j == hi else "")
+            cls = "cd" + z
             dot = f'<i title="{escape(call)} · {b}"></i>' if j in idx else ""
             row.append(f'<div class="{cls}">{dot}</div>')
         cells.append("".join(row))
