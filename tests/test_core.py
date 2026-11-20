@@ -1245,10 +1245,17 @@ class LogCheckPictures(unittest.TestCase):
         self.assertIn("CW contacts", html)
         self.assertIn("+21 other modes", html)
 
-    def test_the_tiles_ask_for_the_comparison_until_it_has_been_run(self):
+    def test_the_four_tiles_are_facts_from_the_log(self):
         s = lc.summary(self.log)
-        self.assertIn("from the RBN comparison below", lh.tiles_html(s, None, 1))
-        self.assertIn("+7", lh.tiles_html(s, {"stronger_db": 7.2, "matches": 40}, 1))
+        html = lh.tiles_html(s, 1)
+        self.assertIn("bands worked", html)
+        self.assertIn("estimated active rate", html)
+        self.assertIn("came back on another band", html)
+        self.assertNotIn("typical WSPR station", html)                                       # the strength estimate is in the comparison section
+        self.assertIn(f'<div class="n" style="color:var(--a)">{len(s["bands"])}', html)
+        self.assertIn("is an estimate", html)                                                # the hover note on the rate
+        one = dict(s, bands=["20m"])
+        self.assertIn(">20m</div>", lh.tiles_html(one, 0))                                   # a single band is named, not a range
 
     def test_the_notes_name_stations_outside_north_america(self):
         html = lh.followers_html(self.log, lc.summary(self.log))
@@ -1352,7 +1359,7 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertAlmostEqual(s["on_air_hours"], 8 / 60, places=3)                         # eight one minute gaps, not 24 hours
         lone = lc.summary(lc.parse_adif(self.adif(self.rec("W1AA", "2000"), self.rec("W2BB", "2200"))))
         self.assertTrue(np.isnan(lone["per_hour"]))                                         # no two contacts close enough to make a rate
-        self.assertIn("–", lh.tiles_html(lone, None, 0))
+        self.assertIn("–", lh.tiles_html(lone, 0))
 
     def test_the_page_says_how_many_records_it_read_and_why_it_left_some_out(self):
         text = self.adif(self.rec("W1AA", "2000"), "<CALL:4>W2BB <QSO_DATE:8>20261118 <BAND:3>20m <EOR>",
@@ -1448,14 +1455,18 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         for band, shares, contacts in (("10m", [0.5, 0.6, 0.9, 0.95, 0.97, 0.97], [8, 0, 0, 0, 0, 0]),
                                        ("15m", [0.95, 0.93, 0.95, 0.96, 0.94, 0.95], [0, 6, 0, 0, 0, 0]),
                                        ("20m", [0.42, 0.40, 0.45, 0.44, 0.41, 0.43], [0, 0, 9, 0, 0, 0]),
+                                       ("17m", [0.40, 0.45, 0.50, 0.55, 0.50, 0.45], [0, 0, 7, 0, 0, 0]),
                                        ("40m", [0.9, 0.7, 0.6, 0.5, 0.4, 0.3], [0, 0, 0, 0, 0, 0])):
             for slot, share, n in zip(slots, shares, contacts):
                 rows.append({"panel": 0, "slot": slot, "band": band, "receivers": 50, "good": int(share * 50), "share": share, "contacts": n})
         notes = lc.conditions_notes(pd.DataFrame(rows))
         text = " ".join(lead + " " + rest for lead, rest in notes)
         self.assertIn("15m stayed above 90% the whole time", text)
-        self.assertIn("10m looked better at other times", text)
-        self.assertIn("about 50%", text)                                                    # what it was when you worked it
+        self.assertIn("10m was higher at other times", text)
+        self.assertIn("averaged 50%", text)                                                 # what it was during your contacts
+        self.assertIn("The receivers heard can change over a session", text)
+        self.assertNotIn("looked its best", text)                                           # no verdict on where you operated
+        self.assertIn("17m averaged 50% during your contacts. That is 7 contacts. The session peak was 55%.", text)
         self.assertNotIn("On 15m", text)                                                    # already said to be wide open, so no second line
         self.assertIn("20m stayed steady. It sat at about 45% the whole time you were on it (9 contacts)", text)
         self.assertIn("40m was fading", text)
@@ -1478,6 +1489,8 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual(html.count('class="cell few"'), 1)                                 # the box with 4 receivers is hatched
         self.assertIn("14:00 local", html)                                                  # 20:00Z in Chicago
         self.assertIn("20m looked weak.", html)
+        self.assertLess(html.index("read across each row"), html.index('class="lc-cg'))        # the instruction comes before the grid
+        self.assertNotIn("always", html)
         self.assertNotIn("nan", html.lower())
         self.assertLess(html.index("20m</div>"), html.index("10m</div>"))                   # the bands run in the order of the grid
 
@@ -1542,11 +1555,13 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
     def test_the_rest_of_a_long_ladder_goes_in_a_show_all_box(self):
         who = {f"K{i:02d}AA": ["20m", "40m"] for i in range(30)}
         log = self.story_log(who)
-        self.assertEqual(lh.followers_html(log, lc.summary(log)).count('class="cl'), 24)      # the card shows 24
+        self.assertEqual(lh.followers_html(log, lc.summary(log)).count('class="cl'), 12)      # the card shows 12
         rest = lh.ladder_rest_html(log)
-        self.assertEqual(rest.count('class="cl'), 6)                                           # the other six wait in the box
+        self.assertEqual(rest.count('class="cl'), 18)                                          # the other 18 wait in the box
         self.assertIn("K29AA", rest)
-        self.assertNotIn("K00AA", rest)
+        self.assertIn("K12AA", rest)
+        self.assertNotIn("K11AA", rest)
+        self.assertIn("station · bands", lh.followers_html(log, lc.summary(log)))              # the number beside each callsign has a label
 
     def test_the_notes_beside_the_ladder_have_no_warning_and_no_report_average(self):
         log = lc.parse_adif("".join(f"<CALL:5>W{i}AAA <QSO_DATE:8>20261118 <TIME_ON:6>20{i:02d}00 <BAND:3>20m <MODE:2>CW <RST_RCVD:3>599 <RST_SENT:3>579 <EOR>\n"

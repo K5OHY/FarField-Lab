@@ -166,7 +166,8 @@ def summary(log):
             "countries": int(log.loc[log["country"] != "", "country"].nunique()), "first": t.iloc[0], "last": t.iloc[-1],
             "per_hour": per_hour, "on_air_hours": float(on_air.sum() / 3600), "median_gap_s": float(gaps.median()) if len(gaps) else float("nan"),
             "longest_gap_min": float(gaps.max() / 60) if len(gaps) else float("nan"), "best_hour": n_best, "best_hour_start": start_best,
-            "park_to_park": int(log["pota_ref"].ne("").sum()), "parks": int(log.loc[log["pota_ref"] != "", "pota_ref"].nunique())}
+            "park_to_park": int(log["pota_ref"].ne("").sum()), "parks": int(log.loc[log["pota_ref"] != "", "pota_ref"].nunique()),
+            "bands": bands_top_down(log)}
 
 
 def band_rates(log):
@@ -537,10 +538,10 @@ def conditions_notes(grid, max_lines=6):
         if d["share"].max() - d["share"].min() < STEADY_SPREAD:
             notes.append((f"{band} stayed steady.", f"It sat at about {_pc(avg)} the whole time you were on it ({n} contacts)."))
         elif top["share"] - avg >= BIG_CHANGE:
-            notes.append((f"{band} looked better at other times.", f"You worked it at about {_pc(avg)} ({n} contacts); it reached {_pc(top['share'])} in the "
-                                                                   f"half hour from {when(top['slot'])}."))
+            notes.append((f"{band} was higher at other times.", f"It averaged {_pc(avg)} during your {n} contacts and reached {_pc(top['share'])} in the "
+                                                                f"half hour from {when(top['slot'])}. The receivers heard can change over a session."))
         else:
-            notes.append((f"On {band} you were there when it looked its best.", f"{n} contacts at about {_pc(avg)}, and it peaked at {_pc(top['share'])}."))
+            notes.append((f"{band} averaged {_pc(avg)} during your contacts.", f"That is {n} contacts. The session peak was {_pc(top['share'])}."))
     # bands that rose or fell, in the longest stretch of activity
     if len(g):
         panel = g.groupby("panel").size().idxmax()

@@ -265,16 +265,25 @@ def log_page():
     units, tiles = st.session_state.get("units_in", "mi"), "Street"
 
     tiles_slot = st.empty()
-    tiles_slot.html(lh.CSS + lh.tiles_html(summary, None, len(rep)))
-    # The page is laid out in this order whatever order the work finishes in: who followed you, the progress, the session chart, the maps,
-    # and last the comparison with RBN and the band conditions page.
-    followers_slot, work, chart_slot, conditions_slot, maps_slot, compare_slot = (st.container() for _ in range(6))
+    tiles_slot.html(lh.CSS + lh.tiles_html(summary, len(rep)))
+    # The page is laid out in this order whatever order the work finishes in: who followed you, the session chart, the band conditions, the
+    # progress of the RBN download, the maps, and last the comparison with RBN and the band conditions page. The log alone is drawn first; the
+    # RBN spots are added to the chart when they have been read.
+    followers_slot, chart_slot, conditions_slot, work, maps_slot, compare_slot = (st.container() for _ in range(6))
     with followers_slot:
         st.html(lh.CSS + lh.followers_html(log, summary))
-        if len(rep) > 24:
-            with st.expander(f"Show all {len(rep)} stations"):
+        if len(rep) > lh.LADDER_ROWS:
+            with st.expander(f"Show {len(rep) - lh.LADDER_ROWS} more"):
                 st.html(lh.CSS + lh.ladder_rest_html(log))
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
+    no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
+    chart = chart_slot.empty()
+    chart.html(lh.CSS + lh.afternoon_html(log, no_spots))
+    with conditions_slot:
+        grid_of_conditions = _conditions(log, home, power, label, digest) if len(days) <= MAX_DAYS else None
+        if grid_of_conditions is not None and len(grid_of_conditions):
+            st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, lc.condition_mode(log),
+                                                _visitor_timezone()))
     with work:
         if cw.empty:
             st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "
@@ -284,16 +293,11 @@ def log_page():
                        "Export a shorter stretch.")
             cw = cw.iloc[0:0]
         if cw.empty:
-            spots, missing = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), []
+            spots, missing = no_spots, []
         else:
             spots, missing = _rbn_spots(digest, call, days)
-    with chart_slot:
-        st.html(lh.CSS + lh.afternoon_html(log, spots))
-    with conditions_slot:
-        grid_of_conditions = _conditions(log, home, power, label, digest) if len(days) <= MAX_DAYS else None
-        if grid_of_conditions is not None and len(grid_of_conditions):
-            st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, lc.condition_mode(log),
-                                                _visitor_timezone()))
+    if len(spots):
+        chart.html(lh.CSS + lh.afternoon_html(log, spots))
     result = None
     with work:
         if not cw.empty:
@@ -318,7 +322,6 @@ def log_page():
                         st.session_state["log_result"] = {"signature": signature, "result": result}
     if result is None:
         return
-    tiles_slot.html(lh.CSS + lh.tiles_html(summary, result["overall"], len(rep)))
     with maps_slot:
         _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
     with compare_slot:
@@ -329,6 +332,8 @@ def log_page():
                  f"and {lh.pct(o['spotted'])} of the {o['listening']} skimmers on the band spotted you." if o["listening"] else None,
                  f"Regions with too few WSPR receivers (greyed on the Band conditions page): {o['thin_spotted']} of {o['thin_listening']} "
                  "skimmers on the band spotted you." if o["thin_listening"] else None,
+                 f"Estimated strength against a typical WSPR station near you: {o['stronger_db']:+.0f} dB, from {o['matches']} matched receivers "
+                 "(explained below)." if pd.notna(o["stronger_db"]) else None,
                  f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
         st.caption(" ".join(n for n in notes if n))
         _regions_section(result)

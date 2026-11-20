@@ -66,7 +66,7 @@ CSS = """<style>
 .lc-ph{font-size:12.5px;font-weight:650;opacity:.75;margin:10px 0 6px 74px}
 .lc-chart + .lc-chart{margin-top:14px}
 .lc-axis{position:relative;height:22px;margin-left:74px}.lc-axis span{position:absolute;top:2px;transform:translateX(-50%);font-size:12px;opacity:.65}
-.lc-lad{display:grid;grid-template-columns:100px repeat(var(--k),1fr);align-items:center}
+.lc-lad{display:grid;grid-template-columns:118px repeat(var(--k),1fr);align-items:center}
 .lc-lad .cl .n{font-weight:500;font-size:11px;opacity:.55;margin-left:6px}
 .lc-lad .hd{font-size:12px;opacity:.65;text-align:center;padding-bottom:4px}
 .lc-lad .cl{font-size:12.5px;font-weight:650;padding:3px 0 3px 8px;height:30px;line-height:24px}
@@ -104,29 +104,28 @@ def pct(x):
     return f"{x * 100:.0f}%"
 
 
-def _tile(number, color, label, small, unit=""):
-    return (f'<div class="lc-tile"><div class="n" style="color:var({color})">{number}{f"<small>{unit}</small>" if unit else ""}</div>'
+def _tile(number, color, label, small, unit="", title=""):
+    return (f'<div class="lc-tile"' + (f' title="{escape(title)}"' if title else "") + f'><div class="n" style="color:var({color})">{number}{f"<small>{unit}</small>" if unit else ""}</div>'
             f'<div class="l">{label}</div><div class="s">{small}</div></div>')
 
 
-def tiles_html(s, overall, repeats):
-    """Four tiles: contacts, rate, strength against a typical station (once the comparison has been run), repeat stations."""
+RATE_NOTE = ("Contacts divided by the time between them, counting only gaps of 30 minutes or less, so a break is not counted as slow operating. "
+             "It is an estimate: a log does not say when you were actually on the air.")
+
+
+def tiles_html(s, repeats):
+    """Four tiles: contacts, the estimated active rate, the bands worked, and the stations that came back on another band."""
     where = f"{s['stations']} stations"
     if s["states"]:
         where += f" · {s['states']} states or provinces"
-    if overall is None:
-        strength = _tile("–", "--a", "vs a typical WSPR station", "worked out from the RBN comparison below")
-    elif np.isnan(overall["stronger_db"]):
-        strength = _tile("–", "--a", "vs a typical WSPR station", f"too few receivers matched ({overall['matches']})")
-    else:
-        strength = _tile(f"{overall['stronger_db']:+.0f}", "--a", f"{'stronger' if overall['stronger_db'] >= 0 else 'weaker'} than a typical WSPR station",
-                         f"{overall['matches']} matched receivers · an estimate", "dB")
+    bands = s["bands"]
+    span = bands[0] if len(bands) == 1 else f"{bands[0]} down to {bands[-1]}"
     return ('<div class="lc"><div class="lc-tiles">'
             + _tile(s["contacts"], "--b", "contacts", escape(where))
-            + _tile("–" if np.isnan(s["per_hour"]) else f"{s['per_hour']:.0f}", "--t", "contacts per hour on the air",
+            + _tile("–" if np.isnan(s["per_hour"]) else f"{s['per_hour']:.0f}", "--t", "estimated active rate",
                     f"busiest hour {s['best_hour']} contacts, from {s['best_hour_start']:%H:%M}Z" + (" · pauses over 30 min not counted" if s["on_air_hours"] else ""),
-                    "" if np.isnan(s["per_hour"]) else "/ hour")
-            + strength
+                    "" if np.isnan(s["per_hour"]) else "/ hour", RATE_NOTE)
+            + _tile(len(bands), "--a", "bands worked", escape(span))
             + _tile(repeats, "--g", "came back on another band", "stations worked on 2 or more bands")
             + '</div></div>')
 
@@ -174,13 +173,15 @@ def conditions_html(grid, notes, power_w, mode="CW", tz_name=None):
     return ('<div class="lc"><div class="lc-card"><h4>Band conditions while you were on the air</h4>'
             f'<p class="sub">How open each band looked from where you were, at {power_w:g} W using {escape(mode)}: the share of the WSPR receivers heard near you that a '
             'signal like yours would have reached, in the hour up to the end of each half hour. Your contacts are the amber diamonds.</p>'
+            + '<p class="sub"><b>How to read it:</b> read across each row to follow that band over time. Different bands have different numbers of '
+              'receivers behind them, so the percentages of different bands are not comparable with each other.</p>'
             + "".join(panels)
             + '<div class="lc-ramp"><span>fewer<b></b>more receivers would hear you</span><span>hatched: too few WSPR receivers to say</span>'
               '<span><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> contacts in that half hour</span></div>'
             + says
             + '<p class="sub" style="margin-top:10px">An estimate from WSPR stations within 300 miles of you, restated to your power. Use it to compare a band with itself over time '
               'and one hour with another. It is not an exact chance of a contact (the percentages run high), and bands cannot be fairly compared with each other: '
-              'a band with many distant receivers, such as 20m, always shows a lower share.</p>'
+              'a band with many distant receivers, such as 20m, tends to show a lower share.</p>'
             '</div></div>')
 
 
@@ -371,10 +372,13 @@ def pick_follower(log):
     return k.index[0] if len(k) and k.iloc[0] >= 3 else None
 
 
-def ladder_html(rep, bands, rows=24, first=0):
+LADDER_ROWS = 12      # the stations shown at first; the rest are under a "Show more" box
+
+
+def ladder_html(rep, bands, rows=LADDER_ROWS, first=0):
     """A dot for each band a repeat station was worked on, joined by a line, with the number of bands beside the callsign. Shows `rows`
     stations from number `first` on."""
-    cells = ["<div></div>" + "".join(f'<div class="hd">{b}</div>' for b in bands)]
+    cells = ['<div class="hd" style="text-align:left;padding-left:8px">station · bands</div>' + "".join(f'<div class="hd">{b}</div>' for b in bands)]
     for i, (call, r) in enumerate(rep.iloc[first:first + rows].iterrows()):
         idx = [bands.index(b) for b in r["bands"] if b in bands]
         lo, hi = min(idx), max(idx)
@@ -406,14 +410,14 @@ def followers_headline(rep):
     return "; ".join(parts) + "."
 
 
-def ladder_rest_html(log, first=24):
-    """The stations of the ladder after the first `first`, for a 'Show all' box under it."""
+def ladder_rest_html(log, first=LADDER_ROWS):
+    """The stations of the ladder after the first `first`, for a 'Show more' box under it."""
     from log_check import repeat_stations
     rep = repeat_stations(log)
     return '<div class="lc">' + ladder_html(rep, bands_top_down(log), rows=len(rep), first=first) + "</div>"
 
 
-def followers_html(log, summary, rows=24):
+def followers_html(log, summary, rows=LADDER_ROWS):
     """The ladder of the stations worked on more than one band, the most bands first, beside a few notes written from the log."""
     from log_check import repeat_stations, same_band_repeats
     rep = repeat_stations(log)
