@@ -1426,12 +1426,63 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertNotIn("SNR (dB)", only)         # no skimmer key when only contacts are shown
         self.assertIn("Stations you worked", only)
 
-    def test_the_facts_panel_mentions_reports_only_with_enough_of_them(self):
+    def story_log(self, who):
+        """A log built from {call: [bands]}, a contact a minute."""
+        rows, t = [], 0
+        for call, bands in who.items():
+            for b in bands:
+                rows.append(f"<CALL:{len(call)}>{call} <QSO_DATE:8>20261118 <TIME_ON:6>20{t // 60:02d}{t % 60:02d} <BAND:{len(b)}>{b} <MODE:2>CW <EOR>")
+                t += 1
+        return lc.parse_adif("\n".join(rows))
+
+    def test_the_followers_headline_counts_stations_by_how_many_bands(self):
+        who = {f"A{i}A": ["10m", "15m", "20m"] for i in range(2)}
+        who.update({f"B{i}B": ["15m", "20m"] for i in range(3)})
+        who["C1C"] = ["40m"]
+        rep = lc.repeat_stations(self.story_log(who))
+        self.assertEqual(lh.followers_headline(rep), "2 stations worked you on three bands; another 3 on two.")
+        self.assertEqual(lh.followers_headline(lc.repeat_stations(self.story_log({"A1A": ["20m", "40m"]}))), "1 station worked you on two bands.")
+        self.assertEqual(lh.followers_headline(lc.repeat_stations(self.story_log({"A1A": ["20m"]}))), "Nobody was worked on more than one band.")
+
+    def test_the_ladder_puts_the_most_bands_first_in_callsign_order_and_shows_each_count(self):
+        who = {"ZZ9Z": ["10m", "15m", "20m"], "AA1A": ["10m", "15m", "20m"], "MM5M": ["15m", "20m"]}
+        rep = lc.repeat_stations(self.story_log(who))
+        self.assertEqual(list(rep.index), ["AA1A", "ZZ9Z", "MM5M"])                        # three bands before two; ties in callsign order
+        html = lh.ladder_html(rep, lc.bands_top_down(self.story_log(who)))
+        self.assertIn('<span class="n" title="worked on 3 bands">3</span>', html)
+        self.assertEqual(html.count('class="cl'), 3)
+
+    def test_the_rest_of_a_long_ladder_goes_in_a_show_all_box(self):
+        who = {f"K{i:02d}AA": ["20m", "40m"] for i in range(30)}
+        log = self.story_log(who)
+        self.assertEqual(lh.followers_html(log, lc.summary(log)).count('class="cl'), 24)      # the card shows 24
+        rest = lh.ladder_rest_html(log)
+        self.assertEqual(rest.count('class="cl'), 6)                                           # the other six wait in the box
+        self.assertIn("K29AA", rest)
+        self.assertNotIn("K00AA", rest)
+
+    def test_the_notes_beside_the_ladder_have_no_warning_and_no_report_average(self):
         log = lc.parse_adif("".join(f"<CALL:5>W{i}AAA <QSO_DATE:8>20261118 <TIME_ON:6>20{i:02d}00 <BAND:3>20m <MODE:2>CW <RST_RCVD:3>599 <RST_SENT:3>579 <EOR>\n"
                                     for i in range(6)))
-        self.assertIn("S9.0", lh.followers_html(log, lc.summary(log), None, lc.report_summary(log)))
-        few = log.iloc[:3]
-        self.assertNotIn("Operators often send", lh.followers_html(few, lc.summary(few), None, lc.report_summary(few)))
+        html = lh.followers_html(log, lc.summary(log))
+        self.assertNotIn("barely spotted", html)
+        self.assertNotIn("S9.0", html)
+        self.assertIn("Busiest stretch", html)
+
+    def test_a_band_with_only_two_contacts_gets_no_warning(self):
+        self.assertEqual(lc._note(2, 0.9, 0.0), ("", "neutral"))                           # two contacts, nobody spotted: too little to say
+        self.assertEqual(lc._note(3, 0.9, 0.0), ("Worked, barely spotted", "warn"))        # three is enough
+
+    def test_contacts_are_coloured_by_the_bands_they_were_worked_on(self):
+        from maps import build_map
+        worked = lc.where_worked(self.log(), self.places())
+        worked = worked.assign(bands_worked=worked["call"].map({"W1AAA": 3, "W2BBB": 1}))
+        none = pd.DataFrame({"spotter": [], "band": [], "snr": [], "freq": [], "time": pd.to_datetime([])})
+        html = build_map(none, {}, HOME, "DM81wx", "K5OHY", False, "Street", "mi", None, contacts=worked,
+                         show_spots=False, contact_paths=False).get_root().render()
+        self.assertIn("#c0392b", html)                                                      # three or more bands
+        self.assertIn("#8a8f98", html)                                                      # one band
+        self.assertIn("worked on 3 bands", html)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ SESSION_GAP_MIN = 30       # a pause this long on a band starts a new stretch
 WINDOW_PAD_MIN = 5         # spots this long before the first contact and after the last still belong to the stretch
 LOOKBACK_MIN = 60          # the WSPR picture is built from the hour before the middle of the stretch
 GAP_BAD, ACTUAL_LOW = 0.30, 0.30   # "worked but barely spotted": the page's chance is this much above the share spotted, which is low
+NOTE_MIN_CONTACTS = 3       # a band with fewer CW contacts than this gets no note: two contacts say nothing (and it has no row in the table)
 AGREE = 0.10               # the page's chance and the share spotted are within this of each other: close
 
 _FIELD = re.compile(r"<([A-Za-z0-9_]+):(\d+)(?::[A-Za-z0-9_]+)?>")
@@ -179,9 +180,9 @@ def band_rates(log):
 def repeat_stations(log):
     """Stations worked on more than one band: call, the bands (in band order), contacts. Most contacts and bands first."""
     bands = log.groupby("call")["band"].agg(lambda s: sorted(set(s), key=_rank))
-    rep = pd.DataFrame({"bands": bands, "contacts": log.groupby("call").size()})
+    rep = pd.DataFrame({"bands": bands, "contacts": log.groupby("call").size()}).sort_index()
     rep["k"] = rep["bands"].map(len)
-    return rep[rep["k"] > 1].sort_values(["k", "contacts"], ascending=False)
+    return rep[rep["k"] > 1].sort_values(["k", "contacts"], ascending=False, kind="stable")      # ties stay in callsign order
 
 
 def same_band_repeats(log):
@@ -338,7 +339,7 @@ def _agg(cells):
 
 def _note(contacts, page, actual):
     """A short label for a band, or '' and a tone."""
-    if np.isnan(page) or np.isnan(actual):
+    if np.isnan(page) or np.isnan(actual) or contacts < NOTE_MIN_CONTACTS:
         return "", "neutral"
     if actual <= ACTUAL_LOW and page - actual >= GAP_BAD:
         return "Worked, barely spotted", "warn"

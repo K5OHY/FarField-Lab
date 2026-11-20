@@ -66,7 +66,8 @@ CSS = """<style>
 .lc-ph{font-size:12.5px;font-weight:650;opacity:.75;margin:10px 0 6px 74px}
 .lc-chart + .lc-chart{margin-top:14px}
 .lc-axis{position:relative;height:22px;margin-left:74px}.lc-axis span{position:absolute;top:2px;transform:translateX(-50%);font-size:12px;opacity:.65}
-.lc-lad{display:grid;grid-template-columns:78px repeat(var(--k),1fr);align-items:center}
+.lc-lad{display:grid;grid-template-columns:100px repeat(var(--k),1fr);align-items:center}
+.lc-lad .cl .n{font-weight:500;font-size:11px;opacity:.55;margin-left:6px}
 .lc-lad .hd{font-size:12px;opacity:.65;text-align:center;padding-bottom:4px}
 .lc-lad .cl{font-size:12.5px;font-weight:650;padding:3px 0 3px 8px;height:30px;line-height:24px}
 .lc-lad .cd{position:relative;height:30px;display:flex;align-items:center;justify-content:center}
@@ -303,14 +304,15 @@ def pick_follower(log):
     return k.index[0] if len(k) and k.iloc[0] >= 3 else None
 
 
-def ladder_html(rep, bands, rows=24):
-    """A dot for each band a repeat station was worked on, joined by a line."""
+def ladder_html(rep, bands, rows=24, first=0):
+    """A dot for each band a repeat station was worked on, joined by a line, with the number of bands beside the callsign. Shows `rows`
+    stations from number `first` on."""
     cells = ["<div></div>" + "".join(f'<div class="hd">{b}</div>' for b in bands)]
-    for i, (call, r) in enumerate(rep.head(rows).iterrows()):
+    for i, (call, r) in enumerate(rep.iloc[first:first + rows].iterrows()):
         idx = [bands.index(b) for b in r["bands"] if b in bands]
         lo, hi = min(idx), max(idx)
         z = " zb" if i % 2 == 0 else ""
-        row = [f'<div class="cl{z}">{escape(call)}</div>']
+        row = [f'<div class="cl{z}">{escape(call)}<span class="n" title="worked on {r["k"]} bands">{r["k"]}</span></div>']
         for j, b in enumerate(bands):
             cls = "cd" + z + (" ln" if lo <= j <= hi else "") + (" l0" if j == lo else "") + (" l1" if j == hi else "")
             dot = f'<i title="{escape(call)} · {b}"></i>' if j in idx else ""
@@ -323,25 +325,36 @@ def _fact(head, body, tone=""):
     return f'<div class="lc-fact {tone}"><div class="h">{head}</div><div class="b">{body}</div></div>'
 
 
-def followers_html(log, summary, bands=None, reports=None):
-    """The ladder of repeat stations beside a few notes written from the log (and, once compared, the table)."""
+_NUMBER_WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}
+
+
+def followers_headline(rep):
+    """One sentence on how many stations worked you on how many bands: '8 stations worked you on three bands; another 25 on two.'"""
+    if not len(rep):
+        return "Nobody was worked on more than one band."
+    parts = []
+    for i, (k, n) in enumerate(rep["k"].value_counts().sort_index(ascending=False).items()):
+        word = _NUMBER_WORDS.get(int(k), str(k))
+        parts.append(f"{n} station{'s' if n != 1 else ''} worked you on {word} bands" if i == 0 else f"another {n} on {word}")
+    return "; ".join(parts) + "."
+
+
+def ladder_rest_html(log, first=24):
+    """The stations of the ladder after the first `first`, for a 'Show all' box under it."""
+    from log_check import repeat_stations
+    rep = repeat_stations(log)
+    return '<div class="lc">' + ladder_html(rep, bands_top_down(log), rows=len(rep), first=first) + "</div>"
+
+
+def followers_html(log, summary, rows=24):
+    """The ladder of the stations worked on more than one band, the most bands first, beside a few notes written from the log."""
     from log_check import repeat_stations, same_band_repeats
     rep = repeat_stations(log)
     facts = []
-    if bands is not None:
-        for r in bands[bands["tone"] == "warn"].itertuples():
-            facts.append(_fact("Worked, but barely spotted",
-                               f"<b>{r.band}:</b> {r.contacts} contacts, yet only {r.skimmers} skimmers spotted you (the page said {pct(r.page)}, "
-                               f"skimmers {pct(r.spotted)}). RBN shows what skimmers decoded, not who heard you.", "warn"))
     far = log[(log["cont"] != "") & (log["cont"] != "NA")]
     if len(far):
         names = ", ".join(f"<b>{escape(r.call)}</b> ({r.band})" for r in far.head(6).itertuples())
         facts.append(_fact("Outside North America", names + (f" and {len(far) - 6} more" if len(far) > 6 else "")))
-    if reports and reports["n"] >= 5:
-        facts.append(_fact("Reports", f"They gave you an average <b>S{reports['received']:.1f}</b>"
-                                      + (f" and you gave them S{reports['sent']:.1f}" if not np.isnan(reports["sent"]) else "")
-                                      + f", from {reports['n']} reports ({reports['s9']} were S9). Operators often send a 9 out of habit, "
-                                        "so this is a rough picture of your station, not a measurement."))
     facts.append(_fact("Busiest stretch", f"<b>{summary['best_hour']} contacts</b> in the hour from {summary['best_hour_start']:%H:%M}Z. "
                                         f"Longest quiet gap: {summary['longest_gap_min']:.1f} minutes."))
     if summary["park_to_park"]:
@@ -349,11 +362,7 @@ def followers_html(log, summary, bands=None, reports=None):
     dupes = same_band_repeats(log)
     if dupes:
         facts.append(_fact("Worked twice on a band", f"{dupes} station{'s were' if dupes != 1 else ' was'} logged more than once on the same band."))
-    if not len(rep):
-        ladder = '<p class="muted">Nobody was worked on more than one band.</p>'
-    else:
-        more = f'<p class="sub">and {len(rep) - 24} more</p>' if len(rep) > 24 else ""
-        ladder = ladder_html(rep, bands_top_down(log)) + more
+    ladder = ladder_html(rep, bands_top_down(log), rows) if len(rep) else '<p class="muted">Nobody was worked on more than one band.</p>'
     return ('<div class="lc"><div class="lc-card"><h4>Who followed you</h4>'
-            f'<p class="sub">{len(rep)} station{"s" if len(rep) != 1 else ""} worked you on more than one band, and some notes from the log.</p>'
+            f'<p class="sub">{followers_headline(rep)}</p>'
             f'<div class="lc-two"><div>{ladder}</div><div class="lc-facts">{"".join(facts)}</div></div></div></div>')

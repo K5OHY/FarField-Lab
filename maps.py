@@ -391,6 +391,13 @@ def _contact_popup(call, g, km, units):
             f'<td>You gave</td></tr>{rows}</table><div style="opacity:.6;margin-top:4px">Shown at the {esc(g["place"].iloc[0])}</div></div>')
 
 
+BANDS_WORKED_COLOURS = {1: "#8a8f98", 2: "#e6a117", 3: "#c0392b"}   # worked on one band, two bands, three or more
+
+
+def _bands_colour(n):
+    return BANDS_WORKED_COLOURS[min(max(int(n), 1), 3)]
+
+
 def _contacts_layer(m, contacts, home, k, units, paths=True):
     """The stations you worked: a dotted path for each band, and one diamond for each station (not each contact), coloured by the best
     report they gave you. Returns the points to fit the view to."""
@@ -406,11 +413,15 @@ def _contacts_layer(m, contacts, home, k, units, paths=True):
         loc = (float(g["lat"].iloc[0]), float(g["lon"].iloc[0]))
         end = great_circle(home, loc)[-1]
         best = g["s"].max()
-        colour = snr_color(best, CONTACT_SCALE) if best == best else "#8a8f98"
+        if "bands_worked" in g:       # coloured by how many bands the station was worked on, when the log says
+            colour = _bands_colour(g["bands_worked"].iloc[0])
+        else:
+            colour = snr_color(best, CONTACT_SCALE) if best == best else "#8a8f98"
         icon = folium.DivIcon(html=f'<div style="width:13px;height:13px;background:{colour};border:2px solid #fff;'
                                    f'box-shadow:0 0 3px rgba(0,0,0,.7);transform:rotate(45deg)"></div>', icon_size=(13, 13), icon_anchor=(7, 7))
         n = len(g)
-        folium.Marker(end, icon=icon, tooltip=f"{esc(call)} \u00b7 {n} contact{'s' if n != 1 else ''}",
+        on = f" \u00b7 worked on {int(g['bands_worked'].iloc[0])} band{'s' if int(g['bands_worked'].iloc[0]) != 1 else ''}" if "bands_worked" in g else ""
+        folium.Marker(end, icon=icon, tooltip=f"{esc(call)} \u00b7 {n} contact{'s' if n != 1 else ''}{on}",
                       popup=folium.Popup(_contact_popup(call, g, distance_km(home, loc) / k, units), max_width=280)).add_to(marks)
     lines.add_to(m)
     marks.add_to(m)

@@ -169,6 +169,7 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     rows = list(shown_log.drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
     places = _places_for(rows, digest, locs)
     worked = lc.where_worked(shown_log, places)
+    worked = worked.assign(bands_worked=worked["call"].map(log.groupby("call")["band"].nunique()))
     lo, hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
     heard = spots[(spots["band"] == pick) & (spots["time"] >= lo) & (spots["time"] <= hi)]
     view = _view_points(home, heard, worked, locs)
@@ -184,8 +185,8 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     left.caption(f"{heard['spotter'].nunique()} skimmers between {lo:%H:%M}Z and {hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
                  if len(heard) else f"No RBN spots on {pick} while you were working it.")
     right.caption(f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
-                  + ". Diamonds are coloured by the report they gave you; click one for the details. Each is at the centre of its grid square, "
-                    "state or country.")
+                  + ". Grey: worked on this band only. Amber: on two bands. Red: on three or more. Click one for the contacts. "
+                    "Each is at the centre of its grid square, state or country.")
 
 
 def log_page():
@@ -244,41 +245,58 @@ def log_page():
 
     tiles_slot = st.empty()
     tiles_slot.html(lh.CSS + lh.tiles_html(summary, None, len(rep)))
-    if cw.empty:
-        st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "
-                                             "The facts below come from the log alone.")
+    # The page is laid out in this order whatever order the work finishes in: who followed you, the progress, the session chart, the maps,
+    # and last the comparison with RBN and the band conditions page.
+    followers_slot, work, chart_slot, maps_slot, compare_slot = (st.container() for _ in range(5))
+    with followers_slot:
+        st.html(lh.CSS + lh.followers_html(log, summary))
+        if len(rep) > 24:
+            with st.expander(f"Show all {len(rep)} stations"):
+                st.html(lh.CSS + lh.ladder_rest_html(log))
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
-    if len(days) > MAX_DAYS and not cw.empty:
-        st.warning(f"This log spans {len(days)} days. Each day is a large file to read, so only logs of up to {MAX_DAYS} days are compared. "
-                   "Export a shorter stretch.")
-        cw = cw.iloc[0:0]
-    if cw.empty:
-        spots, missing = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), []
-    else:
-        spots, missing = _rbn_spots(digest, call, days)
-    result = None
-    if not cw.empty:
-        if missing:
-            when = lc.rbn_ready_message(missing, _visitor_timezone())
-            names = ", ".join(f"{pd.Timestamp(d):%d %b}" for d in missing)
-            if len(missing) < len(days):
-                st.caption(f"RBN has no file for {names} yet, so that part of the log is left out of the comparison. {when}")
-        loaded = log[~log["time"].dt.strftime("%Y%m%d").isin(missing)]
-        if loaded[loaded["mode"] == "CW"].empty:
-            st.warning(f"RBN has no file for {names} yet. {when} The facts from the log alone are below.")
-        elif spots.empty:
-            st.warning(f"RBN has no spots for {call} on {'that day' if len(days) == 1 else 'those days'}. Check the callsign above: it must "
-                       "match what you sent (a /P or /M counts). The facts below come from the log alone.")
+    with work:
+        if cw.empty:
+            st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "
+                                                 "The facts here come from the log alone.")
+        if len(days) > MAX_DAYS and not cw.empty:
+            st.warning(f"This log spans {len(days)} days. Each day is a large file to read, so only logs of up to {MAX_DAYS} days are compared. "
+                       "Export a shorter stretch.")
+            cw = cw.iloc[0:0]
+        if cw.empty:
+            spots, missing = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), []
         else:
-            signature = _signature(raw, power, call, grid, spots)
-            held = st.session_state.get("log_result")
-            result = held["result"] if held and held["signature"] == signature else None
-            if result is None:
-                result = _run(loaded, spots, skimmers, home, power, label)
-                if result is not None:
-                    st.session_state["log_result"] = {"signature": signature, "result": result}
-    if result is not None:
-        tiles_slot.html(lh.CSS + lh.tiles_html(summary, result["overall"], len(rep)))
+            spots, missing = _rbn_spots(digest, call, days)
+    with chart_slot:
+        st.html(lh.CSS + lh.afternoon_html(log, spots))
+    result = None
+    with work:
+        if not cw.empty:
+            if missing:
+                when = lc.rbn_ready_message(missing, _visitor_timezone())
+                names = ", ".join(f"{pd.Timestamp(d):%d %b}" for d in missing)
+                if len(missing) < len(days):
+                    st.caption(f"RBN has no file for {names} yet, so that part of the log is left out of the comparison. {when}")
+            loaded = log[~log["time"].dt.strftime("%Y%m%d").isin(missing)]
+            if loaded[loaded["mode"] == "CW"].empty:
+                st.warning(f"RBN has no file for {names} yet. {when} The facts from the log alone are above.")
+            elif spots.empty:
+                st.warning(f"RBN has no spots for {call} on {'that day' if len(days) == 1 else 'those days'}. Check the callsign above: it must "
+                           "match what you sent (a /P or /M counts). The facts here come from the log alone.")
+            else:
+                signature = _signature(raw, power, call, grid, spots)
+                held = st.session_state.get("log_result")
+                result = held["result"] if held and held["signature"] == signature else None
+                if result is None:
+                    result = _run(loaded, spots, skimmers, home, power, label)
+                    if result is not None:
+                        st.session_state["log_result"] = {"signature": signature, "result": result}
+    if result is None:
+        return
+    tiles_slot.html(lh.CSS + lh.tiles_html(summary, result["overall"], len(rep)))
+    with maps_slot:
+        _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
+    with compare_slot:
+        st.markdown("#### The comparison with RBN and the band conditions page")
         st.html(lh.CSS + lh.band_table_html(result["bands"]))
         o = result["overall"]
         notes = [f"Page and skimmers: in regions with at least {lc.cond.THIN} WSPR receivers, the page's chance averaged {lh.pct(o['page'])} "
@@ -288,12 +306,11 @@ def log_page():
                  f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
         st.caption(" ".join(n for n in notes if n))
         _regions_section(result)
-        _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
-    st.html(lh.CSS + lh.afternoon_html(log, spots))
-    st.html(lh.CSS + lh.followers_html(log, summary, result["bands"] if result else None, lc.report_summary(log)))
-    st.caption(f"\"Stronger than a typical station\" sets the skimmers' reports against the WSPR stations near you, restated to your power. "
-               f"Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {lc.TYPICAL_OFFSET_DB:.0f} dB higher "
-               "on RBN than on the Band conditions page (found from two checks of stations whose power is known), and that is taken off. "
-               f"With fewer than {lc.MIN_MATCHES} matched receivers a bar is striped, and it is a hint, not a score. The percentages "
-               "compare the page's chance for each region with the share of skimmers on the band that spotted you, which is lower, because "
-               "a skimmer has to be tuned to you and decode you. A log shows who worked you; RBN only shows who a skimmer decoded.")
+        st.caption(f"\"Stronger than a typical WSPR station\" sets the skimmers' reports against the WSPR stations near you, restated to your power. "
+                   f"Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {lc.TYPICAL_OFFSET_DB:.0f} dB higher "
+                   "on RBN than on the Band conditions page (found from two checks of stations whose power is known), and that is taken off. "
+                   f"With fewer than {lc.MIN_MATCHES} matched receivers a bar is striped, and it is a hint, not a score. The percentages "
+                   "compare the page's chance for each region with the share of skimmers on the band that spotted you, which is lower, because "
+                   "a skimmer has to be tuned to you and decode you. A log shows who worked you; RBN only shows who a skimmer decoded. "
+                   "The S in each band row is the average report they gave you; many operators send a 9 out of habit, so it is a rough picture "
+                   "of your station, not a measurement.")
