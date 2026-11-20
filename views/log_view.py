@@ -125,14 +125,9 @@ def _view_points(home, spots, worked, locs):
 
 
 def _maps_section(log, result, spots, locs, home, label, who, tiles, units, digest):
-    """Two maps of one band, side by side and framed alike: the skimmers that spotted you, and the stations you worked. Shown on request,
-    because placing the stations means looking each one up."""
+    """Two maps of one band, side by side and framed alike: the skimmers that spotted you, and the stations you worked. They open on the
+    band with the most DX; placing that band's stations takes a few seconds the first time, and each band is only looked up once."""
     st.markdown("#### Maps: who heard you and who you worked")
-    if not st.toggle("Show the maps", key="log_maps_on",
-                     help="Looks up where each station you worked is, one band at a time. The answers are remembered, so a band is only slow the first time."):
-        st.caption("Two maps of one band, side by side: the skimmers that spotted you on the left, the stations you worked on the right. "
-                   "Switch this on to see them. It looks up where your contacts were, one band at a time.")
-        return
     shown = set(result["bands"]["band"])
     bands = [b for b in lc.bands_top_down(log) if b in shown] or lc.bands_top_down(log)
     first = _default_band(bands, result["regions"])
@@ -148,22 +143,20 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     lo, hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
     heard = spots[(spots["band"] == pick) & (spots["time"] >= lo) & (spots["time"] <= hi)]
     view = _view_points(home, heard, worked, locs)
-    left, right = st.columns(2)
-    with left:
-        st.markdown(f"**Skimmers that spotted you on {pick}**")
-        st.caption(f"{heard['spotter'].nunique()} skimmers between {lo:%H:%M}Z and {hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
-                   if len(heard) else f"No RBN spots on {pick} while you were working it.")
-        st.iframe(build_map(heard, locs, home, label, who, False, tiles, units, None, title=f"{who} · heard on {pick}", view=view, show_legend=False)
-                  .get_root().render(), height=520)
-    with right:
-        st.markdown(f"**Stations you worked on {pick}**")
-        missing = shown_log["call"].nunique() - worked["call"].nunique()
-        st.caption(f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
-                   + ". Diamonds are coloured by the report they gave you; click one for the details. Each is at the centre of its grid square, "
-                     "state or country.")
-        st.iframe(build_map(spots.iloc[0:0], locs, home, label, who, False, tiles, units, None, title=f"{who} · worked on {pick}",
-                            contacts=worked if len(worked) else None, show_spots=False, contact_paths=False, view=view, show_legend=False)
-                  .get_root().render(), height=520)
+    left, right = st.columns(2)      # a one line title above each map and the notes below them, so the two maps start level
+    left.markdown(f"**Skimmers that spotted you on {pick}**")
+    right.markdown(f"**Stations you worked on {pick}**")
+    left.iframe(build_map(heard, locs, home, label, who, False, tiles, units, None, title=f"{who} · heard on {pick}", view=view, show_legend=False)
+                .get_root().render(), height=520)
+    right.iframe(build_map(spots.iloc[0:0], locs, home, label, who, False, tiles, units, None, title=f"{who} · worked on {pick}",
+                           contacts=worked if len(worked) else None, show_spots=False, contact_paths=False, view=view, show_legend=False)
+                 .get_root().render(), height=520)
+    missing = shown_log["call"].nunique() - worked["call"].nunique()
+    left.caption(f"{heard['spotter'].nunique()} skimmers between {lo:%H:%M}Z and {hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
+                 if len(heard) else f"No RBN spots on {pick} while you were working it.")
+    right.caption(f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
+                  + ". Diamonds are coloured by the report they gave you; click one for the details. Each is at the centre of its grid square, "
+                    "state or country.")
 
 
 def log_page():
