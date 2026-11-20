@@ -1,3 +1,6 @@
+[server]
+maxUploadSize = 5   # MB; the Log check is the only upload, and a log of a few days is far smaller
+
 [theme.light]
 primaryColor = "#1E5BFF"
 

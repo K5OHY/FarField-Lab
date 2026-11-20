@@ -38,6 +38,26 @@ def _where(grid, call, skimmers):
     return found[0], found[1], f"{found[2] or 'near ' + call} (where {call} is registered)"
 
 
+def _what_was_read(log, name):
+    """How many contacts were read from the file, and how many records were left out and why."""
+    n, seen = len(log), log.attrs.get("records", len(log))
+    if seen == n:
+        st.caption(f"Read {n} contacts from {name}.")
+        return
+    why = [f"{k} without a usable {what}" for k, what in ((log.attrs.get("no_time", 0), "date or time"), (log.attrs.get("no_band", 0), "band")) if k]
+    st.caption(f"Read {n} of the {seen} records in {name}. {seen - n} left out: {', '.join(why)}.")
+
+
+def _mixed_log_warning(log):
+    """Says so when the log was made under more than one callsign or from more than one place, because the comparison uses one of each."""
+    for column, noun, kind in (("my_grid", "place", "grid squares"), ("station", "callsign", "callsigns")):
+        found = lc.origin_counts(log, column)
+        if len(found) > 1:
+            listed = ", ".join(f"{v} ({n} contacts)" for v, n in found[:4]) + (" and more" if len(found) > 4 else "")
+            st.warning(f"This log has more than one {noun}: {listed}. The comparison uses the one with the most contacts, {found[0][0]}, for "
+                       f"all of them. If you moved or used another callsign, export each {noun} as its own file to compare it properly.")
+
+
 def _visitor_timezone():
     """The visitor's time zone name from their browser, or None when it is not known."""
     try:
@@ -178,8 +198,8 @@ def log_page():
                 'around you. The callsign, the place and the days come from the log.</p>', unsafe_allow_html=True)
     skimmers, _ = skimmer_data()
     file = st.file_uploader("Your log (ADIF file)", type=["adi", "adif"], key="log_file",
-                            help="Most logging programs can export one. Contacts need a call, date, time and band. "
-                                 "The log is used for this visit only and is not saved or shared.")
+                            help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
+                                 "which is many thousands of contacts. The log is used for this visit only and is not saved or shared.")
     if file is not None:
         st.session_state["log_saved"] = (file.name, file.getvalue())
     saved = st.session_state.get("log_saved")
@@ -198,10 +218,12 @@ def log_page():
         st.error(str(exc))
         return
     digest = hashlib.sha1(raw).hexdigest()
+    _what_was_read(log, name)
     cw = log[log["mode"] == "CW"]
     summary, rep = lc.summary(log), lc.repeat_stations(log)
     call0, grid0 = lc.log_origin(log)
 
+    _mixed_log_warning(log)
     c1, c2, c3 = st.columns(3)
     call = c1.text_input("Your callsign", value=call0, key=f"log_call_{digest[:10]}",
                          help="Taken from the log. RBN spots are looked up under this callsign, exactly as it was sent (K5OHY/P is not K5OHY).").strip().upper()

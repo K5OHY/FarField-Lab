@@ -100,15 +100,17 @@ def tiles_html(s, overall, repeats):
     if s["states"]:
         where += f" · {s['states']} states or provinces"
     if overall is None:
-        strength = _tile("–", "--a", "stronger than a typical station", "worked out from the RBN comparison below")
+        strength = _tile("–", "--a", "vs a typical WSPR station", "worked out from the RBN comparison below")
     elif np.isnan(overall["stronger_db"]):
-        strength = _tile("–", "--a", "stronger than a typical station", f"too few receivers matched ({overall['matches']})")
+        strength = _tile("–", "--a", "vs a typical WSPR station", f"too few receivers matched ({overall['matches']})")
     else:
-        strength = _tile(f"{overall['stronger_db']:+.0f}", "--a", f"{'stronger' if overall['stronger_db'] >= 0 else 'weaker'} than a typical station",
-                         f"{overall['matches']} matched receivers · rough hint", "dB")
+        strength = _tile(f"{overall['stronger_db']:+.0f}", "--a", f"{'stronger' if overall['stronger_db'] >= 0 else 'weaker'} than a typical WSPR station",
+                         f"{overall['matches']} matched receivers · an estimate", "dB")
     return ('<div class="lc"><div class="lc-tiles">'
             + _tile(s["contacts"], "--b", "contacts", escape(where))
-            + _tile(f"{s['per_hour']:.0f}", "--t", "overall rate", f"busiest hour {s['best_hour']} contacts, from {s['best_hour_start']:%H:%M}Z", "/ hour")
+            + _tile("–" if np.isnan(s["per_hour"]) else f"{s['per_hour']:.0f}", "--t", "contacts per hour on the air",
+                    f"busiest hour {s['best_hour']} contacts, from {s['best_hour_start']:%H:%M}Z" + (" · pauses over 30 min not counted" if s["on_air_hours"] else ""),
+                    "" if np.isnan(s["per_hour"]) else "/ hour")
             + strength
             + _tile(repeats, "--g", "came back on another band", "stations worked on 2 or more bands")
             + '</div></div>')

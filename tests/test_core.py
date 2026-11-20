@@ -1139,7 +1139,7 @@ class LogCheck(unittest.TestCase):
         row = out["bands"].iloc[0]
         self.assertEqual((row["note"], row["tone"]), ("Worked, barely spotted", "warn"))
         out = self.run_compare(*self.scene(spotters=("K1AAA", "K2BBB", "K3CCC", "K4DDD", "K5EEE", "K6FFF")))
-        self.assertEqual(out["bands"].iloc[0]["note"], "Page and skimmers agree")
+        self.assertEqual(out["bands"].iloc[0]["note"], "Page and skimmers close")
 
     def test_a_log_with_no_wspr_in_the_hour_reports_that(self):
         log, spots, wspr, listening, locs = self.scene()
@@ -1337,6 +1337,38 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
                 asked.clear()
                 ds.load_contact_places(rows, {}, workers=1)
             self.assertEqual(sorted(asked), ["K0NOPE", "W4DDD"])  # the exact answer for W1AAA came from the disk, the guesses are asked again
+
+    def adif(self, *records):
+        return "<ADIF_VER:5>3.1.4 <EOH>\n" + "\n".join(records) + "\n"
+
+    def rec(self, call, hhmm, band="20m", date="20261118", extra=""):
+        return f"<CALL:{len(call)}>{call} <QSO_DATE:8>{date} <TIME_ON:4>{hhmm} <BAND:{len(band)}>{band} <MODE:2>CW {extra}<EOR>"
+
+    def test_the_rate_counts_only_the_time_on_the_air(self):
+        # five contacts a minute apart, then a night off, then five more: the break is not time spent operating slowly
+        recs = [self.rec(f"W{i}AA", f"20{i:02d}") for i in range(5)] + [self.rec(f"K{i}BB", f"20{i:02d}", date="20261119") for i in range(5)]
+        s = lc.summary(lc.parse_adif(self.adif(*recs)))
+        self.assertAlmostEqual(s["per_hour"], 60.0, delta=1.0)                              # a contact a minute
+        self.assertAlmostEqual(s["on_air_hours"], 8 / 60, places=3)                         # eight one minute gaps, not 24 hours
+        lone = lc.summary(lc.parse_adif(self.adif(self.rec("W1AA", "2000"), self.rec("W2BB", "2200"))))
+        self.assertTrue(np.isnan(lone["per_hour"]))                                         # no two contacts close enough to make a rate
+        self.assertIn("–", lh.tiles_html(lone, None, 0))
+
+    def test_the_page_says_how_many_records_it_read_and_why_it_left_some_out(self):
+        text = self.adif(self.rec("W1AA", "2000"), "<CALL:4>W2BB <QSO_DATE:8>20261118 <BAND:3>20m <EOR>",
+                         "<CALL:4>W3CC <QSO_DATE:8>20261118 <TIME_ON:4>2002 <BAND:3>20m <MODE:2>CW <EOR>",
+                         "<CALL:4>W4DD <QSO_DATE:8>20261118 <TIME_ON:4>2003 <BAND:3>zz9 <MODE:2>CW <EOR>")
+        log = lc.parse_adif(text)
+        self.assertEqual((len(log), log.attrs["records"], log.attrs["no_time"], log.attrs["no_band"]), (2, 4, 1, 1))
+
+    def test_a_log_made_in_two_places_or_under_two_callsigns_is_noticed(self):
+        recs = [self.rec("W1AA", "2000", extra="<STATION_CALLSIGN:5>K5OHY <MY_GRIDSQUARE:6>DM81wx "),
+                self.rec("W2BB", "2001", extra="<STATION_CALLSIGN:5>K5OHY <MY_GRIDSQUARE:6>DM81wy "),      # the same 4 character square
+                self.rec("W3CC", "2002", extra="<STATION_CALLSIGN:7>K5OHY/P <MY_GRIDSQUARE:6>DM91sl ")]
+        log = lc.parse_adif(self.adif(*recs))
+        self.assertEqual(lc.origin_counts(log, "my_grid"), [("DM81", 2), ("DM91", 1)])
+        self.assertEqual(lc.origin_counts(log, "station"), [("K5OHY", 2), ("K5OHY/P", 1)])
+        self.assertEqual(lc.origin_counts(lc.parse_adif(self.adif(self.rec("W1AA", "2000"))), "my_grid"), [])   # a log that does not say
 
     def test_the_log_says_who_and_where_you_were(self):
         text = ("<ADIF_VER:5>3.1.4 <EOH>\n"

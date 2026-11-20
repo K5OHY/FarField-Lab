@@ -29,7 +29,7 @@ SESSION_GAP_MIN = 30       # a pause this long on a band starts a new stretch
 WINDOW_PAD_MIN = 5         # spots this long before the first contact and after the last still belong to the stretch
 LOOKBACK_MIN = 60          # the WSPR picture is built from the hour before the middle of the stretch
 GAP_BAD, ACTUAL_LOW = 0.30, 0.30   # "worked but barely spotted": the page's chance is this much above the share spotted, which is low
-AGREE = 0.10               # the page's chance and the share spotted are this close: they agree
+AGREE = 0.10               # the page's chance and the share spotted are within this of each other: close
 
 _FIELD = re.compile(r"<([A-Za-z0-9_]+):(\d+)(?::[A-Za-z0-9_]+)?>")
 
@@ -68,14 +68,19 @@ def _when(date, time):
 def parse_adif(text):
     """The contacts in an ADIF file as a table: call, time (UTC), band, mode, state, country, cont, pota_ref, and the reports
     (rst_sent: what you gave them, rst_rcvd: what they gave you). Raises ValueError
-    when there are no contacts in it. Contacts without a call, a date, a time or a band are left out."""
+    when there are no contacts in it. Contacts without a call, a date, a time or a band are left out; log.attrs says how many records the
+    file had (records) and how many were left out for want of a usable date or time (no_time) or band (no_band)."""
     parts = re.split(r"<eoh>", text, maxsplit=1, flags=re.IGNORECASE)
     body = parts[1] if len(parts) == 2 else text
-    rows = []
+    rows, seen, no_time, no_band = [], 0, 0, 0
     for record in re.split(r"<eor>", body, flags=re.IGNORECASE):
         f = _fields(record)
-        when = _when(f.get("QSO_DATE", ""), f.get("TIME_ON", "")) if "CALL" in f else None
+        if "CALL" not in f:
+            continue
+        seen += 1
+        when = _when(f.get("QSO_DATE", ""), f.get("TIME_ON", ""))
         if when is None:
+            no_time += 1
             continue
         band = f.get("BAND", "").lower()
         if band not in BAND_ORDER:
@@ -84,6 +89,7 @@ def parse_adif(text):
             except (KeyError, ValueError):
                 band = "unknown"
         if band == "unknown":
+            no_band += 1
             continue
         mode = f.get("MODE", "").upper()
         if mode == "MFSK" and f.get("SUBMODE"):
@@ -94,7 +100,9 @@ def parse_adif(text):
                      "station": (f.get("STATION_CALLSIGN") or f.get("OPERATOR") or "").upper(), "my_grid": f.get("MY_GRIDSQUARE", "")})
     if not rows:
         raise ValueError("No contacts with a call, a date, a time and a band were found in that file.")
-    return pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+    log = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+    log.attrs.update(records=seen, no_time=no_time, no_band=no_band)    # how many records the file had and how many were left out
+    return log
 
 
 RBN_FILE_DELAY_MIN = 2     # RBN builds a UTC day's history file at 00:02 UTC the next day (seen on the files of 16 to 19 Nov 2026)
@@ -113,6 +121,17 @@ def rbn_ready_message(days, tz_name=None):
     here = f" ({local:%a %d %b, %I:%M %p}".replace(" 0", " ") + f" {local:%Z})" if local is not None else ""
     return (f"RBN makes each UTC day's file just after the day ends, so {last:%d %b} will be ready after {when}{here}. "
             "Come back then, and this log will be compared.")
+
+
+def origin_counts(log, column):
+    """The different values of a log column (station for callsigns, my_grid for grid squares) with the contacts made under each, most
+    first. Grids are compared by their first four characters, because two squares of one park are the same place."""
+    if column not in log:
+        return []
+    values = log[column][log[column] != ""]
+    if column == "my_grid":
+        values = values.str[:4].str.upper()
+    return [(str(v), int(n)) for v, n in values.value_counts().items()]
 
 
 def log_origin(log):
@@ -137,13 +156,14 @@ def best_hour(times):
 def summary(log):
     """The headline numbers of a log."""
     t = log["time"].sort_values()
-    hours = max((t.iloc[-1] - t.iloc[0]).total_seconds() / 3600, 1 / 60)
     gaps = t.diff().dropna().dt.total_seconds()
+    on_air = gaps[gaps <= SESSION_GAP_MIN * 60]       # the pauses of more than half an hour are time off the air, not slow operating
+    per_hour = len(on_air) / (on_air.sum() / 3600) if on_air.sum() > 0 else float("nan")
     n_best, start_best = best_hour(t)
     states = log.loc[log["state"] != "", "state"].nunique()
     return {"contacts": len(log), "stations": int(log["call"].nunique()), "states": int(states),
             "countries": int(log.loc[log["country"] != "", "country"].nunique()), "first": t.iloc[0], "last": t.iloc[-1],
-            "per_hour": len(log) / hours, "median_gap_s": float(gaps.median()) if len(gaps) else float("nan"),
+            "per_hour": per_hour, "on_air_hours": float(on_air.sum() / 3600), "median_gap_s": float(gaps.median()) if len(gaps) else float("nan"),
             "longest_gap_min": float(gaps.max() / 60) if len(gaps) else float("nan"), "best_hour": n_best, "best_hour_start": start_best,
             "park_to_park": int(log["pota_ref"].ne("").sum()), "parks": int(log.loc[log["pota_ref"] != "", "pota_ref"].nunique())}
 
@@ -323,7 +343,7 @@ def _note(contacts, page, actual):
     if actual <= ACTUAL_LOW and page - actual >= GAP_BAD:
         return "Worked, barely spotted", "warn"
     if abs(page - actual) <= AGREE:
-        return "Page and skimmers agree", "good"
+        return "Page and skimmers close", "good"
     return "", "neutral"
 
 
