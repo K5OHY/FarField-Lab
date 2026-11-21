@@ -412,8 +412,10 @@ def _blocks_test(spots, all_stamps):
     fmt = (lambda t: f"{t:%d %b %H:%M}") if multi_day else (lambda t: f"{t:%H:%M}")
     c1, c2, c3, c4 = st.columns([2, 2, 2, 3])
     st.session_state.setdefault("blk_len", 30)
-    block_min = int(c1.number_input("Minutes per block", 4, 480, step=2, key="blk_len",
-                                    help="How long each antenna stayed connected before you switched."))
+    block_min = int(c1.number_input("Minutes per block", 2, 480, step=2, key="blk_len",
+                                    help="How long each antenna stayed connected before you switched. A WSPR transmission lasts 2 minutes, so a 2 minute "
+                                         "block is one transmission: that runs the long block averaging on a test that switched after every transmission, "
+                                         "which is a way to compare the two methods on the same data."))
     # Open on the whole data set: the first transmission, and enough blocks to reach the last one. The keys carry the data's
     # first and last times, so loading different spots starts fresh instead of keeping the last test's choices.
     sig = f"{all_stamps[0]:%d%H%M}_{all_stamps[-1]:%d%H%M}_{block_min}"

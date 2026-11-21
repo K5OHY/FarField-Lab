@@ -200,7 +200,8 @@ def distance_chart(dist, names):
     """One row per distance range. Bars grow left where A is stronger and right where B is stronger, from a centre
     line that means 'equal'; the receiver counts sit at the right. Long paths usually mean low take-off angles."""
     rows = dist[(dist["a"] > 0) | (dist["b"] > 0)].reset_index(drop=True)
-    short = {k: (v if len(v) <= 10 else k) for k, v in names.items()}  # long names would collide with the bars
+    short = {k: (v if len(v) <= 10 else v[:9].rstrip() + "…") for k, v in names.items()}  # long names would collide with the bars, so they are cut short
+    cut = any(short[k] != names[k] for k in names)
     n_rows = max(len(rows), 1)
     fig = Figure(figsize=(6.4, 0.62 * n_rows + 1.5))
     fig.patch.set_alpha(0)
@@ -237,7 +238,10 @@ def distance_chart(dist, names):
     for i, row in rows.iterrows():
         ax.text(1.03, i, f"heard by {short['A']} {int(row['a'])} · {short['B']} {int(row['b'])}\n{int(row['shared'])} heard both",
                 transform=ax.get_yaxis_transform(), ha="left", va="center", fontsize=7.5, color=COLOR_TIE)
-    fig.subplots_adjust(left=0.2, right=0.66, top=0.86, bottom=0.18)
+    if cut:     # a name that was cut short is written out in full under the chart
+        key = f"A = {names['A']}  ·  B = {names['B']}"
+        fig.text(0.02, 0.012, key if len(key) <= 90 else key[:89] + "…", fontsize=7.5, color=COLOR_TIE, va="bottom")
+    fig.subplots_adjust(left=0.2, right=0.66, top=0.86, bottom=0.26 if cut else 0.18)
     return fig
 
 

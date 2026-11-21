@@ -41,7 +41,7 @@ def read(ss, q):
     if q.get("ord") in ORDERS:
         ss["blk_order" if blocks else "test_order"] = ORDERS[q["ord"]]
     if blocks:
-        length = _int(q.get("bl"), 4, 480)
+        length = _int(q.get("bl"), 2, 480)
         if length:
             ss["blk_len"] = length
         pasted = "\n".join(line.strip() for line in q.get("bp", "")[:1500].split(";") if line.strip())

@@ -784,6 +784,16 @@ class ComparePage(unittest.TestCase):
         at.run()
         self.assertEqual(errors(at), [])
 
+    def test_a_long_block_can_be_two_minutes_which_is_one_transmission(self):
+        at = page("compare_page").run()
+        open_example(at, "long")
+        box = [n for n in at.number_input if n.key == "blk_len"][0]
+        self.assertEqual(box.min, 2)
+        box.set_value(2)
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["blk_len"], 2)
+
     def test_a_test_link_fills_in_the_setup(self):
         at = page("compare_page", call="N3HXZ", src="wspr", date="2026-08-26", band="20m", na="Loop", nb="Dipole", sw="blocks",
                   bl="30", ord="abba", mr="25", fl="1", nr="50", wk="20", units="mi").run()

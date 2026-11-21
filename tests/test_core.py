@@ -1874,6 +1874,18 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 ds.load_pota_park("US-3053")
 
+    def test_the_distance_chart_names_an_antenna_even_when_the_name_is_long(self):
+        import charts
+        dist = pd.DataFrame({"label": ["0-300 mi", "300-1,000 mi"], "a": [1, 39], "b": [5, 39], "shared": [1, 31], "delta": [-1.0, -3.5]})
+        fig = charts.distance_chart(dist, {"A": "POTA Performer 2", "B": "BV"})
+        texts = [t.get_text() for t in fig.axes[0].texts] + [t.get_text() for t in fig.texts]
+        self.assertTrue(any(t.endswith("stronger") and "POTA Perf" in t and "…" in t for t in texts))       # a long name is cut short, not turned into a bare letter
+        self.assertFalse(any(t.strip("◀ ") == "A stronger" for t in texts))
+        self.assertIn("A = POTA Performer 2  ·  B = BV", texts)                                          # and written out in full under the chart
+        self.assertTrue(any("BV stronger" in t for t in texts))
+        plain = charts.distance_chart(dist, {"A": "Loop", "B": "Dipole"})
+        self.assertFalse(any(t.startswith("A = ") for t in [t.get_text() for t in plain.texts]))               # short names need no key
+
     def test_the_followers_diamond_is_drawn_above_the_blocks(self):
         rule = lh.CSS[lh.CSS.index(".lc-d{"):]
         self.assertIn("z-index:3", rule[:rule.index("}")])                                   # blocks stacked above it no longer hide it
