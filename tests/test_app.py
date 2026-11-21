@@ -794,6 +794,12 @@ class ComparePage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         self.assertEqual(at.session_state["blk_len"], 2)
 
+    def test_the_maps_say_where_rbn_heard_you_and_who_you_worked(self):
+        import views.log_view as log_view
+        self.assertEqual(log_view.MAPS_HEADING, "Maps for CW: where RBN heard you, and who you worked")
+        self.assertEqual(log_view.HEARD_TITLE.format(band="20m"), "Where RBN heard you on 20m")
+        self.assertEqual(log_view.WORKED_TITLE.format(band="20m"), "Stations you worked on 20m")
+
     def test_a_test_link_fills_in_the_setup(self):
         at = page("compare_page", call="N3HXZ", src="wspr", date="2026-08-26", band="20m", na="Loop", nb="Dipole", sw="blocks",
                   bl="30", ord="abba", mr="25", fl="1", nr="50", wk="20", units="mi").run()

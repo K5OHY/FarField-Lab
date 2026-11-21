@@ -20,6 +20,8 @@ from wspr_data import WsprError
 RADIUS_KM = 300 * KM_PER_MILE   # the WSPR stations counted as "near you", as on the Band conditions page
 MAX_LOG_BYTES = 5_000_000
 MAX_DAYS = 4                    # each day is a large file to read, so a log is limited to a few days
+MAPS_HEADING = "Maps for CW: where RBN heard you, and who you worked"
+HEARD_TITLE, WORKED_TITLE = "Where RBN heard you on {band}", "Stations you worked on {band}"
 
 
 def _signature(raw, power, call, grid, spots):
@@ -239,7 +241,7 @@ def _view_points(home, spots, worked, locs):
 def _maps_section(log, result, spots, locs, home, label, who, tiles, units, digest):
     """Two maps of one band, side by side and framed alike: the skimmers that spotted you, and the stations you worked. They open on the
     band with the most DX; placing that band's stations takes a few seconds the first time, and each band is only looked up once."""
-    st.markdown("#### Maps for CW: who heard you and who you worked")
+    st.markdown(f"#### {MAPS_HEADING}")
     st.caption("Skimmers only hear CW, so the maps start with your CW contacts. Where your contacts were is looked up in the background, so each band should be ready when you click it.")
     shown = set(result["bands"]["band"])
     bands = [b for b in lc.bands_top_down(log) if b in shown] or lc.bands_top_down(log)
@@ -258,9 +260,9 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     heard = spots[(spots["band"] == pick) & (spots["time"] >= lo) & (spots["time"] <= hi)]
     view = _view_points(home, heard, worked, locs)
     left, right = st.columns(2)      # a one line title above each map and the notes below them, so the two maps start level
-    left.markdown(f"**Skimmers that spotted you on {pick}**")
-    right.markdown(f"**Stations you worked on {pick}**")
-    left.iframe(build_map(heard, locs, home, label, who, False, tiles, units, None, title=f"{who} · heard on {pick}", view=view, show_legend=False)
+    left.markdown(f"**{HEARD_TITLE.format(band=pick)}**")
+    right.markdown(f"**{WORKED_TITLE.format(band=pick)}**")
+    left.iframe(build_map(heard, locs, home, label, who, False, tiles, units, None, title=f"{who} · RBN heard you on {pick}", view=view, show_legend=False)
                 .get_root().render(), height=520)
     right.iframe(build_map(spots.iloc[0:0], locs, home, label, who, False, tiles, units, None, title=f"{who} · worked on {pick}",
                            contacts=worked if len(worked) else None, show_spots=False, contact_paths=False, view=view, show_legend=False)
