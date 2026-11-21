@@ -1795,17 +1795,46 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual(empty["n_acts"], 0)
         self.assertIn("the only activation listed", dict(lc.pota_notes(empty))["12 Nov 2026: 4 QSOs."])
 
-    def test_the_park_card_shows_the_counts_the_notes_and_the_biggest_activations(self):
+    def test_the_park_card_shows_the_counts_the_notes_the_standing_and_the_biggest_activations(self):
         park = {"reference": "US-3053", "name": "San Angelo", "parktypeDesc": "State Park", "locationName": "Texas"}
-        html = lh.pota_html(lc.pota_compare(self.pota_log(), "US-3053", park, self.pota_acts(), "K5OHY"))
+        card = lc.pota_compare(self.pota_log(), "US-3053", park, self.pota_acts(), "K5OHY")
+        html = lh.pota_html(card)
         self.assertIn("How this park compares: US-3053 San Angelo", html)
-        self.assertIn("State Park, Texas", html)
-        self.assertIn("first activated by", html)
-        self.assertIn("AI5YA", html)
         self.assertIn("13 Nov 2026: 5 QSOs.", html)
-        self.assertIn("K5OHY <small>(you)</small>", html)                                         # your own rows in the biggest list are marked
+        self.assertIn("Across everything listed under your callsign here:", html)
+        self.assertIn("9 QSOs (2nd of 3 activators), 2 activations (1st of 3), 8 CW QSOs (1st of 2).", html)     # 15 for N5NU, 9 for you, 3 for AI5YA
+        self.assertIn("The park's top activators", html)
+        self.assertIn("K5OHY <small>(you)</small>", html)                                         # your own rows in the lists are marked
         self.assertIn("can be out of date", html)
-        self.assertLess(html.index(">N5NU<") if ">N5NU<" in html else html.index("N5NU"), html.index("AI5YA", html.index("The biggest")))   # biggest first
+        self.assertLess(html.index("N5NU"), html.index("AI5YA", html.index("The biggest")))       # biggest first
+        self.assertEqual(card["standing"]["qsos"], (2, 3, 9))
+        self.assertIsNone(lc.pota_compare(self.pota_log(), "US-3053", park, self.pota_acts(), "W9XYZ")["standing"])    # not listed under that callsign
+
+    def test_the_park_facts_come_from_potas_record_and_the_website_link_is_safe(self):
+        park = {"reference": "US-3053", "name": "San Angelo", "parktypeDesc": "State Park", "locationName": "Texas", "grid6": "DM91sk",
+                "firstActivator": "N4CD", "firstActivationDate": "2018-03-11", "firstHunter": "W0ZQ", "firstHuntDate": "2018-03-12",
+                "uniqueHunters": 7825, "website": "https://tpwd.texas.gov/state-parks/san-angelo", "accessMethods": "Automobile"}
+        stats = {"reference": "US-3053", "attempts": 259, "activations": 246, "contacts": 20906}
+        card = lc.pota_compare(self.pota_log(), "US-3053", park, self.pota_acts(), "K5OHY", stats)
+        html = lh.park_facts_html(card)
+        self.assertIn("About the park", html)
+        self.assertIn("State Park, Texas, grid DM91sk", html)
+        self.assertIn("First activated by <b>N4CD</b>, 11 Mar 2018", html)
+        self.assertIn("First hunted by <b>W0ZQ</b>, 12 Mar 2018", html)
+        self.assertIn("7,825 different stations have hunted it", html)
+        self.assertIn("20,906 contacts logged there in all; 246 of 259 activations reached the 10 QSOs POTA needs", html)
+        self.assertIn('href="https://tpwd.texas.gov/state-parks/san-angelo"', html)
+        self.assertNotIn("Automobile", html)                                                    # how to get in is not shown
+        bad = lh.park_facts_html(lc.pota_compare(self.pota_log(), "US-3053", dict(park, website="javascript:alert(1)"), self.pota_acts(), "K5OHY"))
+        self.assertNotIn("javascript", bad)                                                     # only http and https sites are linked
+        self.assertEqual(lh.park_facts_html(lc.pota_compare(self.pota_log(), "US-3053", None, self.pota_acts(), "K5OHY")), "")
+
+    def test_the_park_map_has_one_dot_at_the_park(self):
+        import maps
+        html = maps.park_map(31.4556, -100.497, "US-3053 San Angelo").get_root().render()
+        self.assertIn("31.4556", html)
+        self.assertIn("US-3053 San Angelo", html)
+        self.assertEqual(html.count("L.circleMarker("), 1)
 
     def test_pota_is_asked_for_a_park_with_only_its_reference(self):
         class Resp:
@@ -1824,17 +1853,22 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
             asked.append((url, params))
             if "activations" in url:
                 return Resp([{"activeCallsign": "K5OHY", "qso_date": "20261113", "totalQSOs": 457, "qsosCW": 436, "qsosDATA": 0, "qsosPHONE": 21}])
+            if "stats" in url:
+                return Resp({"reference": "US-3053", "attempts": 259, "activations": 246, "contacts": 20906})
             return Resp({"reference": "US-3053", "name": "San Angelo"})
 
         with mock.patch.object(ds.requests, "get", get):
-            park, acts = ds.load_pota_park("US-3053")
+            park, acts, totals = ds.load_pota_park("US-3053")
         self.assertEqual(park["name"], "San Angelo")
+        self.assertEqual(totals["contacts"], 20906)
         self.assertEqual(acts.iloc[0].to_dict(), {"call": "K5OHY", "date": pd.Timestamp("2026-11-13"), "total": 457, "cw": 436, "phone": 21, "data": 0})
-        self.assertEqual([u for u, _ in asked], ["https://api.pota.app/park/US-3053", "https://api.pota.app/park/activations/US-3053"])
+        self.assertEqual([u for u, _ in asked], ["https://api.pota.app/park/US-3053", "https://api.pota.app/park/activations/US-3053",
+                                                 "https://api.pota.app/park/stats/US-3053"])
         self.assertEqual(asked[1][1], {"count": "all"})                                          # nothing about you is sent, only the park
         with mock.patch.object(ds.requests, "get", lambda url, params=None, **k: Resp(None, b"")):
-            park, acts = ds.load_pota_park("US-0000")
+            park, acts, totals = ds.load_pota_park("US-0000")
         self.assertIsNone(park)
+        self.assertIsNone(totals)
         self.assertTrue(acts.empty)                                                              # a park POTA does not know
         with mock.patch.object(ds.requests, "get", mock.Mock(side_effect=ds.requests.ConnectionError("down"))):
             with self.assertRaises(RuntimeError):

@@ -182,8 +182,9 @@ POTA_API = "https://api.pota.app"
 
 
 def load_pota_park(ref):
-    """POTA's record of a park and every activation listed for it, from POTA's public data service: (park dict or None, activations as a
-    table of call, date, total, cw, phone, data). Only the park reference is sent. Raises RuntimeError when POTA cannot be reached."""
+    """POTA's record of a park, every activation listed for it, and its totals, from POTA's public data service: (park dict or None,
+    activations as a table of call, date, total, cw, phone, data, and the totals dict or None). Only the park reference is sent. Raises
+    RuntimeError when POTA cannot be reached (the totals alone failing is not an error: they are left out)."""
     def ask(url, params=None, timeout=20):
         for attempt in (1, 2):                    # one retry: a connection that is reset once usually works the second time
             try:
@@ -200,11 +201,16 @@ def load_pota_park(ref):
         info, rows = (park.json() if park.content else None), (acts.json() or [])
     except (requests.RequestException, ValueError) as exc:
         raise RuntimeError(f"POTA could not be reached ({exc.__class__.__name__}).") from exc
+    try:
+        totals = ask(f"{POTA_API}/park/stats/{ref}").json()
+        totals = totals if isinstance(totals, dict) and "contacts" in totals else None
+    except (requests.RequestException, ValueError):
+        totals = None
     table = pd.DataFrame({"call": [str(r.get("activeCallsign", "")) for r in rows],
                           "date": pd.to_datetime([str(r.get("qso_date", "")) for r in rows], format="%Y%m%d", errors="coerce"),
                           "total": [int(r.get("totalQSOs") or 0) for r in rows], "cw": [int(r.get("qsosCW") or 0) for r in rows],
                           "phone": [int(r.get("qsosPHONE") or 0) for r in rows], "data": [int(r.get("qsosDATA") or 0) for r in rows]})
-    return (info if isinstance(info, dict) and info.get("reference") else None), table.dropna(subset=["date"]).reset_index(drop=True)
+    return (info if isinstance(info, dict) and info.get("reference") else None), table.dropna(subset=["date"]).reset_index(drop=True), totals
 
 
 _RECENT = {}                  # callsign -> (answer, when it was asked): misses and guesses are kept for an hour, so a band is never asked twice

@@ -304,7 +304,7 @@ def _ordinal(n):
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
-def pota_compare(log, ref, park, acts, call):
+def pota_compare(log, ref, park, acts, call, stats=None):
     """How the log's activations of a park compare with every activation POTA lists for it. `park` is POTA's record of the park (or None),
     `acts` its activations (call, date, total, cw, phone, data). For each of the log's days: POTA's count when that day is listed under
     the callsign (else the log's own), and the rank among the listed activations by QSOs, CW, phone and data QSOs (1 is the most; a tie
@@ -326,10 +326,17 @@ def pota_compare(log, ref, park, acts, call):
         nth = (list(mine_listed.index).index(r.date) + 1) if listed else len(mine_listed) + 1
         rows.append({"date": r.date, "ours": ours, "listed": listed, "use": use, "ranks": ranks, "nth": nth})
     first = acts.sort_values("date").iloc[0] if len(acts) else None
+    by_who = (acts.groupby("who").agg(activations=("date", "size"), qsos=("total", "sum"), cw=("cw", "sum")) if len(acts)
+              else pd.DataFrame(columns=["activations", "qsos", "cw"]))
+    standing = None
+    if me in by_who.index:         # where you stand among everyone who has activated the park, by what is listed under your callsign
+        mine = by_who.loc[me]
+        standing = {k: (1 + int((by_who[k] > mine[k]).sum()), int((by_who[k] > 0).sum()), int(mine[k])) for k in ("qsos", "activations", "cw") if mine[k] > 0}
     return {"ref": ref, "name": (park or {}).get("name", ""), "kind": (park or {}).get("parktypeDesc", ""), "where": (park or {}).get("locationName", ""),
             "known": bool(park), "n_acts": len(acts), "n_activators": int(acts["who"].nunique()) if len(acts) else 0, "yours_listed": len(mine_listed),
             "first": (str(first["call"]), first["date"]) if first is not None else None, "rows": rows, "me": me,
-            "my_totals": {d: int(t) for d, t in mine_listed["total"].items()},
+            "my_totals": {d: int(t) for d, t in mine_listed["total"].items()}, "park": park or {}, "stats": stats, "standing": standing,
+            "top_activators": by_who.sort_values(["qsos", "activations"], ascending=False).head(5),
             "top": acts.sort_values(["total", "date"], ascending=[False, True]).head(5)[["date", "call", "total", "cw", "phone", "data", "who"]]}
 
 
@@ -357,6 +364,12 @@ def pota_notes(card):
         else:
             text += f" POTA does not list this activation under {card['me']}, so the rank uses the {r['ours']['total']} QSOs in your log."
         notes.append((f"{r['date']:%d %b %Y}: {use['total']} QSOs.", text.strip()))
+    s = card.get("standing")
+    if s:
+        parts = [f"{s['qsos'][2]} QSOs ({_ordinal(s['qsos'][0])} of {s['qsos'][1]} activators)" if "qsos" in s else None,
+                 f"{s['activations'][2]} activation{'s' if s['activations'][2] != 1 else ''} ({_ordinal(s['activations'][0])} of {s['activations'][1]})" if "activations" in s else None,
+                 f"{s['cw'][2]} CW QSOs ({_ordinal(s['cw'][0])} of {s['cw'][1]})" if "cw" in s else None]
+        notes.append(("Across everything listed under your callsign here:", ", ".join(p for p in parts if p) + "."))
     return notes
 
 

@@ -248,6 +248,14 @@ def base_map(home, tiles):
     return m
 
 
+def park_map(lat, lon, name, tiles="Street"):
+    """A small map of one park: a green dot at its position, framed on about ten kilometres around it."""
+    m = base_map((lat, lon), tiles)
+    folium.CircleMarker((lat, lon), radius=9, color="#ffffff", weight=2, fill=True, fill_color="#2e8b57", fill_opacity=1, tooltip=esc(name)).add_to(m)
+    fit_to(m, [(lat - 0.04, lon - 0.06), (lat + 0.04, lon + 0.06)])
+    return m
+
+
 def fit_to(m, bounds):
     """Zoom the map to show every point in `bounds`. A map in a hidden Streamlit tab has zero size when it loads,
     so Leaflet would fit to nothing and zoom all the way in; fit again the moment the map becomes visible."""

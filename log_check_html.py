@@ -102,6 +102,7 @@ CSS = """<style>
 .lc-reg th{font-weight:600;font-size:12px;opacity:.7}.lc-reg small{opacity:.65}
 .lc-kp{position:absolute;bottom:6px;border-radius:2px 2px 0 0}.lc-storm{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgb(230,120,40);opacity:.8}
 .lc-fl{position:absolute;top:50%;border-radius:50%;border:1px solid Canvas}.lc-kq{position:absolute;bottom:6px;background:var(--a);border-radius:1.5px 1.5px 0 0}
+.lc-card a{color:inherit;text-decoration:underline}
 .lc-reg .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:rgb(32,178,170);margin-right:6px}.lc-reg .no{opacity:.35}
 .lc-two{display:grid;grid-template-columns:minmax(280px,1.05fr) 1fr;gap:20px;align-items:start}
 .lc-facts{display:grid;gap:10px}.lc-fact{border:1px solid var(--line);border-radius:12px;padding:10px 13px}
@@ -363,24 +364,56 @@ def space_weather_html(wx, log, notes):
             + f'<div class="lc-axis">{axis}</div></div>' + says + '</div></div>')
 
 
+def _pota_date(text):
+    try:
+        return f"{pd.Timestamp(text):%d %b %Y}"
+    except Exception:
+        return ""
+
+
+def park_facts_html(card):
+    """About the park, from POTA's record of it: what it is and where, who first activated and first hunted it, how many stations have hunted
+    it, the totals, and a link to its own website. Empty when POTA has no record of the park."""
+    p, totals = card["park"], card.get("stats") or {}
+    if not p:
+        return ""
+    where = ", ".join(x for x in (card["kind"], card["where"], f"grid {p['grid6']}" if p.get("grid6") else "") if x)
+    facts = [escape(where)] if where else []
+    if p.get("firstActivator"):
+        facts.append(f"First activated by <b>{escape(str(p['firstActivator']))}</b>, {_pota_date(p.get('firstActivationDate'))}")
+    if p.get("firstHunter"):
+        facts.append(f"First hunted by <b>{escape(str(p['firstHunter']))}</b>, {_pota_date(p.get('firstHuntDate'))}")
+    if p.get("uniqueHunters"):
+        facts.append(f"{int(p['uniqueHunters']):,} different stations have hunted it")
+    if totals.get("contacts"):
+        facts.append(f"{int(totals['contacts']):,} contacts logged there in all; {int(totals['activations'])} of {int(totals['attempts'])} activations "
+                     "reached the 10 QSOs POTA needs")
+    site = str(p.get("website") or "")
+    if site.startswith(("http://", "https://")):
+        facts.append(f'<a href="{escape(site, quote=True)}" target="_blank" rel="noopener noreferrer">the park\'s own website</a>')
+    return ('<div class="lc"><div class="lc-card"><h4>About the park</h4><ul class="lc-says">' + "".join(f"<li>{f}</li>" for f in facts) + "</ul></div></div>") if facts else ""
+
+
 def pota_html(card):
-    """How a park compares: a few counts about the park, one line for each activation in the log, and the five biggest activations listed there."""
-    n = card["n_acts"]
-    tiles = ('<div class="lc-tiles">' + _tile(n, "--b", "activations listed", "in POTA's list for this park")
+    """How a park compares: a few counts, one line for each activation in the log and for everything under your callsign, and two short tables:
+    the park's top activators and its biggest activations."""
+    tiles = ('<div class="lc-tiles">' + _tile(card["n_acts"], "--b", "activations listed", "in POTA's list for this park")
              + _tile(card["n_activators"], "--t", "activators", "different stations")
-             + _tile(card["yours_listed"], "--a", "yours listed", f"by {escape(card['me'])}")
-             + _tile(escape(card["first"][0]) if card["first"] else "&ndash;", "--g", "first activated by",
-                     f"{card['first'][1]:%d %b %Y}" if card["first"] else "") + "</div>")
+             + _tile(card["yours_listed"], "--a", "yours listed", f"by {escape(card['me'])}") + "</div>")
     says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(a)}</b> {escape(b)}</li>" for a, b in pota_notes(card)) + "</ul>") if card["rows"] else ""
+    act = card["top_activators"]
+    rows_a = "".join(f"<tr><td>{escape(str(who))}" + (" <small>(you)</small>" if who == card["me"] else "")
+                     + f"</td><td>{int(r.activations)}</td><td>{int(r.qsos)}</td><td>{int(r.cw)}</td></tr>" for who, r in act.iterrows())
+    table_a = ('<p class="sub" style="margin-top:12px"><b>The park\'s top activators</b> (by QSOs listed)</p><div class="lc-cgw"><table class="lc-reg"><tr><th>Station</th>'
+               '<th>Activations</th><th>QSOs</th><th>CW QSOs</th></tr>' + rows_a + "</table></div>") if len(act) else ""
     top = card["top"]
     rows = "".join(f"<tr><td>{r.date:%d %b %Y}</td><td>{escape(r.call)}" + (" <small>(you)</small>" if r.who == card["me"] else "")
                    + f"</td><td>{r.total}</td><td>{r.cw}</td><td>{r.phone}</td><td>{r.data}</td></tr>" for r in top.itertuples())
     table = ('<p class="sub" style="margin-top:12px"><b>The biggest activations listed for this park</b></p><div class="lc-cgw"><table class="lc-reg"><tr><th>Date</th><th>Station</th>'
              '<th>QSOs</th><th>CW</th><th>Phone</th><th>Data</th></tr>' + rows + "</table></div>") if len(top) else ""
-    place = ", ".join(x for x in (card["kind"], card["where"]) if x)
     return ('<div class="lc"><div class="lc-card"><h4>How this park compares: ' + escape(f"{card['ref']} {card['name']}".strip()) + "</h4>"
-            f'<p class="sub">{escape(place)}{" · " if place else ""}Counts from POTA\'s public activation list, as the activators uploaded them, so they can be out of date. '
-            'An activation is one UTC day at the park. Ranks are by QSOs, with the most first; a tie shares a rank.</p>' + tiles + says + table + '</div></div>')
+            '<p class="sub">Counts from POTA\'s public activation list, as the activators uploaded them, so they can be out of date. '
+            'An activation is one UTC day at the park. Ranks are by QSOs, with the most first; a tie shares a rank.</p>' + tiles + says + table_a + table + '</div></div>')
 
 
 def band_table_html(bands, min_contacts=3):

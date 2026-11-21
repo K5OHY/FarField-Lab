@@ -189,6 +189,8 @@ class MySpotsPage(unittest.TestCase):
         self.assertTrue(any("Upload an ADIF log to begin" in i.value for i in at.info))
         self.assertEqual([b.label for b in at.main.button], [])         # nothing to press: the comparison starts when a log is loaded
         self.assertEqual(len(at.main.text_input), 0)                    # the callsign and grid appear once the log has been read
+        self.assertEqual([n.label for n in at.main.number_input], ["Your power (watts)"])    # the power is asked for before the upload, not after
+        self.assertEqual(at.main.number_input[0].value, 100)
 
     @needs_network
     def test_a_shared_link_loads_the_spots(self):

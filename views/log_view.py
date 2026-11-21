@@ -11,7 +11,7 @@ import log_check_html as lh
 import space_weather as sw
 from compare_stats import locate as skimmer_location
 from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, skimmer_data
-from maps import build_map, great_circle
+from maps import build_map, great_circle, park_map
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
 from ui_common import BANNER, KM_PER_MILE
 from wspr_data import WsprError
@@ -39,17 +39,27 @@ def _pota_park(ref):
 
 
 def _pota_cards(log, call):
-    """One comparison card for each park the log was made from (at most four), or a note when POTA cannot be reached."""
+    """One card for each park the log was made from (at most four): a map and what is known about the park on the left, how the activations
+    compare on the right. A note instead when POTA cannot be reached."""
     for ref in lc.pota_refs(log)[:4]:
         try:
-            park, acts = _pota_park(ref)
+            park, acts, totals = _pota_park(ref)
         except RuntimeError as exc:
             st.caption(f"{ref}: {exc} The park comparison is left out.")
             continue
         if park is None and acts.empty:
             st.caption(f"POTA does not know {ref}, so there is no park comparison.")
             continue
-        st.html(lh.CSS + lh.pota_html(lc.pota_compare(log, ref, park, acts, call)))
+        card = lc.pota_compare(log, ref, park, acts, call, totals)
+        if park and park.get("latitude") is not None and park.get("longitude") is not None:
+            left, right = st.columns([2, 3])
+            left.iframe(park_map(float(park["latitude"]), float(park["longitude"]), f"{ref} {park.get('name', '')}".strip()).get_root().render(), height=300)
+            facts = lh.park_facts_html(card)
+            if facts:
+                left.html(lh.CSS + facts)
+            right.html(lh.CSS + lh.pota_html(card))
+        else:
+            st.html(lh.CSS + lh.pota_html(card))
 
 
 def _where(grid, call, skimmers):
@@ -266,6 +276,11 @@ def log_page():
     st.markdown('<p class="subtitle">Upload the log of a session and see it beside the skimmers that heard you and the WSPR stations '
                 'around you. The callsign, the place and the days come from the log.</p>', unsafe_allow_html=True)
     skimmers, _ = skimmer_data()
+    # The power comes first: the work starts the moment a log is uploaded, so it has to be known by then. A log does not say it.
+    power_box, _ = st.columns([1, 3])
+    power = power_box.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
+                                   help="A log does not say what power you ran. Set it before you upload: the calculations start as soon as a log is "
+                                        "loaded, and they use it to restate the WSPR stations' signals to your power. Changing it later works, but starts them again.")
     file = st.file_uploader("Your log (ADIF file)", type=["adi", "adif"], key="log_file",
                             help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
                                  "which is many thousands of contacts. The log is used for this visit only and is not saved or shared.")
@@ -273,7 +288,8 @@ def log_page():
         st.session_state["log_saved"] = (file.name, file.getvalue())
     saved = st.session_state.get("log_saved")
     if saved is None:
-        st.info(icon=":material/upload_file:", body="Upload an ADIF log to begin. Nothing else needs to be entered except the power you ran.")
+        st.info(icon=":material/upload_file:", body="Upload an ADIF log to begin. Set your power above first if you ran something other than 100 W: "
+                                                           "the calculations start as soon as a log is loaded and use it.")
         return
     name, raw = saved
     if file is None:
@@ -293,13 +309,11 @@ def log_page():
     call0, grid0 = lc.log_origin(log)
 
     _mixed_log_warning(log)
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     call = c1.text_input("Your callsign", value=call0, key=f"log_call_{digest[:10]}",
                          help="Taken from the log. RBN spots are looked up under this callsign, exactly as it was sent (K5OHY/P is not K5OHY).").strip().upper()
     grid = c2.text_input("Where you operated (grid square)", value=grid0, key=f"log_grid_{digest[:10]}",
                          help="Taken from the log. Leave it empty to use where your callsign is registered.").strip()
-    power = c3.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
-                            help="A log does not say. It is used to restate the WSPR stations' signals to your power, so enter what you ran.")
     if not call:
         st.warning("The log does not say which callsign it is for. Type yours above.")
         return
@@ -317,7 +331,7 @@ def log_page():
     # The page is laid out in this order whatever order the work finishes in: who followed you, the session chart, the maps, the band
     # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
-    followers_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, pota_slot, work, compare_slot = (st.container() for _ in range(9))
+    pota_slot, followers_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(9))
     maps_hold = maps_slot.empty()
     if not cw.empty:
         maps_hold.caption("The maps appear here when the RBN spots have been read.")
@@ -333,6 +347,8 @@ def log_page():
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     chart = chart_slot.empty()
     chart.html(lh.CSS + lh.afternoon_html(log, no_spots))
+    with pota_slot:         # a POTA log opens with how its park compares; the card is laid out above the rest and filled once the session chart is drawn
+        _pota_cards(log, call)
     mode, zone = lc.condition_mode(log), _visitor_timezone()
     with conditions_slot:
         grid_of_conditions = _conditions(log, home, power, label, digest) if len(days) <= MAX_DAYS else None
@@ -356,8 +372,6 @@ def log_page():
             weather_html = lh.space_weather_html(weather, log, lc.space_notes(weather, log["time"].min(), log["time"].max()))
             if weather_html:
                 st.html(lh.CSS + weather_html)
-    with pota_slot:
-        _pota_cards(log, call)
     with work:
         if cw.empty:
             st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "
