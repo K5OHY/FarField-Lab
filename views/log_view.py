@@ -279,11 +279,18 @@ def log_page():
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     chart = chart_slot.empty()
     chart.html(lh.CSS + lh.afternoon_html(log, no_spots))
+    mode, zone = lc.condition_mode(log), _visitor_timezone()
     with conditions_slot:
         grid_of_conditions = _conditions(log, home, power, label, digest) if len(days) <= MAX_DAYS else None
-        if grid_of_conditions is not None and len(grid_of_conditions):
-            st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, lc.condition_mode(log),
-                                                _visitor_timezone()))
+        has_picture = grid_of_conditions is not None and len(grid_of_conditions) > 0
+        dx_slot = st.empty()
+        if has_picture:
+            dx_slot.html(lh.CSS + lh.dx_windows_html(grid_of_conditions, lc.dx_notes(grid_of_conditions, power), power, mode, zone))
+            regions_html = lh.dx_regions_html(grid_of_conditions)
+            if regions_html:
+                st.html(lh.CSS + regions_html)
+            with st.expander("Estimate for my station: the share of nearby receivers that would hear you"):
+                st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, mode, zone))
     with work:
         if cw.empty:
             st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "
@@ -298,6 +305,9 @@ def log_page():
             spots, missing = _rbn_spots(digest, call, days)
     if len(spots):
         chart.html(lh.CSS + lh.afternoon_html(log, spots))
+        if has_picture:     # the skimmers far away that spotted you are added to the DX picture
+            with_rbn = lc.add_rbn_far(grid_of_conditions, spots, skimmers, home)
+            dx_slot.html(lh.CSS + lh.dx_windows_html(with_rbn, lc.dx_notes(with_rbn, power), power, mode, zone))
     result = None
     with work:
         if not cw.empty:

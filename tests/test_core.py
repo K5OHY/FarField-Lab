@@ -1482,7 +1482,7 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
                              {"panel": 0, "slot": slots[0], "band": "10m", "receivers": 4, "good": 3, "share": float("nan"), "contacts": 2},
                              {"panel": 0, "slot": slots[1], "band": "10m", "receivers": 30, "good": 29, "share": 0.97, "contacts": 0}])
         html = lh.conditions_html(grid, [("20m looked weak.", "It was at 33%.")], 75.0, "CW", "America/Chicago")
-        self.assertIn("Band conditions while you were on the air", html)
+        self.assertIn("How open each band looked", html)
         self.assertIn("33%", html)
         self.assertIn("97%", html)
         self.assertIn("<i></i>12</em>", html)                                               # the 12 contacts of the first half hour
@@ -1493,6 +1493,113 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertNotIn("always", html)
         self.assertNotIn("nan", html.lower())
         self.assertLess(html.index("20m</div>"), html.index("10m</div>"))                   # the bands run in the order of the grid
+
+    def dx_wspr(self):
+        """The 20m spots of cond_wspr plus 16 receivers in Europe (more than 3,000 miles from HOME): 10 strong and 6 far below the threshold."""
+        recs = []
+        for i in range(16):
+            for t in ("2026-11-18 20:10", "2026-11-18 20:40"):
+                recs.append({"time": pd.Timestamp(t), "tx": "N5TX", "tx_lat": 31.0, "tx_lon": -102.0, "rx": f"DL{i}AAA", "rx_lat": 50.0,
+                             "rx_lon": 8.0 + i * 0.1, "band": "20m", "power": 37.0, "snr": 10.0 if i < 10 else -30.0})
+        return pd.concat([self.cond_wspr(), pd.DataFrame(recs)], ignore_index=True)
+
+    def dx_grid(self):
+        wspr = self.dx_wspr()
+        return lc.conditions_grid(self.cond_log(), lambda a, b: wspr[(wspr["time"] > a) & (wspr["time"] <= b)], HOME, 100.0)
+
+    def test_the_conditions_grid_counts_the_distant_receivers_that_would_hear_you(self):
+        grid = self.dx_grid()
+        g20 = grid[grid["band"] == "20m"].set_index("slot")
+        box = g20.loc[pd.Timestamp("2026-11-18 20:30")]
+        self.assertEqual(int(box["dx_heard"]), 16)                                          # the 16 receivers in Europe heard WSPR near home
+        self.assertEqual(int(box["dx_good"]), 10)                                           # 10 of them are strong enough for 100 W CW
+        self.assertEqual(box["dx_regions"], {"Europe": 10})
+        self.assertEqual(int(g20.loc[pd.Timestamp("2026-11-18 20:00"), "dx_good"]), 10)     # the hour to 20:30 holds the 20:10 spots
+        self.assertEqual(int(grid[grid["band"] == "15m"]["dx_good"].sum()), 0)              # nothing on 15m
+        self.assertTrue((grid["rbn_far"] == 0).all())                                       # RBN is added later
+        self.assertEqual(int(grid["dx_heard"].max()), 16)                                   # the US receivers at 35 N are not DX
+
+    def test_a_contact_outside_north_america_is_found_by_continent_or_country(self):
+        log = lc.parse_adif("<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:4>2000 <BAND:3>20m <MODE:2>CW <CONT:2>NA <EOR>"
+                            "<CALL:5>DL1AA <QSO_DATE:8>20261118 <TIME_ON:4>2001 <BAND:3>20m <MODE:2>CW <CONT:2>EU <EOR>"
+                            "<CALL:5>JA1AA <QSO_DATE:8>20261118 <TIME_ON:4>2002 <BAND:3>20m <MODE:2>CW <COUNTRY:5>Japan <EOR>"
+                            "<CALL:5>K1AAA <QSO_DATE:8>20261118 <TIME_ON:4>2003 <BAND:3>20m <MODE:2>CW <COUNTRY:13>United States <EOR>"
+                            "<CALL:5>N1AAA <QSO_DATE:8>20261118 <TIME_ON:4>2004 <BAND:3>20m <MODE:2>CW <EOR>")
+        self.assertEqual(list(lc.dx_contacts_mask(log)), [False, True, True, False, False])   # no continent and no country counts as home
+
+    def test_skimmers_far_away_that_spotted_you_are_added_to_the_picture(self):
+        grid = self.dx_grid()
+        spots = pd.DataFrame({"spotter": ["DL1AAA", "DL1AAA-2", "W5XX", "ZZ9ZZ"], "band": ["20m", "20m", "20m", "20m"],
+                              "snr": [10.0] * 4, "time": pd.to_datetime(["2026-11-18 20:10"] * 4)})
+        locs = {"DL1AAA": (50.0, 8.0), "DL1AAA-2": (50.0, 8.0), "W5XX": (32.0, -101.0)}     # the last has no place, so it is not counted
+        out = lc.add_rbn_far(grid, spots, locs, HOME)
+        box = out[(out["band"] == "20m") & (out["slot"] == pd.Timestamp("2026-11-18 20:00"))].iloc[0]
+        self.assertEqual(int(box["rbn_far"]), 1)                                            # DL1AAA and its -2 are one skimmer; W5XX is near
+        self.assertEqual(int(out["rbn_far"].sum()), 1)
+        self.assertEqual(int(lc.add_rbn_far(grid, spots.iloc[0:0], locs, HOME)["rbn_far"].sum()), 0)
+
+    def dx_table(self, rows):
+        """A DX grid from (band, boxes) where each box is (dx_good, dx_heard, contacts, dx_contacts, rbn_far, regions)."""
+        slots = pd.date_range("2026-11-18 20:00", periods=7, freq="30min")
+        out = []
+        for band, boxes in rows:
+            for slot, (good, heard, n, dxn, rbn, regs) in zip(slots, boxes):
+                out.append({"panel": 0, "slot": slot, "band": band, "receivers": 100, "good": 50, "share": 0.5, "contacts": n, "dx_heard": heard,
+                            "dx_good": good, "dx_regions": regs, "dx_contacts": dxn, "rbn_far": rbn})
+        return pd.DataFrame(out)
+
+    def test_the_dx_lines_state_what_each_band_showed(self):
+        e = {"Europe": 2}
+        rows = [("15m", [(3, 6, 0, 0, 0, e), (2, 3, 12, 1, 1, e), (1, 3, 28, 0, 0, e), (3, 3, 1, 0, 0, e), (3, 3, 0, 0, 0, e), (3, 3, 0, 0, 0, e), (4, 4, 0, 0, 0, e)]),
+                ("20m", [(0, 30, 0, 0, 0, {}), (1, 35, 0, 0, 0, {"Asia": 1}), (0, 27, 0, 0, 0, {}), (0, 29, 12, 0, 0, {}), (1, 33, 34, 1, 0, {"Asia": 1}),
+                         (1, 29, 19, 0, 0, {"Asia": 1}), (3, 33, 0, 0, 0, {"Asia": 3})]),
+                ("12m", [(0, 7, 0, 0, 0, {}), (0, 7, 16, 0, 0, {})] + [(0, 0, 0, 0, 0, {})] * 5),
+                ("30m", [(0, 1, 0, 0, 0, {})] * 4 + [(0, 0, 0, 0, 0, {}), (0, 0, 15, 0, 0, {}), (1, 1, 7, 0, 0, {"Africa": 1})])]
+        notes = lc.dx_notes(self.dx_table(rows), 75.0)
+        text = {lead: rest for lead, rest in notes}
+        self.assertEqual([lead.split()[0] for lead, _ in notes], ["15m", "20m", "30m", "12m"])   # most evidence first, then the bands with none
+        self.assertIn("15m had DX that would hear 75 W in 7 of 7 half hours.", text)
+        self.assertIn("1 to 4 receivers over 3,000 miles away would have heard 75 W, in Europe.", text["15m had DX that would hear 75 W in 7 of 7 half hours."])
+        self.assertIn("You made 41 contacts on 15m, all of them in half hours with DX evidence, and 1 was outside North America.",
+                      text["15m had DX that would hear 75 W in 7 of 7 half hours."])
+        self.assertIn("RBN skimmers over 3,000 miles from you spotted you on it, first in the half hour from 20:30Z.", text["15m had DX that would hear 75 W in 7 of 7 half hours."])
+        lead20 = "20m had DX that would hear 75 W in 4 of 7 half hours."
+        self.assertIn("27 to 35 receivers over 3,000 miles away heard WSPR on 20m, but most were too weak for 75 W.", text[lead20])   # many heard, few strong
+        self.assertIn("in Asia.", text[lead20])
+        self.assertIn("Only the half hour from 23:00Z had one", text["30m showed little DX that would hear 75 W."])
+        self.assertIn("2 half hours had receivers over 3,000 miles away that heard WSPR, but none strong enough.", text["12m showed no DX that would hear 75 W."])
+        self.assertNotIn("missed", " ".join(a + b for a, b in notes).lower())               # facts, not advice
+        self.assertEqual(lc.dx_notes(self.dx_table([("40m", [(0, 0, 3, 0, 0, {})] + [(0, 0, 0, 0, 0, {})] * 6)]), 75.0), [])    # a band with 3 contacts and nothing to say
+        self.assertEqual(lc.dx_notes(pd.DataFrame(columns=["panel", "slot", "band", "contacts"]), 75.0), [])
+
+    def test_the_dx_picture_shows_counts_markers_and_four_kinds_of_box(self):
+        rows = [("15m", [(3, 6, 12, 1, 1, {"Europe": 3}), (1, 2, 0, 0, 0, {"Europe": 1}), (0, 5, 0, 0, 0, {}), (0, 0, 4, 0, 0, {})] + [(0, 0, 0, 0, 0, {})] * 3)]
+        grid = self.dx_table(rows)
+        html = lh.dx_windows_html(grid, [("15m had DX.", "Some.")], 75.0, "CW", "America/Chicago")
+        self.assertIn("Band conditions while you were on the air", html)
+        self.assertEqual(html.count('class="cell s3"'), 1)
+        self.assertEqual(html.count('class="cell s1"'), 1)
+        self.assertEqual(html.count('class="cell few"'), 1)                                 # DX heard WSPR, none strong enough
+        self.assertEqual(html.count('class="cell none"'), 4)
+        self.assertIn("<i></i>12</em>", html)                                               # contacts
+        self.assertIn("&#9733;", html)                                                      # a contact outside North America
+        self.assertIn("<u></u></em>", html)                                                 # a skimmer that far away
+        self.assertIn("14:00 local", html)                                                  # 20:00Z in Chicago
+        self.assertIn("would hear 75 W", html)
+        self.assertIn("15m had DX.", html)
+        self.assertNotIn("nan", html.lower())
+        self.assertNotIn('<em title="a skimmer that far away spotted you">', lh.dx_windows_html(grid.assign(rbn_far=0), [], 75.0, "CW"))
+
+    def test_where_dx_reached_is_a_band_by_region_table(self):
+        e = {"Europe": 2, "Asia": 1}
+        grid = self.dx_table([("15m", [(3, 6, 12, 1, 1, e), (3, 3, 0, 0, 0, {"Europe": 3}), (0, 0, 0, 0, 0, {})] + [(0, 0, 0, 0, 0, {})] * 4),
+                              ("20m", [(0, 9, 5, 0, 0, {})] * 7)])
+        html = lh.dx_regions_html(grid)
+        self.assertIn("Where DX reached, by band", html)
+        self.assertLess(html.index("<th>Europe</th>"), html.index("<th>Asia</th>"))         # the order of the other tables
+        self.assertIn("3 <small>20:00&ndash;21:00</small>", html)                           # up to 3 Europe receivers in the first two half hours
+        self.assertIn("1 outside North America", html)
+        self.assertEqual(lh.dx_regions_html(self.dx_table([("20m", [(0, 9, 5, 0, 0, {})] * 7)])), "")   # nothing reached: no table
 
     def test_a_day_without_an_rbn_file_says_when_it_will_have_one(self):
         utc = lc.rbn_ready_message(["20261120"])

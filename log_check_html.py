@@ -5,7 +5,7 @@ from html import escape
 import numpy as np
 import pandas as pd
 
-from log_check import NEAR_REGIONS, bands_top_down
+from log_check import DX_FIRST, DX_MILES, NEAR_REGIONS, bands_top_down
 
 BLUE, TEAL, AMBER = "#5B8CFF", "#19B5AE", "#F0A020"
 
@@ -89,6 +89,18 @@ CSS = """<style>
 .lc-ramp{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:12px 0 4px;font-size:12px;opacity:.8}
 .lc-ramp b{display:inline-block;width:130px;height:9px;border-radius:6px;background:linear-gradient(90deg,rgba(32,178,170,.15),rgba(32,178,170,.95));vertical-align:middle;margin:0 6px}
 .lc-says{margin:12px 0 0;padding-left:20px}.lc-says li{margin:6px 0;font-size:14px}
+.lc-dx .cell{height:auto;min-height:66px;padding:5px 2px;flex-direction:column;gap:3px;background:transparent}.lc-dx .cell .p{line-height:1}
+.lc-dx .cell.s3{background:rgba(32,178,170,.88)}.lc-dx .cell.s3 .p{color:#04201e}
+.lc-dx .cell.s1{background:rgba(32,178,170,.40)}
+.lc-dx .cell.none .p{opacity:.35;font-weight:500}
+.lc-dx .m{display:flex;flex-wrap:wrap;gap:3px;align-items:center;justify-content:center;min-height:15px}
+.lc-dx .cell em{position:static}.lc-dx .cell em.st{color:var(--a);padding:0 4px}
+.lc-dx .cell em u{display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6;box-sizing:content-box}
+.lc-key{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:10px 0 0;font-size:12px;opacity:.85}
+.lc-key .sw{display:inline-flex;align-items:center;gap:6px}.lc-key .sw b{display:inline-block;width:22px;height:13px;border-radius:4px;border:1px solid var(--line)}
+.lc-reg{border-collapse:collapse;width:100%;font-size:13.5px}.lc-reg td,.lc-reg th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+.lc-reg th{font-weight:600;font-size:12px;opacity:.7}.lc-reg small{opacity:.65}
+.lc-reg .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:rgb(32,178,170);margin-right:6px}.lc-reg .no{opacity:.35}
 .lc-two{display:grid;grid-template-columns:minmax(280px,1.05fr) 1fr;gap:20px;align-items:start}
 .lc-facts{display:grid;gap:10px}.lc-fact{border:1px solid var(--line);border-radius:12px;padding:10px 13px}
 .lc-fact .h{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.65}.lc-fact .b{font-size:14.5px;margin-top:2px}
@@ -135,6 +147,94 @@ def _teal(share):
     return f"rgba(32,178,170,{0.12 + 0.80 * float(share) ** 1.6:.2f})"
 
 
+def _local_time(s, tz_name):
+    """The time of a slot in the visitor's time zone, as HH:MM, or an empty string when there is none or it is not a zone."""
+    from zoneinfo import ZoneInfo
+    try:
+        return f"{pd.Timestamp(s).tz_localize('UTC').astimezone(ZoneInfo(tz_name)):%H:%M}" if tz_name else ""
+    except Exception:
+        return ""
+
+
+def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None):
+    """When a signal like yours could have reached DX while you were on the air: a box for each band and half hour that counts the receivers
+    DX_MILES or more away that would have heard it, with your contacts (diamond), contacts outside North America (star) and skimmers that far
+    away that spotted you (RBN) on top, and the lines that say it in words."""
+    miles = f"{DX_MILES:,}"
+    all_bands = list(grid.drop_duplicates("band")["band"])
+    panels = []
+    for panel, d in grid.groupby("panel"):
+        slots = sorted(d["slot"].unique())
+        by = {(r.band, r.slot): r for r in d.itertuples()}
+        head = "<div></div>" + "".join(f'<div class="th"><b>{pd.Timestamp(s):%H:%M}</b>'
+                                       + (f"<span>{_local_time(s, tz_name)} local</span>" if _local_time(s, tz_name) else "") + "</div>" for s in slots)
+        cells = []
+        for b in all_bands:
+            cells.append(f'<div class="bl">{escape(b)}</div>')
+            for s in slots:
+                r = by[(b, s)]
+                kind = "s3" if r.dx_good >= 3 else "s1" if r.dx_good >= 1 else "few" if r.dx_heard > 0 else "none"
+                marks = (f'<em><i></i>{r.contacts}</em>' if r.contacts else "") + ('<em class="st" title="a contact outside North America">&#9733;</em>' if r.dx_contacts else "") \
+                    + ('<em title="a skimmer that far away spotted you"><u></u></em>' if r.rbn_far else "")
+                tip = (f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_good} receivers over {miles} miles would hear {power_w:g} W; {r.dx_heard} that far heard WSPR "
+                       f"near you; {r.contacts} contacts")
+                cells.append(f'<div class="cell {kind}" title="{escape(tip)}"><span class="p">{r.dx_good if r.dx_good else "&ndash;"}</span>'
+                             f'<span class="m">{marks}</span></div>')
+        title = f'<p class="sub" style="margin:14px 0 0"><b>{pd.Timestamp(slots[0]):%a %d %b}</b> (UTC)</p>' if grid["panel"].nunique() > 1 else ""
+        dense = " dense" if len(slots) > 10 else ""
+        panels.append(title + f'<div class="lc-cgw"><div class="lc-cg lc-dx{dense}" style="--k:{len(slots)}">{head}{"".join(cells)}</div></div>')
+    says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(lead)}</b> {escape(rest)}</li>" for lead, rest in notes) + "</ul>") if notes else ""
+    return ('<div class="lc"><div class="lc-card"><h4>Band conditions while you were on the air</h4>'
+            f'<p class="sub">When could a signal like yours have reached more than {miles} miles? Each box counts the receivers over {miles} miles from you that '
+            f'heard WSPR transmitters near you in the hour up to the end of that half hour and would have heard {power_w:g} W using {escape(mode)}, with 3 dB '
+            'to spare. It counts different receivers, not reports.</p>'
+            '<p class="sub"><b>How to read it:</b> read across a row to follow a band over time. A dash means no receiver that far would have heard you; '
+            'a striped box means receivers that far heard WSPR, but none strongly enough. Bands have different numbers of receivers, so use the counts to '
+            'compare hours, not to rank bands.</p>'
+            + "".join(panels)
+            + '<div class="lc-key"><span class="sw"><b style="background:rgba(32,178,170,.88)"></b>3 or more would hear you</span>'
+              '<span class="sw"><b style="background:rgba(32,178,170,.40)"></b>1 or 2</span>'
+              '<span class="sw"><b style="background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(128,128,128,.4) 5px 6px)"></b>heard WSPR, none strong enough</span>'
+              '<span class="sw"><b></b>no reports that far</span></div>'
+            '<div class="lc-key"><span class="sw"><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> contacts in that half hour</span>'
+            '<span class="sw"><span style="color:var(--a);font-weight:700">&#9733;</span> a contact outside North America</span>'
+            f'<span class="sw"><span style="display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6"></span> an RBN skimmer over {miles} miles away spotted you</span></div>'
+            + says
+            + '<p class="sub" style="margin-top:10px">"Would hear you" is an estimate: each receiver\'s WSPR reports are restated to your power and compared with what the mode needs, '
+              'assuming an ordinary antenna. It tends to run high, so use it to compare bands and hours, not to promise a contact. WSPR only covers stations within 300 miles '
+              'of you, and a band with few of them has thin evidence. These lines say what was observed, not what you should have done.</p>'
+            '</div></div>')
+
+
+def dx_regions_html(grid):
+    """Where DX reached, by band: for each band and region, the most receivers over DX_MILES away that would have heard you in one half hour, and
+    the span of half hours in which there were any. Empty when no receiver that far would have heard you."""
+    seen = {k for d in grid["dx_regions"] for k in d}
+    if not seen:
+        return ""
+    regions = [r for r in DX_FIRST if r in seen] + sorted(seen - set(DX_FIRST))
+    many = grid["panel"].nunique() > 1
+    stamp = (lambda t: f"{t:%d %b %H:%M}") if many else (lambda t: f"{t:%H:%M}")
+    rows = []
+    for band in list(grid.drop_duplicates("band")["band"]):
+        d = grid[grid["band"] == band].sort_values("slot")
+        tds = []
+        for reg in regions:
+            hits = [(s, r[reg]) for s, r in zip(d["slot"], d["dx_regions"]) if r.get(reg, 0) > 0]
+            if hits:
+                best = max(n for _, n in hits)
+                tds.append(f'<td><span class="dot" style="opacity:{0.35 + 0.65 * min(best / 3, 1):.2f}"></span>{best} '
+                           f'<small>{stamp(hits[0][0])}&ndash;{stamp(hits[-1][0] + pd.Timedelta(minutes=30))}</small></td>')
+            else:
+                tds.append('<td><span class="no">&ndash;</span></td>')
+        n, x = int(d["contacts"].sum()), int(d["dx_contacts"].sum())
+        rows.append(f"<tr><td><b>{escape(band)}</b></td>{''.join(tds)}<td>{n}" + (f" <small>({x} outside North America)</small>" if x else "") + "</td></tr>")
+    return ('<div class="lc"><div class="lc-card"><h4>Where DX reached, by band</h4>'
+            f'<p class="sub">The most receivers over {DX_MILES:,} miles away that would have heard you in one half hour, by region, with the span of half hours '
+            'in which there were any (UTC).</p><div class="lc-cgw"><table class="lc-reg"><tr><th>Band</th>'
+            + "".join(f"<th>{escape(r)}</th>" for r in regions) + "<th>Your contacts</th></tr>" + "".join(rows) + "</table></div></div></div>")
+
+
 def conditions_html(grid, notes, power_w, mode="CW", tz_name=None):
     """The picture of how open each band looked while you were on the air: a box for each band and half hour, shaded by the share of nearby
     WSPR receivers that would have heard you, with your contacts on top, and the lines that say it in words. `tz_name` (the visitor's time
@@ -170,8 +270,8 @@ def conditions_html(grid, notes, power_w, mode="CW", tz_name=None):
         dense = " dense" if len(slots) > 10 else ""
         panels.append(title + f'<div class="lc-cgw"><div class="lc-cg{dense}" style="--k:{len(slots)}">{head}{"".join(cells)}</div></div>')
     says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(lead)}</b> {escape(rest)}</li>" for lead, rest in notes) + "</ul>") if notes else ""
-    return ('<div class="lc"><div class="lc-card"><h4>Band conditions while you were on the air</h4>'
-            f'<p class="sub">How open each band looked from where you were, at {power_w:g} W using {escape(mode)}: the share of the WSPR receivers heard near you that a '
+    return ('<div class="lc"><div class="lc-card"><h4>How open each band looked: the share of receivers</h4>'
+            f'<p class="sub">An estimate for your station, at {power_w:g} W using {escape(mode)}: the share of the WSPR receivers heard near you that a '
             'signal like yours would have reached, in the hour up to the end of each half hour. Your contacts are the amber diamonds.</p>'
             + '<p class="sub"><b>How to read it:</b> read across each row to follow that band over time. Different bands have different numbers of '
               'receivers behind them, so the percentages of different bands are not comparable with each other.</p>'

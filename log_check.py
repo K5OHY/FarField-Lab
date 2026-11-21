@@ -17,8 +17,10 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+from geographiclib.geodesic import Geodesic
 
 import conditions as cond
+from compare_stats import locate as locate_skimmer
 from rbn_data import get_band, maidenhead_to_latlon
 from session_report import BAND_ORDER, region_of
 
@@ -455,6 +457,8 @@ CONDITIONS_SLOT_MIN = 30     # one box of the picture
 CONDITIONS_GAP_H = 4         # a pause this long in the log starts a new picture
 MIN_PICTURE_RECEIVERS = 20   # fewer WSPR receivers than this behind a box and it is shown as too thin to say
 FETCH_CHUNK_H = 5            # WSPR is fetched this many hours at a time, so a long activation stays well under the row limit
+DX_MILES = 3000              # a receiver or skimmer this far from you or farther counts as DX
+DX_KM = DX_MILES * 1.609344
 STEADY_SPREAD = 0.10         # a band whose share stayed within this (10 points) of itself all evening is called steady
 BIG_CHANGE = 0.15            # a band has risen or fallen by this much (15 points) between the start and the end of the activation
 _MODE_OF = {"CW": "CW", "SSB": "SSB", "USB": "SSB", "LSB": "SSB", "AM": "SSB", "FM": "SSB", "FT8": "FT8", "FT4": "FT8"}
@@ -474,15 +478,24 @@ def condition_panels(log):
     return [(g.iloc[0], g.iloc[-1]) for _, g in slots.groupby(new)]
 
 
+def dx_contacts_mask(log):
+    """The contacts outside North America, by the continent the log gives (or, with none, by the country)."""
+    cont, country = log["cont"].fillna(""), log["country"].fillna("")
+    return ((cont != "") & (cont != "NA")) | ((cont == "") & (country != "") & ~country.isin(_NORTH_AMERICA))
+
+
 def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
     """How open each band looked while you were on the air: one row per panel, half hour and band with the number of WSPR receivers heard
     near you, how many of them a signal like yours would have reached (the conditions page's 'good'), their share (nan when fewer than
-    MIN_PICTURE_RECEIVERS stand behind it) and the contacts you made on that band in that half hour. Each half hour uses the hour of WSPR
-    spots up to its end, as the conditions page does. `wspr_for(start, end)` gives the WSPR spots between two times."""
+    MIN_PICTURE_RECEIVERS stand behind it) and the contacts you made on that band in that half hour. The DX columns count the receivers
+    DX_MILES or more from you: `dx_heard` heard WSPR near you, `dx_good` of them would also have heard a signal like yours, `dx_regions`
+    says where those are, and `dx_contacts` counts your contacts outside North America. `rbn_far` starts at 0 (see add_rbn_far). Each half
+    hour uses the hour of WSPR spots up to its end, as the conditions page does. `wspr_for(start, end)` gives the WSPR spots between two times."""
     mode = mode or condition_mode(log)
     bands = bands_top_down(log)
     log = log.assign(slot=log["time"].dt.floor(f"{CONDITIONS_SLOT_MIN}min"))
     made = log.groupby(["slot", "band"]).size()
+    made_dx = log[dx_contacts_mask(log)].groupby(["slot", "band"]).size()
     rows = []
     for panel, (first, last) in enumerate(condition_panels(log)):
         start, end = first - timedelta(minutes=LOOKBACK_MIN), last + timedelta(minutes=CONDITIONS_SLOT_MIN)
@@ -497,14 +510,112 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
         for slot in pd.date_range(first, last, freq=f"{CONDITIONS_SLOT_MIN}min"):
             res = (cond.analyze(wspr, home, power_w, mode, (slot + timedelta(minutes=CONDITIONS_SLOT_MIN)).to_pydatetime(), LOOKBACK_MIN,
                                 antenna_db, 3.0) if len(wspr) else None)
+            rec = res["receivers"] if res is not None else pd.DataFrame()
             for band in bands:
-                receivers = good = 0
+                receivers = good = dx_heard = dx_good = 0
+                dx_regions = {}
                 if res is not None and not res["bands"].empty and band in res["bands"].index:
                     receivers, good = int(res["bands"].loc[band, "Receivers"]), int(res["bands"].loc[band, "Good"])
+                if len(rec):
+                    far = rec[(rec["band"] == band) & (rec["km"] >= DX_KM)]
+                    strong = far[far["verdict"] == "good"]
+                    dx_heard, dx_good = int(len(far)), int(len(strong))
+                    dx_regions = {str(k): int(v) for k, v in strong.groupby("region").size().items()}
                 share = good / receivers if receivers >= MIN_PICTURE_RECEIVERS else float("nan")
                 rows.append({"panel": panel, "slot": slot, "band": band, "receivers": receivers, "good": good, "share": share,
-                             "contacts": int(made.get((slot, band), 0))})
-    return pd.DataFrame(rows, columns=["panel", "slot", "band", "receivers", "good", "share", "contacts"])
+                             "contacts": int(made.get((slot, band), 0)), "dx_heard": dx_heard, "dx_good": dx_good, "dx_regions": dx_regions,
+                             "dx_contacts": int(made_dx.get((slot, band), 0)), "rbn_far": 0})
+    return pd.DataFrame(rows, columns=["panel", "slot", "band", "receivers", "good", "share", "contacts", "dx_heard", "dx_good", "dx_regions",
+                                       "dx_contacts", "rbn_far"])
+
+
+def add_rbn_far(grid, spots, locs, home):
+    """The grid with `rbn_far` filled in: for each half hour and band, how many different skimmers DX_MILES or more from you spotted you.
+    `locs` is the skimmer list (callsign to place); a skimmer it does not know is not counted."""
+    grid = grid.assign(rbn_far=0)
+    if spots is None or spots.empty or grid.empty:
+        return grid
+    far = {}
+    for spotter in spots["spotter"].unique():
+        place = locate_skimmer(spotter, locs)
+        if place and Geodesic.WGS84.Inverse(home[0], home[1], float(place[0]), float(place[1]))["s12"] / 1000 >= DX_KM:
+            far[spotter] = _base(spotter)
+    s = spots[spots["spotter"].isin(far)]
+    if s.empty:
+        return grid
+    s = s.assign(slot=s["time"].dt.floor(f"{CONDITIONS_SLOT_MIN}min"), who=s["spotter"].map(far))
+    counts = s.groupby(["slot", "band"])["who"].nunique()
+    return grid.assign(rbn_far=[int(counts.get((slot, band), 0)) for slot, band in zip(grid["slot"], grid["band"])])
+
+
+def _join(names):
+    return ", ".join(names[:-1]) + (" and " if len(names) > 1 else "") + names[-1]
+
+
+def dx_notes(grid, power_w, max_lines=7):
+    """The DX picture in plain words, as (lead, rest) pairs: for each band, in how many half hours receivers DX_MILES or more away would have
+    heard a signal like yours, where they were, and what you did on the band by comparison. These are facts about the half hours, not advice:
+    a log cannot say why you were on a band."""
+    if grid.empty or "dx_good" not in grid.columns:
+        return []
+    when = (lambda t: f"{t:%d %b %H:%M}Z") if grid["panel"].nunique() > 1 else (lambda t: f"{t:%H:%M}Z")
+    power = f"{power_w:g} W"
+    miles = f"{DX_MILES:,}"
+    evidence, plain = [], []
+    for band, d in grid.groupby("band"):
+        d = d.sort_values(["panel", "slot"])
+        n = int(d["contacts"].sum())
+        ev = d[d["dx_good"] >= 1]
+        if len(ev) and (len(ev) >= 2 or int(ev["dx_good"].max()) >= 2):
+            evidence.append((len(ev), n, band, d, ev))
+        elif n >= 5:
+            plain.append((n, band, d))
+    notes = []
+    rbn_note = lambda d: (f" RBN skimmers over {miles} miles from you spotted you on it, first in the half hour from {when(d[d['rbn_far'] > 0]['slot'].min())}."
+                          if (d["rbn_far"] > 0).any() else "")
+    outside = lambda d: (f", and {int(d['dx_contacts'].sum())} {'was' if int(d['dx_contacts'].sum()) == 1 else 'were'} outside North America"
+                         if d["dx_contacts"].sum() else "")
+    for _, n, band, d, ev in sorted(evidence, key=lambda x: (-x[0], -x[1])):
+        lo, hi = int(ev["dx_good"].min()), int(ev["dx_good"].max())
+        regions = {}
+        for r in ev["dx_regions"]:
+            for k, v in r.items():
+                regions[k] = max(regions.get(k, 0), v)
+        top = [k for k, _ in sorted(regions.items(), key=lambda kv: -kv[1])[:3]]
+        said = f"{lo} to {hi}" if lo != hi else f"{hi}"
+        text = (f"{said} receiver{'s' if hi != 1 else ''} over {miles} miles away would have heard {power}"
+                + (f", in {_join(top)}." if top else "."))
+        heard_med, good_med = float(d["dx_heard"].median()), float(d["dx_good"].median())
+        if heard_med >= 10 and good_med <= 1:
+            text += (f" {int(d['dx_heard'].min())} to {int(d['dx_heard'].max())} receivers over {miles} miles away heard WSPR on {band}, "
+                     f"but most were too weak for {power}.")
+        inside = int(d.loc[d["dx_good"] >= 1, "contacts"].sum())
+        text += (f" You made {n} contact{'s' if n != 1 else ''} on {band}, "
+                 + ("all of them" if inside == n else "none of them" if inside == 0 else f"{inside} of them")
+                 + " in half hours with DX evidence" + outside(d) + ".")
+        worked = d[d["contacts"] > 0]
+        if len(worked):
+            before, after = (ev["slot"] < worked["slot"].min()).any(), (ev["slot"] > worked["slot"].max()).any()
+            if before and after:
+                text += " Some of the evidence came before your first contact there and some after your last."
+            elif after:
+                text += " Some of the evidence came after your last contact there."
+            elif before:
+                text += " Some of the evidence came before your first contact there."
+        text += rbn_note(d)
+        notes.append((f"{band} had DX that would hear {power} in {len(ev)} of {len(d)} half hours.", text))
+    for n, band, d in sorted(plain, key=lambda x: -x[0]):
+        heard, strong = int((d["dx_heard"] > 0).sum()), d[d["dx_good"] >= 1]
+        if len(strong):
+            lead = f"{band} showed little DX that would hear {power}."
+            text = (f"Only the half hour from {when(strong['slot'].iloc[0])} had one: {int(strong['dx_good'].iloc[0])} receiver over {miles} miles away "
+                    f"would have heard {power}.")
+        else:
+            lead = f"{band} showed no DX that would hear {power}."
+            text = (f"{heard} half hour{'s' if heard != 1 else ''} had receivers over {miles} miles away that heard WSPR, but none strong enough."
+                    if heard else f"No receivers over {miles} miles away reported WSPR on {band}.")
+        notes.append((lead, f"{text} You made {n} contacts on {band}{outside(d)}.{rbn_note(d)}"))
+    return notes[:max_lines]
 
 
 def _pc(x):
