@@ -327,11 +327,13 @@ def log_page():
     _prefetch_places(log, skimmers, digest)
 
     tiles_slot = st.empty()
-    tiles_slot.html(lh.CSS + lh.tiles_html(summary, len(rep)))
+    worked = lc.worked_summary(log)
+    summary = dict(summary, states=len(worked["states"]) + len(worked["provinces"]))      # US states and Canadian provinces only, not a foreign station's region codes
+    tiles_slot.html(lh.CSS + lh.tiles_html(summary, len(rep)) + lh.worked_tiles_html(worked))
     # The page is laid out in this order whatever order the work finishes in: who followed you, the session chart, the maps, the band
     # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
-    pota_slot, followers_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(9))
+    pota_slot, followers_slot, worked_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(10))
     maps_hold = maps_slot.empty()
     if not cw.empty:
         maps_hold.caption("The maps appear here when the RBN spots have been read.")
@@ -343,6 +345,16 @@ def log_page():
             with st.expander(f"Show the other {len(rest_k)} station{'s' if len(rest_k) != 1 else ''} "
                              f"(worked on {lo_k}{'' if lo_k == hi_k else f' to {hi_k}'} bands)"):
                 st.html(lh.CSS + lh.ladder_rest_html(log))
+    with worked_slot:
+        shown_bands = lc.bands_top_down(log)
+        st.html(lh.CSS + lh.worked_html(worked, shown_bands))
+        if worked["n_entities"] > lh.ENTITY_ROWS:
+            with st.expander(f"Show the other {worked['n_entities'] - lh.ENTITY_ROWS} countries"):
+                st.html(lh.CSS + lh.worked_html(worked, shown_bands, rows=worked["n_entities"], first=lh.ENTITY_ROWS))
+        still = lh.still_to_work_html(worked)
+        if still:
+            with st.expander("Still to work: continents, states, provinces and zones"):
+                st.html(lh.CSS + still)
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     chart = chart_slot.empty()

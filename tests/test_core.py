@@ -1886,6 +1886,81 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         plain = charts.distance_chart(dist, {"A": "Loop", "B": "Dipole"})
         self.assertFalse(any(t.startswith("A = ") for t in [t.get_text() for t in plain.texts]))               # short names need no key
 
+    def worked_log(self, with_numbers=True):
+        def rec(call, band="20m", **f):
+            extra = "".join(f"<{k.upper()}:{len(str(v))}>{v} " for k, v in f.items())
+            return f"<CALL:{len(call)}>{call} <QSO_DATE:8>20261118 <TIME_ON:4>2000 <BAND:{len(band)}>{band} <MODE:2>CW {extra}<EOR>"
+        us = dict(dxcc=291, country="United States", cont="NA", cqz=5, ituz=8) if with_numbers else {}
+        rows = [rec("W1AAA", state="PA", **us), rec("W2AAA", state="NY", **us), rec("W3AAA", "15m", state="PA", **us), rec("KL7AC", "15m", state="AK", **(
+                    dict(dxcc=6, country="Alaska", cont="NA", cqz=1, ituz=1) if with_numbers else {})),
+                rec("VE3AAA", state="ON", **(dict(dxcc=1, country="Canada", cont="NA", cqz=5, ituz=4) if with_numbers else {})),
+                rec("DL1AAA", "20m", **(dict(dxcc=230, country="Fed. Rep. of Germany", cont="EU", cqz=14, ituz=28) if with_numbers else {})),
+                rec("DL2AAA", "15m", **(dict(dxcc=230, country="Fed. Rep. of Germany", cont="EU", cqz=14, ituz=28) if with_numbers else {})),
+                rec("JA1AAA", "15m", **(dict(dxcc=339, country="Japan", cont="AS", cqz=25, ituz=45) if with_numbers else {})),
+                rec("PY2AAA", state="PA", **(dict(dxcc=108, country="Brazil", cont="SA", cqz=11, ituz=15) if with_numbers else {}))]   # Para is not Pennsylvania
+        return lc.parse_adif("".join(rows))
+
+    def test_the_log_carries_its_dxcc_number_and_zones(self):
+        log = self.worked_log()
+        self.assertEqual((log["dxcc"].iloc[0], log["cqz"].iloc[0], log["ituz"].iloc[0]), ("291", "5", "8"))
+        self.assertEqual(lc.parse_adif("<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:4>2000 <BAND:3>20m <MODE:2>CW <EOR>")["dxcc"].iloc[0], "")
+
+    def test_a_log_without_dxcc_numbers_is_filled_in_from_the_callsign(self):
+        d = lc.worked_entities(self.worked_log(with_numbers=False))
+        by_call = d.set_index("call")
+        self.assertEqual((by_call.loc["DL1AAA", "ent_name"], by_call.loc["DL1AAA", "ent_cont"]), ("Fed. Rep. of Germany", "EU"))
+        self.assertEqual(by_call.loc["JA1AAA", "ent_cont"], "AS")
+        self.assertEqual(by_call.loc["DL1AAA", "ent"], by_call.loc["DL2AAA", "ent"])                  # two German stations are one entity
+        self.assertEqual(lc.worked_summary(self.worked_log(with_numbers=False))["n_entities"], 6)       # US, Alaska, Canada, Germany, Japan, Brazil
+        self.assertIsNone(lc.worked_summary(self.worked_log(with_numbers=False))["cq"])               # no zones in the log, none made up
+
+    def test_the_summary_counts_countries_states_zones_and_countries_by_band(self):
+        w = lc.worked_summary(self.worked_log())
+        self.assertEqual(w["n_entities"], 6)
+        self.assertEqual(w["home"], "NA")
+        self.assertEqual(list(w["ents"]["name"])[:3], ["Fed. Rep. of Germany", "Brazil", "Japan"])         # outside the home continent first, the most contacts first, then by name
+        self.assertEqual(w["continents"], {"NA", "EU", "AS", "SA"})
+        self.assertEqual(w["missing_continents"], ["Africa", "Oceania"])
+        self.assertEqual(w["states"], ["AK", "NY", "PA"])                                                 # Brazil's PA is not Pennsylvania, and it is a real PA anyway
+        self.assertEqual(len(w["missing_states"]), 47)
+        self.assertEqual(w["provinces"], ["ON"])
+        self.assertEqual(w["cq"], [1, 5, 11, 14, 25])
+        self.assertEqual(w["itu"], 6)
+        self.assertEqual(w["band_countries"], 8)                                                           # US 20m 15m, AK 15m, CA 20m, DE 20m 15m, JA 15m, BR 20m
+        self.assertEqual(list(w["per_band"].items()), [("15m", 4), ("20m", 4)])                            # the bands from the highest down
+        brazil_only = lc.worked_summary(lc.parse_adif("<CALL:6>PY2AAA <QSO_DATE:8>20261118 <TIME_ON:4>2000 <BAND:3>20m <MODE:2>CW <DXCC:3>108 <STATE:2>PA <EOR>"))
+        self.assertEqual((brazil_only["states"], brazil_only["has_us"]), ([], False))                      # no United States contact: no state tile at all
+
+    def test_the_worked_tiles_and_table_show_what_is_missing(self):
+        log = self.worked_log()
+        w = lc.worked_summary(log)
+        tiles = lh.worked_tiles_html(w)
+        self.assertIn("DXCC entities worked", tiles)
+        self.assertIn("of 340", tiles)
+        self.assertIn("3 outside North America", tiles)
+        self.assertIn("missing Africa, Oceania", tiles)
+        self.assertIn("US states", tiles)
+        self.assertIn("47 to go", tiles)
+        self.assertIn("1 Canadian provinces", tiles)
+        self.assertIn("CQ zones", tiles)
+        self.assertIn("6 ITU zones", tiles)
+        table = lh.worked_html(w, lc.bands_top_down(log), rows=3)
+        self.assertEqual(table.count("<tr><td><b>"), 3)                                                    # only the first three countries
+        self.assertIn("worked on that band", table)
+        self.assertIn("not what is confirmed by LoTW", table)
+        rest = lh.worked_html(w, lc.bands_top_down(log), rows=10, first=3)
+        self.assertEqual(rest.count("<tr><td><b>"), 3)                                                     # the other three wait in the box
+        self.assertNotIn("What you worked", rest)
+        still = lh.still_to_work_html(w)
+        self.assertIn("Continents (2):</b> Africa, Oceania", still)
+        self.assertIn("US states (47):", still)
+        self.assertIn("Canadian provinces and territories (12):", still)
+        self.assertIn("CQ zones (35):", still)
+        bare = lh.worked_tiles_html(lc.worked_summary(self.worked_log(with_numbers=False)))
+        self.assertNotIn("CQ zones", bare)                                                                 # a log without zones gets no zone tile
+        complete = dict(w, missing_continents=[], missing_states=[], missing_provinces=[], missing_cq=[])
+        self.assertEqual(lh.still_to_work_html(complete), "")                                              # nothing missing: no box
+
     def test_the_followers_diamond_is_drawn_above_the_blocks(self):
         rule = lh.CSS[lh.CSS.index(".lc-d{"):]
         self.assertIn("z-index:3", rule[:rule.index("}")])                                   # blocks stacked above it no longer hide it

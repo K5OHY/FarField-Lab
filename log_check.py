@@ -21,7 +21,7 @@ from geographiclib.geodesic import Geodesic
 
 import conditions as cond
 from compare_stats import locate as locate_skimmer
-from rbn_data import get_band, maidenhead_to_latlon
+from rbn_data import country_continent, country_location, get_band, maidenhead_to_latlon
 from session_report import BAND_ORDER, region_of
 
 TYPICAL_OFFSET_DB = 10.0   # an ordinary 100 W station reads about this much above the page's figure on RBN (two known-power checks)
@@ -99,6 +99,7 @@ def parse_adif(text):
             mode = f["SUBMODE"].upper()
         rows.append({"call": f["CALL"].upper(), "time": when, "band": band, "mode": mode, "state": f.get("STATE", "").upper(),
                      "country": f.get("COUNTRY", ""), "cont": f.get("CONT", "").upper(), "pota_ref": f.get("POTA_REF", ""),
+                     "dxcc": f.get("DXCC", "").strip(), "cqz": f.get("CQZ", "").strip(), "ituz": f.get("ITUZ", "").strip(),
                      "my_pota": (f.get("MY_POTA_REF") or (f.get("MY_SIG_INFO", "") if f.get("MY_SIG", "").upper() == "POTA" else "")).upper(),
                      "rst_sent": f.get("RST_SENT", ""), "rst_rcvd": f.get("RST_RCVD", ""),
                      "station": (f.get("STATION_CALLSIGN") or f.get("OPERATOR") or "").upper(), "my_grid": f.get("MY_GRIDSQUARE", "")})
@@ -371,6 +372,69 @@ def pota_notes(card):
                  f"{s['cw'][2]} CW QSOs ({_ordinal(s['cw'][0])} of {s['cw'][1]})" if "cw" in s else None]
         notes.append(("Across everything listed under your callsign here:", ", ".join(p for p in parts if p) + "."))
     return notes
+
+
+# ------------------------------------------------------------------------------------------------------------- what you worked
+
+US_STATES = tuple("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split())
+CA_PROVINCES = tuple("AB BC MB NB NL NS NT NU ON PE QC SK YT".split())
+CONTINENT_NAMES = {"NA": "North America", "SA": "South America", "EU": "Europe", "AF": "Africa", "AS": "Asia", "OC": "Oceania"}
+DXCC_ENTITIES = 340          # the number of current DXCC entities
+CQ_ZONES = 40
+_US_ENTITIES, _US_NAMES = {"291", "6", "110"}, ("United States", "Alaska", "Hawaii")     # the United States, Alaska and Hawaii: where STATE is a US state
+
+
+def worked_entities(log):
+    """The log with three columns added: `ent` (the DXCC entity worked: the DXCC number the log gives, else the country's name), `ent_name` and
+    `ent_cont`. A log that has no DXCC numbers is filled in from the callsign, using the country list the page already has (cty.dat)."""
+    d = log.copy()
+    dxcc = d["dxcc"].fillna("").astype(str).str.strip() if "dxcc" in d else pd.Series("", index=d.index)
+    names, conts = {}, {}
+    for key in sorted(set(dxcc[dxcc != ""])):
+        rows = d[dxcc == key]
+        said = rows["country"][rows["country"] != ""].mode()
+        loc = country_location(rows["call"].iloc[0])
+        names[key] = said.iloc[0] if len(said) else (loc[2] if loc else f"DXCC {key}")
+        cont = rows["cont"][rows["cont"] != ""].mode()
+        conts[key] = cont.iloc[0] if len(cont) else (country_continent(names[key]) or "")
+    by_name = {v: k for k, v in names.items()}
+    ent, ent_name, ent_cont = [], [], []
+    for (_, row), key in zip(d.iterrows(), dxcc):
+        if key:
+            ent.append(key), ent_name.append(names[key]), ent_cont.append(conts[key])
+            continue
+        loc = country_location(row["call"])
+        name = row["country"] or (loc[2] if loc else "Unknown")
+        ent.append(by_name.get(name, name)), ent_name.append(name)
+        ent_cont.append(row["cont"] or country_continent(name) or "")
+    return d.assign(ent=ent, ent_name=ent_name, ent_cont=ent_cont)
+
+
+def worked_summary(log):
+    """What the log says about who was worked, from the log alone: the DXCC entities (with contacts and bands, those outside the continent with
+    the most contacts first), the continents, the US states and Canadian provinces, the CQ and ITU zones, and the countries counted once per band.
+    It is what is in this log, not what is confirmed."""
+    d = worked_entities(log)
+    g = d.groupby("ent")
+    ents = pd.DataFrame({"name": g["ent_name"].first(), "cont": g["ent_cont"].first(), "contacts": g.size(),
+                         "bands": g["band"].agg(lambda s: sorted(set(s), key=_rank))})
+    home = ents.groupby("cont")["contacts"].sum().idxmax() if len(ents) else ""
+    ents = ents.assign(away=ents["cont"] != home).sort_values(["away", "contacts", "name"], ascending=[False, False, True]).drop(columns="away")
+    us = d["ent"].isin(_US_ENTITIES) | d["ent_name"].isin(_US_NAMES)
+    ca = (d["ent"] == "1") | (d["ent_name"] == "Canada")
+    states = set(d.loc[us, "state"]) & set(US_STATES)
+    provinces = set(d.loc[ca, "state"]) & set(CA_PROVINCES)
+    cqz = {int(z) for z in d["cqz"] if str(z).isdigit() and 1 <= int(z) <= CQ_ZONES} if "cqz" in d and (d["cqz"] != "").any() else None
+    ituz = {int(z) for z in d["ituz"] if str(z).isdigit() and 1 <= int(z) <= 90} if "ituz" in d and (d["ituz"] != "").any() else None
+    continents = {c for c in ents["cont"] if c in CONTINENT_NAMES}
+    pairs = d.drop_duplicates(["ent", "band"])
+    return {"ents": ents, "n_entities": len(ents), "home": home, "continents": continents,
+            "missing_continents": [n for c, n in CONTINENT_NAMES.items() if c not in continents],
+            "has_us": bool(us.any()), "states": sorted(states), "missing_states": [s for s in US_STATES if s not in states],
+            "has_ca": bool(ca.any()), "provinces": sorted(provinces), "missing_provinces": [p for p in CA_PROVINCES if p not in provinces],
+            "cq": sorted(cqz) if cqz is not None else None, "missing_cq": [z for z in range(1, CQ_ZONES + 1) if z not in cqz] if cqz is not None else None,
+            "itu": len(ituz) if ituz is not None else None, "band_countries": len(pairs),
+            "per_band": {b: int((pairs["band"] == b).sum()) for b in bands_top_down(d)}}
 
 
 # ------------------------------------------------------------------------------------------------------- where the contacts were

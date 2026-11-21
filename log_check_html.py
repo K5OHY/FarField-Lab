@@ -5,7 +5,7 @@ from html import escape
 import numpy as np
 import pandas as pd
 
-from log_check import BALANCE_MIN, DX_FIRST, DX_MILES, HABIT_SHARE, NEAR_REGIONS, bands_top_down, pota_notes
+from log_check import BALANCE_MIN, CONTINENT_NAMES, DX_FIRST, DX_MILES, DXCC_ENTITIES, CQ_ZONES, HABIT_SHARE, NEAR_REGIONS, bands_top_down, pota_notes
 
 BLUE, TEAL, AMBER = "#5B8CFF", "#19B5AE", "#F0A020"
 
@@ -143,6 +143,62 @@ def tiles_html(s, repeats):
             + _tile(len(bands), "--a", "bands worked", escape(span))
             + _tile(repeats, "--g", "came back on another band", "stations worked on 2 or more bands")
             + '</div></div>')
+
+
+ENTITY_ROWS = 12      # the countries shown at first; the rest are under a 'Show more' box
+
+
+def worked_tiles_html(w):
+    """A second row of tiles: DXCC entities, continents, US states and CQ zones, each against the whole it is part of."""
+    n = w["n_entities"]
+    away = int((w["ents"]["cont"] != w["home"]).sum())
+    tiles = [_tile(n, "--b", "DXCC entities worked", f"{away} outside {escape(CONTINENT_NAMES.get(w['home'], 'your continent'))}" if away else "all on your continent",
+                   f"of {DXCC_ENTITIES}", "")]
+    seen = len(w["continents"])
+    tiles.append(_tile(seen, "--t", "continents", "all six: WAC" if seen == 6 else "missing " + escape(", ".join(w["missing_continents"])), "of 6"))
+    if w["has_us"]:
+        miss = w["missing_states"]
+        tiles.append(_tile(len(w["states"]), "--a", "US states", ("all 50: WAS" if not miss else f"missing {', '.join(miss)}" if len(miss) <= 6 else f"{len(miss)} to go")
+                           + (f" · {len(w['provinces'])} Canadian provinces" if w["has_ca"] else ""), "of 50"))
+    if w["cq"] is not None:
+        tiles.append(_tile(len(w["cq"]), "--g", "CQ zones", f"{w['itu']} ITU zones" if w["itu"] is not None else "", f"of {CQ_ZONES}"))
+    return '<div class="lc" style="margin-top:12px"><div class="lc-tiles">' + "".join(tiles) + "</div></div>"
+
+
+def _ent_rows(w, bands, first, rows):
+    out = []
+    for key, r in w["ents"].iloc[first:first + rows].iterrows():
+        dots = "".join(f'<td>{"&#9679;" if b in r["bands"] else "<span class=\"no\">&middot;</span>"}</td>' for b in bands)
+        out.append(f'<tr><td><b>{escape(str(r["name"]))}</b> <small>{escape(str(r["cont"]))}</small></td><td>{int(r["contacts"])}</td>{dots}</tr>')
+    return "".join(out)
+
+
+def worked_html(w, bands, rows=ENTITY_ROWS, first=0):
+    """The countries worked, with the contacts and a dot for each band, those outside the home continent first; `first` and `rows` pick the stretch
+    of the list shown (the rest wait under a 'Show more' box)."""
+    head = "<tr><th>Country</th><th>Contacts</th>" + "".join(f"<th>{escape(b)}</th>" for b in bands) + "</tr>"
+    table = f'<div class="lc-cgw"><table class="lc-reg">{head}{_ent_rows(w, bands, first, rows)}</table></div>'
+    if first:
+        return '<div class="lc">' + table + "</div>"
+    counts = " · ".join(f"{escape(b)} {n}" for b, n in w["per_band"].items())
+    return ('<div class="lc"><div class="lc-card"><h4>What you worked</h4>'
+            f'<p class="sub">{w["n_entities"]} DXCC entities in this log, those outside {escape(CONTINENT_NAMES.get(w["home"], "your continent"))} first. A dot means the country was '
+            'worked on that band. This is what the log says, not what is confirmed by LoTW or the ARRL.</p>' + table
+            + f'<p class="sub" style="margin-top:8px"><b>{w["band_countries"]} band-countries</b> (each country counted once per band): {counts}.</p></div></div>')
+
+
+def still_to_work_html(w):
+    """What is still missing, for the stretch of the log: continents, US states, Canadian provinces and CQ zones. Empty when nothing is missing."""
+    items = []
+    if w["missing_continents"]:
+        items.append(f"<li><b>Continents ({len(w['missing_continents'])}):</b> {escape(', '.join(w['missing_continents']))}</li>")
+    if w["has_us"] and w["missing_states"]:
+        items.append(f"<li><b>US states ({len(w['missing_states'])}):</b> {escape(', '.join(w['missing_states']))}</li>")
+    if w["has_ca"] and w["missing_provinces"]:
+        items.append(f"<li><b>Canadian provinces and territories ({len(w['missing_provinces'])}):</b> {escape(', '.join(w['missing_provinces']))}</li>")
+    if w["missing_cq"]:
+        items.append(f"<li><b>CQ zones ({len(w['missing_cq'])}):</b> {escape(', '.join(str(z) for z in w['missing_cq']))}</li>")
+    return '<div class="lc"><ul class="lc-says">' + "".join(items) + "</ul></div>" if items else ""
 
 
 def _teal(share):
