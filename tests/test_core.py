@@ -1563,28 +1563,97 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
                 ("30m", [(0, 1, 0, 0, 0, {})] * 4 + [(0, 0, 0, 0, 0, {}), (0, 0, 15, 0, 0, {}), (1, 1, 7, 0, 0, {"Africa": 1})])]
         notes = lc.dx_notes(self.dx_table(rows), 75.0)
         text = {lead: rest for lead, rest in notes}
-        self.assertEqual([lead.split()[0] for lead, _ in notes], ["15m", "20m", "30m", "12m"])   # most evidence first, then the bands with none
-        self.assertIn("15m had DX that would hear 75 W in 7 of 7 half hours.", text)
-        self.assertIn("1 to 4 WSPR stations over 3,000 miles away would have heard 75 W, in Europe.", text["15m had DX that would hear 75 W in 7 of 7 half hours."])
-        self.assertIn("You made 41 contacts on 15m, all of them in half hours with DX evidence, and 1 was outside North America.",
-                      text["15m had DX that would hear 75 W in 7 of 7 half hours."])
-        self.assertIn("RBN skimmers over 3,000 miles from you spotted you on it, first in the half hour from 20:30Z.", text["15m had DX that would hear 75 W in 7 of 7 half hours."])
-        lead20 = "20m had DX that would hear 75 W in 4 of 7 half hours."
-        self.assertIn("27 to 35 WSPR stations over 3,000 miles away decoded WSPR on 20m, but most were too weak for 75 W.", text[lead20])   # many heard, few strong
+        self.assertEqual([lead.split()[0] for lead, _ in notes], ["15m:", "20m:", "30m:", "12m:"])   # most evidence first, then the bands with none
+        lead15 = "15m: estimated DX paths for 75 W in 7 of 7 half hours."
+        self.assertIn(lead15, text)
+        self.assertIn("1 to 4 WSPR stations over 3,000 miles away looked strong enough to hear 75 W, in Europe.", text[lead15])
+        self.assertIn("You made 41 contacts on 15m, all of them in half hours with DX evidence, and 1 was outside North America.", text[lead15])
+        self.assertIn("RBN skimmers over 3,000 miles from you spotted you on it, first in the half hour from 20:30Z.", text[lead15])
+        lead20 = "20m: estimated DX paths for 75 W in 4 of 7 half hours."
+        self.assertIn("27 to 35 WSPR stations over 3,000 miles away decoded WSPR on 20m, but most looked too weak for 75 W.", text[lead20])   # many heard, few strong
         self.assertIn("in Asia.", text[lead20])
-        self.assertIn("Only the half hour from 23:00Z had one", text["30m showed little DX that would hear 75 W."])
-        self.assertIn("2 half hours had WSPR stations over 3,000 miles away that decoded WSPR, but none strong enough.", text["12m showed no DX that would hear 75 W."])
-        self.assertNotIn("missed", " ".join(a + b for a, b in notes).lower())               # facts, not advice
+        self.assertIn("Only the half hour from 23:00Z had one", text["30m: little estimated DX for 75 W."])
+        self.assertIn("2 half hours had WSPR stations over 3,000 miles away that decoded WSPR, but none looked strong enough.", text["12m: no estimated DX paths for 75 W."])
+        joined = " ".join(a + b for a, b in notes).lower()
+        self.assertNotIn("missed", joined)                                                  # facts, not advice
+        self.assertNotIn("would hear", joined)                                              # an estimate does not say "would"
         self.assertEqual(lc.dx_notes(self.dx_table([("40m", [(0, 0, 3, 0, 0, {})] + [(0, 0, 0, 0, 0, {})] * 6)]), 75.0), [])    # a band with 3 contacts and nothing to say
         self.assertEqual(lc.dx_notes(pd.DataFrame(columns=["panel", "slot", "band", "contacts"]), 75.0), [])
-        self.assertIn("1 WSPR station over 3,000 miles away would have heard 75 W", " ".join(b for _, b in lc.dx_notes(self.dx_table(
+        self.assertIn("1 WSPR station over 3,000 miles away looked strong enough to hear 75 W", " ".join(b for _, b in lc.dx_notes(self.dx_table(
             [("30m", [(0, 1, 5, 0, 0, {})] * 3 + [(1, 1, 5, 0, 0, {"Africa": 1})] + [(0, 0, 0, 0, 0, {})] * 3)]), 75.0)))
+        thin = self.dx_table([("40m", [(0, 0, 3, 0, 0, {})] * 7)]).assign(receivers=4)
+        self.assertIn("WSPR coverage on this band was thin.", " ".join(b for _, b in lc.dx_notes(thin, 75.0)))
+
+    def test_the_observed_view_says_what_was_decoded_and_assumes_nothing_about_your_station(self):
+        e = {"Europe": 2}
+        grid = self.dx_table([("15m", [(1, 6, 0, 0, 0, e), (0, 3, 12, 1, 1, e), (0, 3, 28, 0, 0, e)] + [(0, 0, 0, 0, 0, {})] * 4),
+                              ("40m", [(0, 0, 8, 0, 0, {})] * 7)])
+        notes = dict(lc.dx_notes(grid, 75.0, view="observed"))
+        lead = "15m: distant WSPR stations decoded transmitters near you in 3 of 7 half hours."
+        self.assertIn(lead, notes)
+        self.assertIn("3 to 6 WSPR stations over 3,000 miles away decoded WSPR near you, in Europe.", notes[lead])
+        self.assertIn("You made 40 contacts on 15m, all of them in half hours with distant WSPR reports", notes[lead])
+        self.assertIn("40m: no distant WSPR reports.", notes)
+        self.assertNotIn("strong enough", " ".join(notes.values()))                         # no power, no estimate
+        html = lh.dx_windows_html(grid, [], 75.0, "CW", None, "observed")
+        self.assertIn("what WSPR showed", html)
+        self.assertIn("Nothing is assumed about your power or mode", html)
+        self.assertEqual(html.count('class="cell s3"'), 3)                                  # 6, 3 and 3 stations decoded
+        self.assertEqual(html.count('class="cell few"'), 0)                                 # no striped boxes: there is no estimate to fall short of
+        self.assertNotIn("looked strong enough", html)
+        estimate = lh.dx_windows_html(grid, [], 75.0, "CW", None, "estimate")
+        self.assertIn("Band conditions while you were on the air: estimate for 75 W", estimate)
+        self.assertIn("An estimate of when a signal like yours", estimate)
+
+    def test_bands_you_did_not_work_are_in_the_picture_after_the_ones_you_did(self):
+        wspr = self.dx_wspr()
+        other = wspr[wspr["band"] == "20m"].assign(band="17m")                               # 17m was not worked; 40m has no WSPR at all
+        both = pd.concat([wspr, other], ignore_index=True)
+        grid = lc.conditions_grid(self.cond_log(), lambda a, b: both[(both["time"] > a) & (both["time"] <= b)], HOME, 100.0)
+        self.assertEqual(list(grid.drop_duplicates("band")["band"]), ["15m", "20m", "17m"])     # worked bands first, the others after, in band order
+        flags = grid.drop_duplicates("band").set_index("band")["worked"]
+        self.assertEqual((bool(flags["20m"]), bool(flags["15m"]), bool(flags["17m"])), (True, True, False))
+        g17 = grid[grid["band"] == "17m"]
+        self.assertEqual(int(g17["contacts"].sum()), 0)
+        self.assertGreater(int(g17["dx_good"].max()), 0)                                    # the evidence is there although you never tried 17m
+        self.assertNotIn("40m", set(grid["band"]))                                          # a band you did not work with no WSPR has no row
+        html = lh.dx_windows_html(grid, [], 100.0, "CW")
+        self.assertEqual(html.count("Bands you did not work"), 1)
+        self.assertLess(html.index(">20m</div>"), html.index("Bands you did not work"))
+        self.assertLess(html.index("Bands you did not work"), html.index(">17m</div>"))
+        notes = lc.dx_notes(grid, 100.0)
+        leads = [a for a, _ in notes]
+        self.assertTrue(leads[-1].startswith("17m (not worked): estimated DX paths for 100 W"))     # last, after the bands you worked
+        self.assertNotIn("You made", dict(notes)[leads[-1]])                                 # nothing to say about contacts you did not make
+        self.assertIn("not worked", lh.dx_regions_html(grid))
+
+    def test_a_us_callsign_far_away_is_a_us_station_overseas_not_a_us_region(self):
+        wspr = self.dx_wspr()
+        abroad = wspr[wspr["rx"] == "DL0AAA"].assign(rx="W1ABC") if (wspr["rx"] == "DL0AAA").any() else wspr[wspr["rx"] == wspr["rx"].iloc[-1]].assign(rx="W1ABC")
+        both = pd.concat([wspr, abroad], ignore_index=True)
+        grid = lc.conditions_grid(self.cond_log(), lambda a, b: both[(both["time"] > a) & (both["time"] <= b)], HOME, 100.0)
+        regions = {k for r in grid["dx_regions_heard"] for k in r}
+        self.assertIn("US stations overseas", regions)
+        self.assertFalse(regions & {"US East", "US Central", "US West"})
+
+    def test_two_entities_never_share_a_label_in_what_you_worked(self):
+        def rec(call, **f):
+            extra = "".join(f"<{k.upper()}:{len(str(v))}>{v} " for k, v in f.items())
+            return f"<CALL:{len(call)}>{call} <QSO_DATE:8>20261118 <TIME_ON:4>2000 <BAND:3>20m <MODE:2>CW {extra}<EOR>"
+        log = lc.parse_adif("".join([rec("W1AAA", dxcc=291, country="United States", cont="NA"), rec("W2AAA", dxcc=291, country="United States", cont="NA"),
+                                     rec("KH6DE", dxcc=110, country="United States", cont="OC"), rec("KL7AC", dxcc=6, country="United States", cont="NA"),
+                                     rec("ON4AAA", dxcc=209, country="Belgium", cont="EU"), rec("ON5AAA", dxcc=107, country="Belgium", cont="AF")]))
+        ents = lc.worked_summary(log)["ents"]
+        names = dict(zip(ents.index, ents["name"]))
+        self.assertEqual((names["110"], names["6"], names["291"]), ("Hawaii", "Alaska", "United States"))     # the registered country is not the entity
+        self.assertEqual(len(set(names.values())), len(names))                                              # every label is different
+        self.assertEqual((names["209"], names["107"]), ("Belgium (DXCC 209)", "Belgium (DXCC 107)"))        # still the same: told apart by the number
 
     def test_the_dx_picture_shows_counts_markers_and_four_kinds_of_box(self):
         rows = [("15m", [(3, 6, 12, 1, 1, {"Europe": 3}), (1, 2, 0, 0, 0, {"Europe": 1}), (0, 5, 0, 0, 0, {}), (0, 0, 4, 0, 0, {})] + [(0, 0, 0, 0, 0, {})] * 3)]
         grid = self.dx_table(rows)
         html = lh.dx_windows_html(grid, [("15m had DX.", "Some.")], 75.0, "CW", "America/Chicago")
-        self.assertIn("Band conditions while you were on the air", html)
+        self.assertIn("Band conditions while you were on the air: estimate for 75 W", html)
         self.assertEqual(html.count('class="cell s3"'), 1)
         self.assertEqual(html.count('class="cell s1"'), 1)
         self.assertEqual(html.count('class="cell few"'), 1)                                 # DX heard WSPR, none strong enough
@@ -1593,7 +1662,8 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertIn("&#9733;", html)                                                      # a contact outside North America
         self.assertIn("<u></u></em>", html)                                                 # a skimmer that far away
         self.assertIn("14:00 local", html)                                                  # 20:00Z in Chicago
-        self.assertIn("would hear 75 W", html)
+        self.assertIn("estimated strong enough for 75 W", html)
+        self.assertNotIn("would hear 75 W", html)
         self.assertIn("15m had DX.", html)
         self.assertNotIn("nan", html.lower())
         self.assertNotIn('<em title="a skimmer that far away spotted you">', lh.dx_windows_html(grid.assign(rbn_far=0), [], 75.0, "CW"))
@@ -1608,6 +1678,13 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertIn("3 <small>20:00&ndash;21:00</small>", html)                           # up to 3 Europe receivers in the first two half hours
         self.assertIn("1 outside North America", html)
         self.assertEqual(lh.dx_regions_html(self.dx_table([("20m", [(0, 9, 5, 0, 0, {})] * 7)])), "")   # nothing reached: no table
+        split = self.dx_table([("10m", [(2, 4, 5, 0, 0, {"South America": 2}), (0, 0, 0, 0, 0, {}), (0, 0, 0, 0, 0, {}), (3, 3, 0, 0, 0, {"South America": 3}),
+                                        (3, 3, 0, 0, 0, {"South America": 3}), (0, 0, 0, 0, 0, {}), (0, 0, 0, 0, 0, {})])])
+        windows = lh.dx_regions_html(split)
+        self.assertIn("20:00&ndash;20:30, 21:30&ndash;22:30", windows)                    # two windows, not one long opening from 20:00 to 22:30
+        self.assertNotIn("20:00&ndash;22:30", windows)
+        heard = lh.dx_regions_html(split.assign(dx_regions_heard=split["dx_regions"]), "observed")
+        self.assertIn("decoded WSPR transmitters near you", heard)
 
     def test_the_dx_card_says_what_rbn_can_and_cannot_show(self):
         html = lh.dx_windows_html(self.dx_table([("15m", [(3, 6, 12, 0, 0, {"Europe": 3})] + [(0, 0, 0, 0, 0, {})] * 6)]), [], 75.0, "CW")

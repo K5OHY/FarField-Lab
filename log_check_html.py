@@ -96,6 +96,7 @@ CSS = """<style>
 .lc-dx .m{display:flex;flex-wrap:wrap;gap:3px;align-items:center;justify-content:center;min-height:15px}
 .lc-dx .cell em{position:static}.lc-dx .cell em.st{color:var(--a);padding:0 4px}
 .lc-dx .cell em u{display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6;box-sizing:content-box}
+.lc-cg .grp{grid-column:1/-1;font-size:12px;font-weight:600;opacity:.7;margin:8px 0 0}
 .lc-key{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:10px 0 0;font-size:12px;opacity:.85}
 .lc-key .sw{display:inline-flex;align-items:center;gap:6px}.lc-key .sw b{display:inline-block;width:22px;height:13px;border-radius:4px;border:1px solid var(--line)}
 .lc-reg{border-collapse:collapse;width:100%;font-size:13.5px}.lc-reg td,.lc-reg th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
@@ -227,62 +228,98 @@ def _evidence_line(grid):
             f'{ev["receivers"]:,} stations as far away as {far:,.0f} miles.{thin}</p>')
 
 
-def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None):
-    """When a signal like yours could have reached DX while you were on the air: a box for each band and half hour that counts the receivers
-    DX_MILES or more away that would have heard it, with your contacts (diamond), contacts outside North America (star) and skimmers that far
-    away that spotted you (RBN) on top, and the lines that say it in words."""
+def _runs_text(slots, stamp):
+    """The half hours in `slots` as windows ('13:30-15:00, 18:00-20:30'): half hours that do not follow each other are separate windows."""
+    from log_check import _slot_windows
+    step = pd.Timedelta(minutes=30)
+    runs = _slot_windows(slots)
+    text = ", ".join(f"{stamp(a)}&ndash;{stamp(b + step)}" for a, b in runs[:3])
+    return text + (f", and {len(runs) - 3} more" if len(runs) > 3 else "")
+
+
+DX_VIEWS = {"estimate": "Estimate for my station", "observed": "What WSPR showed"}
+
+
+def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None, view="estimate"):
+    """When DX was there while you were on the air: a box for each band and half hour. In the 'observed' view it counts the WSPR stations
+    DX_MILES or more away that decoded WSPR transmitters near you; in the 'estimate' view, those that looked strong enough to hear a signal like
+    yours. Your contacts (diamond), contacts outside North America (star) and skimmers that far away that spotted you (a ring) sit on top, and
+    the lines that say it in words follow. Bands you did not work come after the ones you did."""
     miles = f"{DX_MILES:,}"
-    all_bands = list(grid.drop_duplicates("band")["band"])
+    observed = view == "observed"
+    first = grid.drop_duplicates("band")
+    flags = dict(zip(first["band"], first["worked"])) if "worked" in first else {b: True for b in first["band"]}
+    all_bands = [b for b in first["band"] if flags[b]] + [b for b in first["band"] if not flags[b]]
     panels = []
     for panel, d in grid.groupby("panel"):
         slots = sorted(d["slot"].unique())
         by = {(r.band, r.slot): r for r in d.itertuples()}
         head = "<div></div>" + "".join(f'<div class="th"><b>{pd.Timestamp(s):%H:%M}</b>'
                                        + (f"<span>{_local_time(s, tz_name)} local</span>" if _local_time(s, tz_name) else "") + "</div>" for s in slots)
-        cells = []
+        cells, in_group = [], False
         for b in all_bands:
+            if not flags[b] and not in_group:
+                cells.append('<div class="grp">Bands you did not work</div>')
+                in_group = True
             cells.append(f'<div class="bl">{escape(b)}</div>')
             for s in slots:
                 r = by[(b, s)]
-                kind = "s3" if r.dx_good >= 3 else "s1" if r.dx_good >= 1 else "few" if r.dx_heard > 0 else "none"
+                n = r.dx_heard if observed else r.dx_good
+                kind = "s3" if n >= 3 else "s1" if n >= 1 else ("few" if (not observed and r.dx_heard > 0) else "none")
                 marks = (f'<em><i></i>{r.contacts}</em>' if r.contacts else "") + ('<em class="st" title="a contact outside North America">&#9733;</em>' if r.dx_contacts else "") \
                     + ('<em title="a skimmer that far away spotted you"><u></u></em>' if r.rbn_far else "")
-                tip = (f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_good} WSPR stations over {miles} miles would hear {power_w:g} W; {r.dx_heard} that far decoded WSPR "
-                       f"near you; {r.contacts} contacts")
-                cells.append(f'<div class="cell {kind}" title="{escape(tip)}"><span class="p">{r.dx_good if r.dx_good else "&ndash;"}</span>'
+                tip = (f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_heard} WSPR stations over {miles} miles decoded WSPR near you; {r.contacts} contacts" if observed else
+                       f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_good} WSPR stations over {miles} miles estimated strong enough for {power_w:g} W; {r.dx_heard} that far "
+                       f"decoded WSPR near you; {r.contacts} contacts")
+                cells.append(f'<div class="cell {kind}" title="{escape(tip)}"><span class="p">{n if n else "&ndash;"}</span>'
                              f'<span class="m">{marks}</span></div>')
         title = f'<p class="sub" style="margin:14px 0 0"><b>{pd.Timestamp(slots[0]):%a %d %b}</b> (UTC)</p>' if grid["panel"].nunique() > 1 else ""
         dense = " dense" if len(slots) > 10 else ""
         panels.append(title + f'<div class="lc-cgw"><div class="lc-cg lc-dx{dense}" style="--k:{len(slots)}">{head}{"".join(cells)}</div></div>')
     says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(lead)}</b> {escape(rest)}</li>" for lead, rest in notes) + "</ul>") if notes else ""
-    return ('<div class="lc"><div class="lc-card"><h4>Band conditions while you were on the air</h4>'
-            f'<p class="sub">When could a signal like yours have reached more than {miles} miles? Each box counts the WSPR stations over {miles} miles from you that '
-            f'decoded WSPR transmitters near you in the hour up to the end of that half hour and would have heard {power_w:g} W using {escape(mode)}, with 3 dB '
-            'to spare. It counts different stations, not reports. (A WSPR station here is a receiver, not an RBN skimmer.)</p>'
-            '<p class="sub"><b>How to read it:</b> read across a row to follow a band over time. A dash means no station that far would have heard you; '
-            'a striped box means stations that far heard WSPR, but none strongly enough. Bands have different numbers of stations, so use the counts to '
-            'compare hours, not to rank bands.</p>'
-            + _evidence_line(grid)
-            + "".join(panels)
-            + '<div class="lc-key"><span class="sw"><b style="background:rgba(32,178,170,.88)"></b>3 or more would hear you</span>'
-              '<span class="sw"><b style="background:rgba(32,178,170,.40)"></b>1 or 2</span>'
-              '<span class="sw"><b style="background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(128,128,128,.4) 5px 6px)"></b>heard WSPR, none strong enough</span>'
-              '<span class="sw"><b></b>no reports that far</span></div>'
-            '<div class="lc-key"><span class="sw"><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> contacts in that half hour</span>'
-            '<span class="sw"><span style="color:var(--a);font-weight:700">&#9733;</span> a contact outside North America</span>'
-            f'<span class="sw"><span style="display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6"></span> an RBN skimmer over {miles} miles away spotted you</span></div>'
-            + says
-            + '<p class="sub" style="margin-top:10px">"Would hear you" is an estimate: each station\'s WSPR reports are restated to your power and compared with what the mode needs, '
-              'assuming an ordinary antenna. It tends to run high, so use it to compare bands and hours, not to promise a contact. WSPR only covers stations within 300 miles '
-              'of you, and a band with few of them has thin evidence. RBN has far fewer skimmers than WSPR has receivers, especially outside North America and Europe: a ring is proof you were heard that far, but no ring says nothing. '
-              'These lines say what was observed, not what you should have done.</p>'
-            '</div></div>')
+    if observed:
+        heading = "Band conditions while you were on the air: what WSPR showed"
+        intro = (f'<p class="sub">What WSPR showed. Each box counts the WSPR stations over {miles} miles from you that decoded WSPR transmitters near you in the hour up to '
+                 'the end of that half hour. Nothing is assumed about your power or mode. It counts different stations, not reports. '
+                 '(A WSPR station here is a receiver, not an RBN skimmer.)</p>')
+        reading = ('<p class="sub"><b>How to read it:</b> read across a row to follow a band over time. A dash means no station that far decoded WSPR near you. '
+                   'Bands have different numbers of stations, so use the counts to compare hours, not to rank bands.</p>')
+        key = ('<div class="lc-key"><span class="sw"><b style="background:rgba(32,178,170,.88)"></b>3 or more decoded WSPR</span>'
+               '<span class="sw"><b style="background:rgba(32,178,170,.40)"></b>1 or 2</span><span class="sw"><b></b>none that far</span></div>')
+        caveat = ('<p class="sub" style="margin-top:10px">This is what was decoded, with no estimate in it. WSPR only covers stations within 300 miles of you, and a band with few '
+                  'transmitters there has thin evidence. ')
+    else:
+        heading = f"Band conditions while you were on the air: estimate for {power_w:g} W"
+        intro = (f'<p class="sub">An estimate of when a signal like yours could have reached more than {miles} miles. Each box counts the WSPR stations over {miles} miles '
+                 f'from you that decoded WSPR transmitters near you in the hour up to the end of that half hour and looked strong enough to hear {power_w:g} W using '
+                 f'{escape(mode)} (their reports restated to your power, with 3 dB to spare). It counts different stations, not reports. '
+                 '(A WSPR station here is a receiver, not an RBN skimmer.)</p>')
+        reading = ('<p class="sub"><b>How to read it:</b> read across a row to follow a band over time. A dash means no station that far looked strong enough; '
+                   'a striped box means stations that far decoded WSPR, but none looked strong enough. Bands have different numbers of stations, so use the counts to '
+                   'compare hours, not to rank bands.</p>')
+        key = ('<div class="lc-key"><span class="sw"><b style="background:rgba(32,178,170,.88)"></b>3 or more look strong enough</span>'
+               '<span class="sw"><b style="background:rgba(32,178,170,.40)"></b>1 or 2</span>'
+               '<span class="sw"><b style="background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(128,128,128,.4) 5px 6px)"></b>decoded WSPR, none strong enough</span>'
+               '<span class="sw"><b></b>no reports that far</span></div>')
+        caveat = ('<p class="sub" style="margin-top:10px">"Strong enough" is an estimate: each station\'s WSPR reports are restated to your power and compared with what the mode needs, '
+                  'assuming an ordinary antenna. It tends to run high, so use it to compare bands and hours, not to promise a contact. WSPR only covers stations within 300 miles '
+                  'of you, and a band with few of them has thin evidence. ')
+    return (f'<div class="lc"><div class="lc-card"><h4>{escape(heading)}</h4>' + intro + reading + _evidence_line(grid) + "".join(panels) + key
+            + '<div class="lc-key"><span class="sw"><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> contacts in that half hour</span>'
+              '<span class="sw"><span style="color:var(--a);font-weight:700">&#9733;</span> a contact outside North America</span>'
+              f'<span class="sw"><span style="display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6"></span> an RBN skimmer over {miles} miles away spotted you</span></div>'
+            + says + caveat
+            + 'RBN has far fewer skimmers than WSPR has receivers, especially outside North America and Europe: a ring is proof you were heard that far, but no ring says nothing. '
+              'These lines say what was seen in the data, not what you should have done.</p></div></div>')
 
 
-def dx_regions_html(grid):
-    """Where DX reached, by band: for each band and region, the most receivers over DX_MILES away that would have heard you in one half hour, and
-    the span of half hours in which there were any. Empty when no receiver that far would have heard you."""
-    seen = {k for d in grid["dx_regions"] for k in d}
+def dx_regions_html(grid, view="estimate"):
+    """Where DX reached, by band: for each band and region, the most WSPR stations over DX_MILES away in one half hour (those that decoded WSPR near you
+    in the 'observed' view, those that looked strong enough for you in the 'estimate' view) and the windows in which there were any. Half hours that do
+    not follow each other are separate windows. Empty when there was nothing to show."""
+    observed = view == "observed"
+    col = "dx_regions_heard" if observed and "dx_regions_heard" in grid.columns else "dx_regions"
+    seen = {k for d in grid[col] for k in d}
     if not seen:
         return ""
     regions = [r for r in DX_FIRST if r in seen] + sorted(seen - set(DX_FIRST))
@@ -293,18 +330,19 @@ def dx_regions_html(grid):
         d = grid[grid["band"] == band].sort_values("slot")
         tds = []
         for reg in regions:
-            hits = [(s, r[reg]) for s, r in zip(d["slot"], d["dx_regions"]) if r.get(reg, 0) > 0]
+            hits = [(s, r[reg]) for s, r in zip(d["slot"], d[col]) if r.get(reg, 0) > 0]
             if hits:
                 best = max(n for _, n in hits)
-                tds.append(f'<td><span class="dot" style="opacity:{0.35 + 0.65 * min(best / 3, 1):.2f}"></span>{best} '
-                           f'<small>{stamp(hits[0][0])}&ndash;{stamp(hits[-1][0] + pd.Timedelta(minutes=30))}</small></td>')
+                tds.append(f'<td><span class="dot" style="opacity:{0.35 + 0.65 * min(best / 3, 1):.2f}"></span>{best} <small>{_runs_text([s for s, _ in hits], stamp)}</small></td>')
             else:
                 tds.append('<td><span class="no">&ndash;</span></td>')
         n, x = int(d["contacts"].sum()), int(d["dx_contacts"].sum())
-        rows.append(f"<tr><td><b>{escape(band)}</b></td>{''.join(tds)}<td>{n}" + (f" <small>({x} outside North America)</small>" if x else "") + "</td></tr>")
+        mine = f"{n}" if n else '<span class="no">not worked</span>'
+        rows.append(f"<tr><td><b>{escape(band)}</b></td>{''.join(tds)}<td>{mine}" + (f" <small>({x} outside North America)</small>" if x else "") + "</td></tr>")
+    what = "decoded WSPR transmitters near you" if observed else "looked strong enough to hear you"
     return ('<div class="lc"><div class="lc-card"><h4>Where DX reached, by band</h4>'
-            f'<p class="sub">The most WSPR stations over {DX_MILES:,} miles away that would have heard you in one half hour, by region, with the span of half hours '
-            'in which there were any (UTC).</p><div class="lc-cgw"><table class="lc-reg"><tr><th>Band</th>'
+            f'<p class="sub">The most WSPR stations over {DX_MILES:,} miles away that {what} in one half hour, by region, with the windows in which there were any (UTC). '
+            'Half hours that do not follow each other are listed as separate windows.</p><div class="lc-cgw"><table class="lc-reg"><tr><th>Band</th>'
             + "".join(f"<th>{escape(r)}</th>" for r in regions) + "<th>Your contacts</th></tr>" + "".join(rows) + "</table></div></div></div>")
 
 

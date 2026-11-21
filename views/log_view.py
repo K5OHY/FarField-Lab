@@ -365,10 +365,16 @@ def log_page():
     with conditions_slot:
         grid_of_conditions = _conditions(log, home, power, label, digest) if len(days) <= MAX_DAYS else None
         has_picture = grid_of_conditions is not None and len(grid_of_conditions) > 0
+        view = "estimate"
+        if has_picture:
+            chosen = st.radio("The DX picture", list(lh.DX_VIEWS.values()), horizontal=True, key="log_dx_view", label_visibility="collapsed",
+                              help="What WSPR showed: the stations over 3,000 miles away that decoded WSPR transmitters near you, with nothing assumed about your station. "
+                                   "Estimate for my station: the ones whose reports, restated to your power, look strong enough to hear you.")
+            view = next(k for k, v in lh.DX_VIEWS.items() if v == chosen)
         dx_slot = st.empty()
         if has_picture:
-            dx_slot.html(lh.CSS + lh.dx_windows_html(grid_of_conditions, lc.dx_notes(grid_of_conditions, power), power, mode, zone))
-            regions_html = lh.dx_regions_html(grid_of_conditions)
+            dx_slot.html(lh.CSS + lh.dx_windows_html(grid_of_conditions, lc.dx_notes(grid_of_conditions, power, view=view), power, mode, zone, view))
+            regions_html = lh.dx_regions_html(grid_of_conditions, view)
             if regions_html:
                 st.html(lh.CSS + regions_html)
             with st.expander("Another view: the percent of stations that could have heard you"):
@@ -400,7 +406,7 @@ def log_page():
         chart.html(lh.CSS + lh.afternoon_html(log, spots))
         if has_picture:     # the skimmers far away that spotted you are added to the DX picture
             with_rbn = lc.add_rbn_far(grid_of_conditions, spots, skimmers, home)
-            dx_slot.html(lh.CSS + lh.dx_windows_html(with_rbn, lc.dx_notes(with_rbn, power), power, mode, zone))
+            dx_slot.html(lh.CSS + lh.dx_windows_html(with_rbn, lc.dx_notes(with_rbn, power, view=view), power, mode, zone, view))
     result = None
     with work:
         if not cw.empty:
