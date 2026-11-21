@@ -104,6 +104,9 @@ CSS = """<style>
 .lc-kp{position:absolute;bottom:6px;border-radius:2px 2px 0 0}.lc-storm{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgb(230,120,40);opacity:.8}
 .lc-fl{position:absolute;top:50%;border-radius:50%;border:1px solid Canvas}.lc-kq{position:absolute;bottom:6px;background:var(--a);border-radius:1.5px 1.5px 0 0}
 .lc-card a{color:inherit;text-decoration:underline}
+.lc-hero{border:1px solid var(--line);border-left:6px solid rgb(32,178,170);border-radius:14px;padding:16px 20px;margin:0 0 12px}
+.lc-hero .k{font-size:11px;font-weight:700;letter-spacing:.08em;opacity:.65}.lc-hero h3{margin:2px 0 6px;font-size:24px;line-height:1.2}
+.lc-hero p{margin:0;font-size:15px}.lc-hero p.s{margin-top:6px;font-weight:600}
 .lc-reg .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:rgb(32,178,170);margin-right:6px}.lc-reg .no{opacity:.35}
 .lc-two{display:grid;grid-template-columns:minmax(280px,1.05fr) 1fr;gap:20px;align-items:start}
 .lc-facts{display:grid;gap:10px}.lc-fact{border:1px solid var(--line);border-radius:12px;padding:10px 13px}
@@ -488,21 +491,32 @@ def park_facts_html(card):
     return ('<div class="lc"><div class="lc-card"><h4>About the park</h4><ul class="lc-says">' + "".join(f"<li>{f}</li>" for f in facts) + "</ul></div></div>") if facts else ""
 
 
+def pota_banner_html(card):
+    """The headline of the park card, large: the best day of the log against every activation listed for the park, and where you stand among
+    its activators. Empty when no day of the log has a rank."""
+    from log_check import pota_headline
+    h = pota_headline(card)
+    if h is None:
+        return ""
+    return ('<div class="lc"><div class="lc-hero"><div class="k">POTA PARK ' + escape(card["ref"]) + f'</div><h3>{escape(h["title"])}</h3><p>{escape(h["line"])}</p>'
+            + (f'<p class="s">{escape(h["standing"])}</p>' if h["standing"] else "") + "</div></div>")
+
+
 def pota_html(card):
     """How a park compares: a few counts, one line for each activation in the log and for everything under your callsign, and two short tables:
     the park's top activators and its biggest activations."""
-    tiles = ('<div class="lc-tiles">' + _tile(card["n_acts"], "--b", "activations listed", "in POTA's list for this park")
-             + _tile(card["n_activators"], "--t", "activators", "different stations")
-             + _tile(card["yours_listed"], "--a", "yours listed", f"by {escape(card['me'])}") + "</div>")
+    tiles = ('<div class="lc-tiles">' + _tile(f"{card['n_acts']:,}", "--b", "activations at this park", "listed by POTA")
+             + _tile(f"{card['n_activators']:,}", "--t", "activators", "different stations")
+             + _tile(f"{card['yours_listed']:,}", "--a", "your activations here", f"listed under {escape(card['me'])}") + "</div>")
     says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(a)}</b> {escape(b)}</li>" for a, b in pota_notes(card)) + "</ul>") if card["rows"] else ""
     act = card["top_activators"]
     rows_a = "".join(f"<tr><td>{escape(str(who))}" + (" <small>(you)</small>" if who == card["me"] else "")
-                     + f"</td><td>{int(r.activations)}</td><td>{int(r.qsos)}</td><td>{int(r.cw)}</td></tr>" for who, r in act.iterrows())
+                     + f"</td><td>{int(r.activations):,}</td><td>{int(r.qsos):,}</td><td>{int(r.cw):,}</td></tr>" for who, r in act.iterrows())
     table_a = ('<p class="sub" style="margin-top:12px"><b>The park\'s top activators</b> (by QSOs listed)</p><div class="lc-cgw"><table class="lc-reg"><tr><th>Station</th>'
                '<th>Activations</th><th>QSOs</th><th>CW QSOs</th></tr>' + rows_a + "</table></div>") if len(act) else ""
     top = card["top"]
     rows = "".join(f"<tr><td>{r.date:%d %b %Y}</td><td>{escape(r.call)}" + (" <small>(you)</small>" if r.who == card["me"] else "")
-                   + f"</td><td>{r.total}</td><td>{r.cw}</td><td>{r.phone}</td><td>{r.data}</td></tr>" for r in top.itertuples())
+                   + f"</td><td>{r.total:,}</td><td>{r.cw:,}</td><td>{r.phone:,}</td><td>{r.data:,}</td></tr>" for r in top.itertuples())
     table = ('<p class="sub" style="margin-top:12px"><b>The biggest activations listed for this park</b></p><div class="lc-cgw"><table class="lc-reg"><tr><th>Date</th><th>Station</th>'
              '<th>QSOs</th><th>CW</th><th>Phone</th><th>Data</th></tr>' + rows + "</table></div>") if len(top) else ""
     return ('<div class="lc"><div class="lc-card"><h4>How this park compares: ' + escape(f"{card['ref']} {card['name']}".strip()) + "</h4>"

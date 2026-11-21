@@ -8,6 +8,7 @@ import streamlit as st
 
 import log_check as lc
 import log_check_html as lh
+import share_card as sc
 import space_weather as sw
 from compare_stats import locate as skimmer_location
 from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, skimmer_data
@@ -39,8 +40,9 @@ def _pota_park(ref):
 
 
 def _pota_cards(log, call):
-    """One card for each park the log was made from (at most four): a map and what is known about the park on the left, how the activations
-    compare on the right. A note instead when POTA cannot be reached."""
+    """One card for each park the log was made from (at most four): a headline across the top, then a map and what is known about the park on the
+    left and how the activations compare on the right. A note instead when POTA cannot be reached. Returns the comparisons that were made."""
+    cards = []
     for ref in lc.pota_refs(log)[:4]:
         try:
             park, acts, totals = _pota_park(ref)
@@ -51,6 +53,10 @@ def _pota_cards(log, call):
             st.caption(f"POTA does not know {ref}, so there is no park comparison.")
             continue
         card = lc.pota_compare(log, ref, park, acts, call, totals)
+        cards.append(card)
+        banner = lh.pota_banner_html(card)
+        if banner:
+            st.html(lh.CSS + banner)
         if park and park.get("latitude") is not None and park.get("longitude") is not None:
             left, right = st.columns([2, 3])
             left.iframe(park_map(float(park["latitude"]), float(park["longitude"]), f"{ref} {park.get('name', '')}".strip()).get_root().render(), height=300)
@@ -60,6 +66,7 @@ def _pota_cards(log, call):
             right.html(lh.CSS + lh.pota_html(card))
         else:
             st.html(lh.CSS + lh.pota_html(card))
+    return cards
 
 
 def _where(grid, call, skimmers):
@@ -333,7 +340,7 @@ def log_page():
     # The page is laid out in this order whatever order the work finishes in: who followed you, the session chart, the maps, the band
     # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
-    pota_slot, followers_slot, worked_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(10))
+    pota_slot, share_slot, followers_slot, worked_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(11))
     maps_hold = maps_slot.empty()
     if not cw.empty:
         maps_hold.caption("The maps appear here when the RBN spots have been read.")
@@ -360,7 +367,16 @@ def log_page():
     chart = chart_slot.empty()
     chart.html(lh.CSS + lh.afternoon_html(log, no_spots))
     with pota_slot:         # a POTA log opens with how its park compares; the card is laid out above the rest and filled once the session chart is drawn
-        _pota_cards(log, call)
+        park_cards = _pota_cards(log, call)
+    with share_slot:
+        with st.expander("Share this session: a picture and a short summary to post"):
+            facts = sc.share_facts(log, summary, worked, call, park_cards, rep)
+            picture = sc.share_png(facts)
+            st.image(picture, width="stretch")
+            st.download_button("Download the picture (PNG)", picture, file_name=f"{call or 'log'}-session.png".replace("/", "-"), mime="image/png")
+            st.caption("The summary, ready to copy (the copy button is at the top right of the box):")
+            st.code(sc.share_text(facts), language=None)
+            st.caption("Nothing here is saved or sent anywhere. The picture and the text are made on this page from your log.")
     mode, zone = lc.condition_mode(log), _visitor_timezone()
     with conditions_slot:
         grid_of_conditions = _conditions(log, home, power, label, digest) if len(days) <= MAX_DAYS else None

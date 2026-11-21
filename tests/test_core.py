@@ -1860,13 +1860,13 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         text13 = notes["13 Nov 2026: 5 QSOs."]
         self.assertIn("the 3rd most QSOs of the 5 activations listed for this park", text13)
         self.assertIn("By mode: 5 CW QSOs (2nd of 4).", text13)
-        self.assertIn("your 2nd activation of this park listed by POTA", text13)
+        self.assertIn("This was your 2nd activation listed here.", text13)
         self.assertIn("It is your biggest there.", text13)                                         # 5 is more than the 4 of the other listed day
         self.assertNotIn("biggest there", notes["12 Nov 2026: 4 QSOs."])
         self.assertIn("POTA does not list this activation under K5OHY", notes["14 Nov 2026: 2 QSOs."])
         big = self.pota_acts().assign(total=lambda d: d["total"].where(d["call"] != "K5OHY", 50))
         top = dict(lc.pota_notes(lc.pota_compare(self.pota_log(), "US-3053", park, big, "K5OHY")))["13 Nov 2026: 50 QSOs."]
-        self.assertIn("the most QSOs of any activation listed", top)
+        self.assertIn("the most QSOs of any of the 5 activations listed", top)
         self.assertIn("Your log has 5 QSOs; POTA lists 50.", top)                                  # when the counts differ, both are said
         empty = lc.pota_compare(self.pota_log(), "US-3053", None, self.pota_acts().iloc[0:0], "K5OHY")
         self.assertEqual(empty["n_acts"], 0)
@@ -1878,8 +1878,12 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         html = lh.pota_html(card)
         self.assertIn("How this park compares: US-3053 San Angelo", html)
         self.assertIn("13 Nov 2026: 5 QSOs.", html)
-        self.assertIn("Across everything listed under your callsign here:", html)
-        self.assertIn("9 QSOs (2nd of 3 activators), 2 activations (1st of 3), 8 CW QSOs (1st of 2).", html)     # 15 for N5NU, 9 for you, 3 for AI5YA
+        self.assertNotIn("Across everything listed", html)                                         # the standing is in the banner, not repeated here
+        self.assertIn("activations at this park", html)
+        self.assertIn("your activations here", html)
+        banner = lh.pota_banner_html(card)
+        self.assertIn("The 3rd biggest activation listed at San Angelo", banner)
+        self.assertIn("You are its 2nd activator of 3 by QSOs: 2 activations and 9 QSOs, 8 of them CW.", banner)    # 15 for N5NU, 9 for you, 3 for AI5YA
         self.assertIn("The park's top activators", html)
         self.assertIn("K5OHY <small>(you)</small>", html)                                         # your own rows in the lists are marked
         self.assertIn("can be out of date", html)
@@ -2037,6 +2041,52 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertNotIn("CQ zones", bare)                                                                 # a log without zones gets no zone tile
         complete = dict(w, missing_continents=[], missing_states=[], missing_provinces=[], missing_cq=[])
         self.assertEqual(lh.still_to_work_html(complete), "")                                              # nothing missing: no box
+
+    def test_the_park_headline_leads_with_the_best_day_and_the_standing(self):
+        park = {"reference": "US-3053", "name": "San Angelo"}
+        acts = self.pota_acts()
+        big = acts.assign(total=lambda d: d["total"].where(d["call"] != "K5OHY", 50), cw=lambda d: d["cw"].where(d["call"] != "K5OHY", 50))
+        head = lc.pota_headline(lc.pota_compare(self.pota_log(), "US-3053", park, big, "K5OHY"))
+        self.assertEqual(head["title"], "The biggest activation listed at San Angelo")
+        self.assertIn("13 Nov 2026: 50 QSOs, the most of any of the 5 activations POTA lists for this park.", head["line"])
+        self.assertTrue(head["standing"].startswith("You are its top activator of 3: 2 activations and 100 QSOs"))
+        many = pd.concat([acts] + [acts.iloc[[2]].assign(call=f"W{i}ZZ", total=6 + i) for i in range(40)], ignore_index=True)
+        mid = lc.pota_headline(lc.pota_compare(self.pota_log(), "US-3053", park, many, "K5OHY"))
+        self.assertEqual(mid["title"], "Your biggest activation at San Angelo")                      # not a record, but more than your other listed day
+        self.assertIn("the 43rd most of the 45 activations", mid["line"])
+        solo = lc.pota_headline(lc.pota_compare(self.pota_log(), "US-3053", park, acts.iloc[0:0], "K5OHY"))
+        self.assertIn("only activation POTA lists", solo["line"])
+        self.assertIn("not on POTA yet", solo["line"])                                               # the log's own count, said so
+        self.assertEqual(solo["standing"], "")
+        nothing = dict(lc.pota_compare(self.pota_log(), "US-3053", park, acts, "K5OHY"), rows=[])      # no day of the log has a rank
+        self.assertIsNone(lc.pota_headline(nothing))
+        self.assertEqual(lh.pota_banner_html(nothing), "")
+        self.assertIn("lc-hero", lh.pota_banner_html(lc.pota_compare(self.pota_log(), "US-3053", park, acts, "K5OHY")))
+
+    def test_a_session_can_be_shared_as_a_picture_and_as_text(self):
+        import share_card as sc
+        log = self.worked_log()
+        park = {"reference": "US-3053", "name": "San Angelo"}
+        card = lc.pota_compare(self.pota_log(), "US-3053", park, self.pota_acts(), "K5OHY")
+        facts = sc.share_facts(log, lc.summary(log), lc.worked_summary(log), "K5OHY", [card], lc.repeat_stations(log))
+        self.assertEqual(facts["call"], "K5OHY")
+        self.assertEqual(facts["dates"], "18 Nov 2026")
+        self.assertEqual([label for _, label, _ in facts["numbers"]], ["contacts", "DXCC entities", "bands", "US states"])
+        self.assertTrue(facts["title"].startswith("The 3rd biggest activation listed at San Angelo"))
+        text = sc.share_text(facts)
+        self.assertTrue(text.startswith("K5OHY \u00b7 18 Nov 2026\nThe 3rd biggest activation listed at San Angelo"))
+        self.assertIn("9 contacts \u00b7 6 DXCC entities \u00b7 2 bands \u00b7 3 US states", text)
+        self.assertIn("DX: ", text)
+        self.assertTrue(text.endswith("Made with FarField Lab (farfieldlab.streamlit.app)"))
+        png = sc.share_png(facts)
+        self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual((int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")), (1200, 630))
+        plain = sc.share_facts(log, lc.summary(log), lc.worked_summary(log), "", None, None)               # no park, no callsign, no followers
+        self.assertEqual(plain["title"], "9 contacts on 2 bands")
+        self.assertNotIn("POTA", sc.share_text(plain))
+        self.assertTrue(sc.share_png(plain).startswith(b"\x89PNG"))
+        long = dict(facts, title="A very long park name " * 8, subtitle="and a very long line " * 20, lines=["x" * 400])
+        self.assertTrue(sc.share_png(long).startswith(b"\x89PNG"))                                      # long text is cut, never an error
 
     def test_the_followers_diamond_is_drawn_above_the_blocks(self):
         rule = lh.CSS[lh.CSS.index(".lc-d{"):]

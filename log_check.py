@@ -341,36 +341,69 @@ def pota_compare(log, ref, park, acts, call, stats=None):
             "top": acts.sort_values(["total", "date"], ascending=[False, True]).head(5)[["date", "call", "total", "cw", "phone", "data", "who"]]}
 
 
+def pota_headline(card):
+    """The one thing to say about a park first: the log's best day there against every activation POTA lists, and where you stand among the park's
+    activators. Returns {'title', 'line', 'standing'} (standing may be empty), or None when no day of the log has a rank."""
+    rows = [r for r in card["rows"] if "total" in r["ranks"]]
+    if not rows:
+        return None
+    best = min(rows, key=lambda r: (r["ranks"]["total"][0], -r["date"].value))     # the highest rank, the latest day when tied
+    rank, n = best["ranks"]["total"]
+    total = best["use"]["total"]
+    name = card["name"] or card["ref"]
+    others = [t for d, t in card["my_totals"].items() if d != best["date"]]
+    mine = bool(others) and total > max(others)
+    when = f"{best['date']:%d %b %Y}"
+    if n > 1 and rank == 1:
+        title, line = f"The biggest activation listed at {name}", f"{when}: {total:,} QSOs, the most of any of the {n:,} activations POTA lists for this park."
+    elif n > 1 and rank <= max(3, round(n * 0.05)):
+        title, line = f"The {_ordinal(rank)} biggest activation listed at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations POTA lists for this park."
+    elif n > 1 and mine:
+        title, line = f"Your biggest activation at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations POTA lists for this park."
+    elif n > 1:
+        title, line = f"Your activation at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations POTA lists for this park."
+    else:
+        title, line = f"Your activation at {name}", f"{when}: {total:,} QSOs, the only activation POTA lists for this park."
+    if not best["listed"]:
+        line += " It is not on POTA yet, so this uses the QSOs in your log."
+    standing, s = "", card.get("standing")
+    if s and "qsos" in s:
+        r, m, q = s["qsos"]
+        acts = s["activations"][2] if "activations" in s else 0
+        cw = s["cw"][2] if "cw" in s else 0
+        body = f"{acts:,} activation{'s' if acts != 1 else ''} and {q:,} QSOs" + (f", {cw:,} of them CW" if cw else "") + "."
+        standing = (f"You are its top activator of {m}: {body}" if r == 1 and m > 1 else f"You are its {_ordinal(r)} activator of {m} by QSOs: {body}")
+    return {"title": title, "line": line, "standing": standing}
+
+
 def pota_notes(card):
-    """The comparison in plain words, as (lead, rest) pairs, one per activation in the log."""
+    """The comparison in plain words, as (lead, rest) pairs, one per activation in the log, with where you stand among the park's activators
+    added when the headline does not carry it."""
     notes = []
     for r in card["rows"]:
         use, ranks = r["use"], r["ranks"]
-        parts = []
+        text = ""
         if "total" in ranks:
             rank, n = ranks["total"]
-            parts.append("the most QSOs of any activation listed for this park" if rank == 1 and n > 1 else
-                         f"the {_ordinal(rank)} most QSOs of the {n} activations listed for this park" if n > 1 else "the only activation listed for this park")
-        modes = [f"{use[k]} {label} ({_ordinal(ranks[k][0])} of {ranks[k][1]})" for k, label in POTA_METRICS[1:] if k in ranks]
-        text = ("That is " + parts[0] + "." if parts else "")
+            text = ("That is the most QSOs of any of the {:,} activations listed for this park.".format(n) if rank == 1 and n > 1 else
+                    f"That is the {_ordinal(rank)} most QSOs of the {n:,} activations listed for this park." if n > 1 else "It is the only activation listed for this park.")
+        modes = [f"{use[k]:,} {label} ({_ordinal(ranks[k][0])} of {ranks[k][1]:,})" for k, label in POTA_METRICS[1:] if k in ranks]
         if modes:
             text += " By mode: " + ", ".join(modes) + "."
         if r["listed"]:
-            text += f" It was your {_ordinal(r['nth'])} activation of this park listed by POTA."
+            text += f" This was your {_ordinal(r['nth'])} activation listed here."
             others = [t for d, t in card["my_totals"].items() if d != r["date"]]
             if others and use["total"] > max(others):
                 text += " It is your biggest there."
             if r["ours"]["total"] != use["total"]:
-                text += f" Your log has {r['ours']['total']} QSOs; POTA lists {use['total']}."
+                text += f" Your log has {r['ours']['total']:,} QSOs; POTA lists {use['total']:,}."
         else:
-            text += f" POTA does not list this activation under {card['me']}, so the rank uses the {r['ours']['total']} QSOs in your log."
-        notes.append((f"{r['date']:%d %b %Y}: {use['total']} QSOs.", text.strip()))
-    s = card.get("standing")
-    if s:
-        parts = [f"{s['qsos'][2]} QSOs ({_ordinal(s['qsos'][0])} of {s['qsos'][1]} activators)" if "qsos" in s else None,
-                 f"{s['activations'][2]} activation{'s' if s['activations'][2] != 1 else ''} ({_ordinal(s['activations'][0])} of {s['activations'][1]})" if "activations" in s else None,
-                 f"{s['cw'][2]} CW QSOs ({_ordinal(s['cw'][0])} of {s['cw'][1]})" if "cw" in s else None]
-        notes.append(("Across everything listed under your callsign here:", ", ".join(p for p in parts if p) + "."))
+            text += f" POTA does not list this activation under {card['me']}, so the rank uses the {r['ours']['total']:,} QSOs in your log."
+        notes.append((f"{r['date']:%d %b %Y}: {use['total']:,} QSOs.", text.strip()))
+    head = pota_headline(card)
+    if head is None and card.get("standing") and "qsos" in card["standing"]:
+        r, m, q = card["standing"]["qsos"]
+        notes.append((f"You are the park's {_ordinal(r)} activator of {m} by QSOs.", f"{q:,} QSOs listed under {card['me']}."))
     return notes
 
 
