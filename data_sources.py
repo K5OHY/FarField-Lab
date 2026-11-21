@@ -1,4 +1,5 @@
 """Getting spots and skimmer locations: the RBN daily download and pasted rows, WSPR from wspr.live, and the skimmer list."""
+import time
 import re
 import zipfile
 from datetime import datetime, timezone
@@ -176,16 +177,25 @@ def load_rbn_listening(days, start, end):
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["band", "slot", "b"])
 
 
+_RECENT = {}                  # callsign -> (answer, when it was asked): misses and guesses are kept for an hour, so a band is never asked twice
+RECENT_SECONDS = 3600
+
+
 def _found(call, skimmers):
     """One callsign's lookup (lat, lon, grid, source), from the disk cache when an exact answer was saved, else asked of the
-    FCC and HamDB. Only exact answers are saved: a guess at the country's centre should be asked again next time."""
+    FCC and HamDB. Only exact answers are saved on disk: a guess at the country's centre should be asked again next time. Whatever was
+    answered, a miss included, is remembered in memory for an hour, so the lookups started in the background are not repeated."""
     hit = disk_cache.get_frame("callloc", call)
     if hit and len(hit[0]):
         row = hit[0].iloc[0]
         return float(row["lat"]), float(row["lon"]), None if pd.isna(row["grid"]) else row["grid"], str(row["source"])
+    recent = _RECENT.get(call)
+    if recent and time.time() - recent[1] < RECENT_SECONDS:
+        return recent[0]
     found = lookup_callsign_location(call, skimmers)
     if found is not None and not str(found[3]).startswith("center of"):
         disk_cache.put_frame("callloc", call, pd.DataFrame([{"lat": found[0], "lon": found[1], "grid": found[2], "source": found[3]}]))
+    _RECENT[call] = (found, time.time())
     return found
 
 

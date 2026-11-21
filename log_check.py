@@ -583,11 +583,11 @@ def dx_notes(grid, power_w, max_lines=7):
                 regions[k] = max(regions.get(k, 0), v)
         top = [k for k, _ in sorted(regions.items(), key=lambda kv: -kv[1])[:3]]
         said = f"{lo} to {hi}" if lo != hi else f"{hi}"
-        text = (f"{said} receiver{'s' if hi != 1 else ''} over {miles} miles away would have heard {power}"
+        text = (f"{said} WSPR station{'s' if hi != 1 else ''} over {miles} miles away would have heard {power}"
                 + (f", in {_join(top)}." if top else "."))
         heard_med, good_med = float(d["dx_heard"].median()), float(d["dx_good"].median())
         if heard_med >= 10 and good_med <= 1:
-            text += (f" {int(d['dx_heard'].min())} to {int(d['dx_heard'].max())} receivers over {miles} miles away heard WSPR on {band}, "
+            text += (f" {int(d['dx_heard'].min())} to {int(d['dx_heard'].max())} WSPR stations over {miles} miles away decoded WSPR on {band}, "
                      f"but most were too weak for {power}.")
         inside = int(d.loc[d["dx_good"] >= 1, "contacts"].sum())
         text += (f" You made {n} contact{'s' if n != 1 else ''} on {band}, "
@@ -608,12 +608,12 @@ def dx_notes(grid, power_w, max_lines=7):
         heard, strong = int((d["dx_heard"] > 0).sum()), d[d["dx_good"] >= 1]
         if len(strong):
             lead = f"{band} showed little DX that would hear {power}."
-            text = (f"Only the half hour from {when(strong['slot'].iloc[0])} had one: {int(strong['dx_good'].iloc[0])} receiver over {miles} miles away "
+            text = (f"Only the half hour from {when(strong['slot'].iloc[0])} had one: {int(strong['dx_good'].iloc[0])} WSPR station over {miles} miles away "
                     f"would have heard {power}.")
         else:
             lead = f"{band} showed no DX that would hear {power}."
-            text = (f"{heard} half hour{'s' if heard != 1 else ''} had receivers over {miles} miles away that heard WSPR, but none strong enough."
-                    if heard else f"No receivers over {miles} miles away reported WSPR on {band}.")
+            text = (f"{heard} half hour{'s' if heard != 1 else ''} had WSPR stations over {miles} miles away that decoded WSPR, but none strong enough."
+                    if heard else f"No WSPR stations over {miles} miles away reported on {band}.")
         notes.append((lead, f"{text} You made {n} contacts on {band}{outside(d)}.{rbn_note(d)}"))
     return notes[:max_lines]
 
@@ -635,7 +635,7 @@ def conditions_notes(grid, max_lines=6):
     steady = sorted(steady, key=lambda b: _rank(b), reverse=True)
     if steady:
         names = ", ".join(steady[:-1]) + (" and " if len(steady) > 1 else "") + steady[-1]
-        notes.append((f"{names} stayed above 90% the whole time.", "Nearly every WSPR receiver near you would have heard a signal like yours."))
+        notes.append((f"{names} stayed above 90% the whole time.", "Nearly every station that heard WSPR near you would have heard a signal like yours."))
     # the bands you spent most contacts on: were you there when it looked best?
     totals = grid.groupby("band")["contacts"].sum().sort_values(ascending=False)
     for band in totals.index[:3]:

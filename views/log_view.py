@@ -1,6 +1,7 @@
 """The Log check page: upload a contact log (ADIF) and the callsign, place and days come from the log. The RBN spots and the WSPR stations
 near you are fetched, and the log is set beside them."""
 import hashlib
+import threading
 
 import pandas as pd
 import streamlit as st
@@ -161,6 +162,24 @@ def _places_for(rows, digest, skimmers):
     return saved["places"]
 
 
+def _prefetch_places(log, skimmers, digest):
+    """Starts looking up where the stations of every band were, in the background and busiest band first, as soon as a log is loaded, so the
+    contact map of each band is ready when you click it. The answers are saved by the lookup itself; nothing here touches the page."""
+    if st.session_state.get("log_prefetch") == digest:
+        return
+    st.session_state["log_prefetch"] = digest
+    jobs = [list(log[log["band"] == band].drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
+            for band in log["band"].value_counts().index]
+
+    def run():
+        for rows in jobs:
+            try:
+                load_contact_places(rows, skimmers, workers=4)
+            except Exception:
+                pass
+    threading.Thread(target=run, daemon=True, name="log-places").start()
+
+
 def _view_points(home, spots, worked, locs):
     """The points both maps are framed on, so they show the same area."""
     points = []
@@ -176,7 +195,8 @@ def _view_points(home, spots, worked, locs):
 def _maps_section(log, result, spots, locs, home, label, who, tiles, units, digest):
     """Two maps of one band, side by side and framed alike: the skimmers that spotted you, and the stations you worked. They open on the
     band with the most DX; placing that band's stations takes a few seconds the first time, and each band is only looked up once."""
-    st.markdown("#### Maps: who heard you and who you worked")
+    st.markdown("#### Maps for CW: who heard you and who you worked")
+    st.caption("Skimmers only hear CW, so the maps start with your CW contacts. Where your contacts were is looked up in the background, so each band should be ready when you click it.")
     shown = set(result["bands"]["band"])
     bands = [b for b in lc.bands_top_down(log) if b in shown] or lc.bands_top_down(log)
     first = _default_band(bands, result["regions"])
@@ -263,17 +283,24 @@ def log_page():
         return
     home = (lat, lon)
     units, tiles = st.session_state.get("units_in", "mi"), "Street"
+    _prefetch_places(log, skimmers, digest)
 
     tiles_slot = st.empty()
     tiles_slot.html(lh.CSS + lh.tiles_html(summary, len(rep)))
-    # The page is laid out in this order whatever order the work finishes in: who followed you, the session chart, the band conditions, the
-    # progress of the RBN download, the maps, and last the comparison with RBN and the band conditions page. The log alone is drawn first; the
-    # RBN spots are added to the chart when they have been read.
-    followers_slot, chart_slot, conditions_slot, work, maps_slot, compare_slot = (st.container() for _ in range(6))
+    # The page is laid out in this order whatever order the work finishes in: who followed you, the session chart, the maps, the band
+    # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
+    # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
+    followers_slot, chart_slot, maps_slot, conditions_slot, work, compare_slot = (st.container() for _ in range(6))
+    maps_hold = maps_slot.empty()
+    if not cw.empty:
+        maps_hold.caption("The maps appear here when the RBN spots have been read.")
     with followers_slot:
         st.html(lh.CSS + lh.followers_html(log, summary))
         if len(rep) > lh.LADDER_ROWS:
-            with st.expander(f"Show {len(rep) - lh.LADDER_ROWS} more"):
+            rest_k = rep["k"].iloc[lh.LADDER_ROWS:]
+            lo_k, hi_k = int(rest_k.min()), int(rest_k.max())
+            with st.expander(f"Show the other {len(rest_k)} station{'s' if len(rest_k) != 1 else ''} "
+                             f"(worked on {lo_k}{'' if lo_k == hi_k else f' to {hi_k}'} bands)"):
                 st.html(lh.CSS + lh.ladder_rest_html(log))
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
@@ -289,7 +316,7 @@ def log_page():
             regions_html = lh.dx_regions_html(grid_of_conditions)
             if regions_html:
                 st.html(lh.CSS + regions_html)
-            with st.expander("Estimate for my station: the share of nearby receivers that would hear you"):
+            with st.expander("Another view: the percent of stations that could have heard you"):
                 st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, mode, zone))
     with work:
         if cw.empty:
@@ -331,8 +358,9 @@ def log_page():
                     if result is not None:
                         st.session_state["log_result"] = {"signature": signature, "result": result}
     if result is None:
+        maps_hold.empty()
         return
-    with maps_slot:
+    with maps_hold.container():
         _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
     with compare_slot:
         st.markdown("#### The comparison with RBN and the band conditions page")

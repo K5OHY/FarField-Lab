@@ -61,8 +61,8 @@ CSS = """<style>
 .lc-tick{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed var(--line)}
 .lc-b{position:absolute;border-radius:2.5px;background:var(--b)}.lc-b.rep{background:var(--a)}
 .lc-s{position:absolute;border-radius:1.5px;background:var(--t);opacity:.55}
-.lc-d{position:absolute;width:10px;height:10px;transform:rotate(45deg);background:currentColor;border:1.5px solid Canvas;margin-left:-5px}
-.lc-kl{position:absolute;font-size:12.5px;font-weight:700;white-space:nowrap}
+.lc-d{position:absolute;z-index:3;width:10px;height:10px;transform:rotate(45deg);background:currentColor;border:1.5px solid Canvas;margin-left:-5px}
+.lc-kl{position:absolute;z-index:3;font-size:12.5px;font-weight:700;white-space:nowrap}
 .lc-ph{font-size:12.5px;font-weight:650;opacity:.75;margin:10px 0 6px 74px}
 .lc-chart + .lc-chart{margin-top:14px}
 .lc-axis{position:relative;height:22px;margin-left:74px}.lc-axis span{position:absolute;top:2px;transform:translateX(-50%);font-size:12px;opacity:.65}
@@ -176,7 +176,7 @@ def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None):
                 kind = "s3" if r.dx_good >= 3 else "s1" if r.dx_good >= 1 else "few" if r.dx_heard > 0 else "none"
                 marks = (f'<em><i></i>{r.contacts}</em>' if r.contacts else "") + ('<em class="st" title="a contact outside North America">&#9733;</em>' if r.dx_contacts else "") \
                     + ('<em title="a skimmer that far away spotted you"><u></u></em>' if r.rbn_far else "")
-                tip = (f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_good} receivers over {miles} miles would hear {power_w:g} W; {r.dx_heard} that far heard WSPR "
+                tip = (f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_good} WSPR stations over {miles} miles would hear {power_w:g} W; {r.dx_heard} that far decoded WSPR "
                        f"near you; {r.contacts} contacts")
                 cells.append(f'<div class="cell {kind}" title="{escape(tip)}"><span class="p">{r.dx_good if r.dx_good else "&ndash;"}</span>'
                              f'<span class="m">{marks}</span></div>')
@@ -185,11 +185,11 @@ def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None):
         panels.append(title + f'<div class="lc-cgw"><div class="lc-cg lc-dx{dense}" style="--k:{len(slots)}">{head}{"".join(cells)}</div></div>')
     says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(lead)}</b> {escape(rest)}</li>" for lead, rest in notes) + "</ul>") if notes else ""
     return ('<div class="lc"><div class="lc-card"><h4>Band conditions while you were on the air</h4>'
-            f'<p class="sub">When could a signal like yours have reached more than {miles} miles? Each box counts the receivers over {miles} miles from you that '
-            f'heard WSPR transmitters near you in the hour up to the end of that half hour and would have heard {power_w:g} W using {escape(mode)}, with 3 dB '
-            'to spare. It counts different receivers, not reports.</p>'
-            '<p class="sub"><b>How to read it:</b> read across a row to follow a band over time. A dash means no receiver that far would have heard you; '
-            'a striped box means receivers that far heard WSPR, but none strongly enough. Bands have different numbers of receivers, so use the counts to '
+            f'<p class="sub">When could a signal like yours have reached more than {miles} miles? Each box counts the WSPR stations over {miles} miles from you that '
+            f'decoded WSPR transmitters near you in the hour up to the end of that half hour and would have heard {power_w:g} W using {escape(mode)}, with 3 dB '
+            'to spare. It counts different stations, not reports. (A WSPR station here is a receiver, not an RBN skimmer.)</p>'
+            '<p class="sub"><b>How to read it:</b> read across a row to follow a band over time. A dash means no station that far would have heard you; '
+            'a striped box means stations that far heard WSPR, but none strongly enough. Bands have different numbers of stations, so use the counts to '
             'compare hours, not to rank bands.</p>'
             + "".join(panels)
             + '<div class="lc-key"><span class="sw"><b style="background:rgba(32,178,170,.88)"></b>3 or more would hear you</span>'
@@ -200,9 +200,10 @@ def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None):
             '<span class="sw"><span style="color:var(--a);font-weight:700">&#9733;</span> a contact outside North America</span>'
             f'<span class="sw"><span style="display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6"></span> an RBN skimmer over {miles} miles away spotted you</span></div>'
             + says
-            + '<p class="sub" style="margin-top:10px">"Would hear you" is an estimate: each receiver\'s WSPR reports are restated to your power and compared with what the mode needs, '
+            + '<p class="sub" style="margin-top:10px">"Would hear you" is an estimate: each station\'s WSPR reports are restated to your power and compared with what the mode needs, '
               'assuming an ordinary antenna. It tends to run high, so use it to compare bands and hours, not to promise a contact. WSPR only covers stations within 300 miles '
-              'of you, and a band with few of them has thin evidence. These lines say what was observed, not what you should have done.</p>'
+              'of you, and a band with few of them has thin evidence. RBN has far fewer skimmers than WSPR has receivers, especially outside North America and Europe: a ring is proof you were heard that far, but no ring says nothing. '
+              'These lines say what was observed, not what you should have done.</p>'
             '</div></div>')
 
 
@@ -230,7 +231,7 @@ def dx_regions_html(grid):
         n, x = int(d["contacts"].sum()), int(d["dx_contacts"].sum())
         rows.append(f"<tr><td><b>{escape(band)}</b></td>{''.join(tds)}<td>{n}" + (f" <small>({x} outside North America)</small>" if x else "") + "</td></tr>")
     return ('<div class="lc"><div class="lc-card"><h4>Where DX reached, by band</h4>'
-            f'<p class="sub">The most receivers over {DX_MILES:,} miles away that would have heard you in one half hour, by region, with the span of half hours '
+            f'<p class="sub">The most WSPR stations over {DX_MILES:,} miles away that would have heard you in one half hour, by region, with the span of half hours '
             'in which there were any (UTC).</p><div class="lc-cgw"><table class="lc-reg"><tr><th>Band</th>'
             + "".join(f"<th>{escape(r)}</th>" for r in regions) + "<th>Your contacts</th></tr>" + "".join(rows) + "</table></div></div></div>")
 
@@ -261,27 +262,27 @@ def conditions_html(grid, notes, power_w, mode="CW", tz_name=None):
                 r = by[(b, s)]
                 pill = f'<em><i></i>{r.contacts}</em>' if r.contacts else ""
                 if np.isnan(r.share):
-                    cells.append(f'<div class="cell few" title="{escape(b)} {pd.Timestamp(s):%H:%M}Z: only {r.receivers} WSPR receivers, too few to say; '
+                    cells.append(f'<div class="cell few" title="{escape(b)} {pd.Timestamp(s):%H:%M}Z: only {r.receivers} WSPR stations, too few to say; '
                                  f'{r.contacts} contacts"><span class="p">&ndash;</span>{pill}</div>')
                 else:
                     cells.append(f'<div class="cell" style="background:{_teal(r.share)}" title="{escape(b)} {pd.Timestamp(s):%H:%M}Z: {r.good} of {r.receivers} '
-                                 f'WSPR receivers would hear you; {r.contacts} contacts"><span class="p">{pct(r.share)}</span>{pill}</div>')
+                                 f'WSPR stations would hear you; {r.contacts} contacts"><span class="p">{pct(r.share)}</span>{pill}</div>')
         title = f'<p class="sub" style="margin:14px 0 0"><b>{pd.Timestamp(slots[0]):%a %d %b}</b> (UTC)</p>' if grid["panel"].nunique() > 1 else ""
         dense = " dense" if len(slots) > 10 else ""
         panels.append(title + f'<div class="lc-cgw"><div class="lc-cg{dense}" style="--k:{len(slots)}">{head}{"".join(cells)}</div></div>')
     says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(lead)}</b> {escape(rest)}</li>" for lead, rest in notes) + "</ul>") if notes else ""
-    return ('<div class="lc"><div class="lc-card"><h4>How open each band looked: the share of receivers</h4>'
-            f'<p class="sub">An estimate for your station, at {power_w:g} W using {escape(mode)}: the share of the WSPR receivers heard near you that a '
-            'signal like yours would have reached, in the hour up to the end of each half hour. Your contacts are the amber diamonds.</p>'
+    return ('<div class="lc"><div class="lc-card"><h4>How open each band looked: percent of stations that could hear you</h4>'
+            f'<p class="sub">An estimate for your station at {power_w:g} W using {escape(mode)}. Each box is the percentage of the stations that decoded WSPR near you on '
+            'that band that would also have decoded a signal like yours, in the hour up to the end of each half hour. Your contacts are the amber diamonds.</p>'
             + '<p class="sub"><b>How to read it:</b> read across each row to follow that band over time. Different bands have different numbers of '
-              'receivers behind them, so the percentages of different bands are not comparable with each other.</p>'
+              'stations behind them, so the percentages of different bands are not comparable with each other.</p>'
             + "".join(panels)
-            + '<div class="lc-ramp"><span>fewer<b></b>more receivers would hear you</span><span>hatched: too few WSPR receivers to say</span>'
+            + '<div class="lc-ramp"><span>fewer<b></b>more stations would hear you</span><span>hatched: too few WSPR stations to say</span>'
               '<span><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> contacts in that half hour</span></div>'
             + says
-            + '<p class="sub" style="margin-top:10px">An estimate from WSPR stations within 300 miles of you, restated to your power. Use it to compare a band with itself over time '
+            + '<p class="sub" style="margin-top:10px">An estimate from WSPR transmitters within 300 miles of you, restated to your power. Use it to compare a band with itself over time '
               'and one hour with another. It is not an exact chance of a contact (the percentages run high), and bands cannot be fairly compared with each other: '
-              'a band with many distant receivers, such as 20m, tends to show a lower share.</p>'
+              'a band with many distant stations, such as 20m, tends to show a lower share.</p>'
             '</div></div>')
 
 
@@ -333,6 +334,9 @@ def band_table_html(bands, min_contacts=3):
             + '</div></div>')
 
 
+MIN_SKIMMERS = 3      # fewer skimmers than this in a region and no share is shown, as the page shows no figure under 3 WSPR receivers
+
+
 def regions_html(regions, band):
     """One band by region: the contacts, stations worked, the skimmers on the band and how many spotted you, and what the Band conditions
     page said. DX regions come first and are tagged. A region with fewer than three WSPR receivers behind it has no page figure."""
@@ -345,7 +349,10 @@ def regions_html(regions, band):
         dx = r.region not in NEAR_REGIONS
         tag = "<em>DX</em>" if dx else ""
         contacts = f"{r.contacts}" + (f' <small>({r.cw} CW)</small>' if r.cw != r.contacts else "")
-        if r.on_band:
+        if 0 < r.on_band < MIN_SKIMMERS:
+            shared = (f'<span class="dim" title="Only {r.on_band} skimmer{"s" if r.on_band != 1 else ""} on the band in this region, too few for a '
+                      f'share: a few skimmers cannot say whether the path was open">too few skimmers</span>')
+        elif r.on_band:
             share = r.spotted / r.on_band
             shared = f'<div class="lc-share"><div><i style="width:{share * 100:.0f}%"></i></div><b>{share * 100:.0f}%</b></div>'
         else:
@@ -391,8 +398,9 @@ def _panels(log):
     return [g for _, g in log.groupby((t.diff() > pd.Timedelta(hours=PANEL_GAP_H)).cumsum())]
 
 
-def _panel_html(part, spots, rep, follow, title, marked):
-    """One chart: a lane for each band used in `part`. `marked` is a one-item list that remembers whether the follower's label is drawn."""
+def _panel_html(part, spots, rep, follow, title, marked, follow_bands=None):
+    """One chart: a lane for each band used in `part`. `marked` is a one-item list that remembers whether the follower's label is drawn;
+    `follow_bands` is how many bands the follower was worked on in the whole log."""
     bands = bands_top_down(part)
     span = ((part["time"].max() - part["time"].min()).total_seconds() / 60) + 12
     step = _slot_minutes(span)
@@ -431,7 +439,7 @@ def _panel_html(part, spots, rep, follow, title, marked):
                     parts.append(f'<i class="lc-d" style="left:{left(t) + step / 2 / minutes * 100:.3f}%;top:{top - 13:.1f}px" title="{escape(follow)}"></i>')
                     if not marked[0]:
                         parts.append(f'<span class="lc-kl" style="left:calc({left(t):.3f}% + 14px);top:{top - 15:.1f}px">{escape(follow)}: '
-                                     f'{part.loc[part["call"] == follow, "band"].nunique()} bands here</span>')
+                                     f'worked you on {follow_bands or part.loc[part["call"] == follow, "band"].nunique()} bands</span>')
                         marked[0] = True
         lanes.append(f'<div class="lc-lane"><div class="lc-lab" style="padding-top:{mid - 22}px"><b>{band}</b><span>{n} contact{"s" if n != 1 else ""}</span></div>'
                      f'<div class="lc-plot" style="height:{height}px">{"".join(parts)}</div></div>')
@@ -450,7 +458,7 @@ def afternoon_html(log, spots):
     for part in panels:
         a, z = part["time"].min(), part["time"].max()
         title = (f"{a:%a %d %b}, {a:%H:%M}Z to {z:%H:%M}Z" if a.date() == z.date() else f"{a:%a %d %b} {a:%H:%M}Z to {z:%a %d %b} {z:%H:%M}Z")
-        charts.append(_panel_html(part, spots, rep, follow, title, marked))
+        charts.append(_panel_html(part, spots, rep, follow, title, marked, int(log.loc[log["call"] == follow, "band"].nunique()) if follow else None))
     legend = ('<div class="lc-legend"><span><i style="background:var(--b)"></i>one block = one contact (stacked in short time slots)</span>'
               '<span><i style="background:var(--a)"></i>that station came back on another band</span>'
               '<span><i style="background:var(--t);opacity:.55"></i>RBN spots below the line (same slots)</span>'

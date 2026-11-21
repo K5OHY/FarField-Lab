@@ -1184,7 +1184,7 @@ class LogCheckPictures(unittest.TestCase):
         html = lh.afternoon_html(self.log, None)
         self.assertEqual(html.count('class="lc-b'), 5)
         self.assertEqual(html.count('class="lc-b rep'), 3)  # W1AAA's three contacts
-        self.assertIn("W1AAA: 3 bands", html)
+        self.assertIn("W1AAA: worked you on 3 bands", html)
 
     def two_day_log(self):
         rows = [("20261112", f"{17 + i // 60:02d}{i % 60:02d}00", "20m") for i in range(0, 180, 3)]       # day one: 60 contacts in 3 hours
@@ -1266,6 +1266,9 @@ class LogCheckPictures(unittest.TestCase):
 class LogCheckReportsAndPlaces(unittest.TestCase):
     """Signal reports in the log, and placing the stations you worked on a map (made-up data, no network)."""
 
+    def setUp(self):
+        ds._RECENT.clear()        # lookups are remembered in memory for an hour, which must not leak from one test to the next
+
     def log(self):
         rows = [("W1AAA", "20m", "599", "579", "PA"), ("W2BBB", "20m", "559", "599", "NY"), ("W1AAA", "40m", "579", "599", "PA"),
                 ("VE3CCC", "20m", "-12", "-08", "ON"), ("W4DDD", "15m", "", "", "FL")]
@@ -1342,6 +1345,9 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
                 self.assertEqual((table.loc["W1AAA", "level"], table.loc["W4DDD", "level"]), ("grid", "state"))
                 self.assertEqual(seen[-1], (3, 3))
                 asked.clear()
+                ds.load_contact_places(rows, {}, workers=1)
+                self.assertEqual(asked, [])                        # asked a moment ago: the disk has the exact answer, memory has the misses and guesses
+                ds._RECENT.clear()                                 # an hour later
                 ds.load_contact_places(rows, {}, workers=1)
             self.assertEqual(sorted(asked), ["K0NOPE", "W4DDD"])  # the exact answer for W1AAA came from the disk, the guesses are asked again
 
@@ -1559,18 +1565,20 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         text = {lead: rest for lead, rest in notes}
         self.assertEqual([lead.split()[0] for lead, _ in notes], ["15m", "20m", "30m", "12m"])   # most evidence first, then the bands with none
         self.assertIn("15m had DX that would hear 75 W in 7 of 7 half hours.", text)
-        self.assertIn("1 to 4 receivers over 3,000 miles away would have heard 75 W, in Europe.", text["15m had DX that would hear 75 W in 7 of 7 half hours."])
+        self.assertIn("1 to 4 WSPR stations over 3,000 miles away would have heard 75 W, in Europe.", text["15m had DX that would hear 75 W in 7 of 7 half hours."])
         self.assertIn("You made 41 contacts on 15m, all of them in half hours with DX evidence, and 1 was outside North America.",
                       text["15m had DX that would hear 75 W in 7 of 7 half hours."])
         self.assertIn("RBN skimmers over 3,000 miles from you spotted you on it, first in the half hour from 20:30Z.", text["15m had DX that would hear 75 W in 7 of 7 half hours."])
         lead20 = "20m had DX that would hear 75 W in 4 of 7 half hours."
-        self.assertIn("27 to 35 receivers over 3,000 miles away heard WSPR on 20m, but most were too weak for 75 W.", text[lead20])   # many heard, few strong
+        self.assertIn("27 to 35 WSPR stations over 3,000 miles away decoded WSPR on 20m, but most were too weak for 75 W.", text[lead20])   # many heard, few strong
         self.assertIn("in Asia.", text[lead20])
         self.assertIn("Only the half hour from 23:00Z had one", text["30m showed little DX that would hear 75 W."])
-        self.assertIn("2 half hours had receivers over 3,000 miles away that heard WSPR, but none strong enough.", text["12m showed no DX that would hear 75 W."])
+        self.assertIn("2 half hours had WSPR stations over 3,000 miles away that decoded WSPR, but none strong enough.", text["12m showed no DX that would hear 75 W."])
         self.assertNotIn("missed", " ".join(a + b for a, b in notes).lower())               # facts, not advice
         self.assertEqual(lc.dx_notes(self.dx_table([("40m", [(0, 0, 3, 0, 0, {})] + [(0, 0, 0, 0, 0, {})] * 6)]), 75.0), [])    # a band with 3 contacts and nothing to say
         self.assertEqual(lc.dx_notes(pd.DataFrame(columns=["panel", "slot", "band", "contacts"]), 75.0), [])
+        self.assertIn("1 WSPR station over 3,000 miles away would have heard 75 W", " ".join(b for _, b in lc.dx_notes(self.dx_table(
+            [("30m", [(0, 1, 5, 0, 0, {})] * 3 + [(1, 1, 5, 0, 0, {"Africa": 1})] + [(0, 0, 0, 0, 0, {})] * 3)]), 75.0)))
 
     def test_the_dx_picture_shows_counts_markers_and_four_kinds_of_box(self):
         rows = [("15m", [(3, 6, 12, 1, 1, {"Europe": 3}), (1, 2, 0, 0, 0, {"Europe": 1}), (0, 5, 0, 0, 0, {}), (0, 0, 4, 0, 0, {})] + [(0, 0, 0, 0, 0, {})] * 3)]
@@ -1600,6 +1608,38 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertIn("3 <small>20:00&ndash;21:00</small>", html)                           # up to 3 Europe receivers in the first two half hours
         self.assertIn("1 outside North America", html)
         self.assertEqual(lh.dx_regions_html(self.dx_table([("20m", [(0, 9, 5, 0, 0, {})] * 7)])), "")   # nothing reached: no table
+
+    def test_the_dx_card_says_what_rbn_can_and_cannot_show(self):
+        html = lh.dx_windows_html(self.dx_table([("15m", [(3, 6, 12, 0, 0, {"Europe": 3})] + [(0, 0, 0, 0, 0, {})] * 6)]), [], 75.0, "CW")
+        self.assertIn("no ring says nothing", html)
+        self.assertIn("a receiver, not an RBN skimmer", html)
+
+    def test_a_region_with_too_few_skimmers_shows_no_share(self):
+        regions = pd.DataFrame([
+            {"band": "30m", "region": "Africa", "contacts": 0, "cw": 0, "stations": 0, "on_band": 1, "spotted": 0, "page": float("nan"), "wspr_receivers": 0},
+            {"band": "30m", "region": "Canada", "contacts": 0, "cw": 0, "stations": 0, "on_band": 2, "spotted": 1, "page": 0.76, "wspr_receivers": 5},
+            {"band": "30m", "region": "US East", "contacts": 3, "cw": 3, "stations": 3, "on_band": 22, "spotted": 7, "page": 0.65, "wspr_receivers": 52}])
+        html = lh.regions_html(regions, "30m")
+        self.assertEqual(html.count("too few skimmers"), 2)                                 # 1 and 2 skimmers on the band
+        self.assertIn("Only 1 skimmer on the band in this region", html)
+        self.assertEqual(html.count('<div class="lc-share">'), 1)                           # only US East, with 22, gets a bar
+        self.assertIn("32%", html)
+
+    def test_the_followers_diamond_is_drawn_above_the_blocks(self):
+        rule = lh.CSS[lh.CSS.index(".lc-d{"):]
+        self.assertIn("z-index:3", rule[:rule.index("}")])                                   # blocks stacked above it no longer hide it
+
+    def test_the_places_of_every_band_are_looked_up_in_the_background_once(self):
+        from types import SimpleNamespace
+        import views.log_view as log_view
+        log = lc.parse_adif("".join(f"<CALL:5>W{i}AAA <QSO_DATE:8>20261118 <TIME_ON:4>20{i:02d} <BAND:3>{b} <MODE:2>CW <STATE:2>PA <COUNTRY:13>United States <EOR>"
+                                    for i, b in enumerate(["20m", "20m", "20m", "15m", "15m", "40m"])))
+        calls, state = [], {}
+        with mock.patch.object(log_view.st, "session_state", state),                 mock.patch.object(log_view, "load_contact_places", lambda rows, skimmers, **k: calls.append([r[0] for r in rows])),                 mock.patch.object(log_view.threading, "Thread", lambda target, **k: SimpleNamespace(start=target)):     # run it on the spot
+            log_view._prefetch_places(log, {}, "abc")
+            log_view._prefetch_places(log, {}, "abc")                                       # a rerun of the page starts nothing new
+        self.assertEqual(calls, [["W0AAA", "W1AAA", "W2AAA"], ["W3AAA", "W4AAA"], ["W5AAA"]])   # busiest band first, each station once
+        self.assertEqual(state["log_prefetch"], "abc")
 
     def test_a_day_without_an_rbn_file_says_when_it_will_have_one(self):
         utc = lc.rbn_ready_message(["20261120"])
