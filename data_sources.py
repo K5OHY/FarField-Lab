@@ -13,6 +13,7 @@ import disk_cache
 import example_data
 from conditions import fetch_nearby
 from log_check import _NORTH_AMERICA, finish_place, listening_from_zip
+from wspr_data import HEADERS
 from rbn_data import country_location, get_band, load_skimmers, lookup_callsign_location, maidenhead_to_latlon, refresh_skimmer_cache
 from wspr_data import clean_callsign, fetch_listening, fetch_wspr_spots
 
@@ -175,6 +176,35 @@ def load_rbn_listening(days, start, end):
     """The skimmers that spotted anyone between two times: (band, slot of 15 minutes, callsign). `days` are the YYYYMMDD files to read."""
     frames = [listening_from_zip(rbn_day_zip(d), start, end) for d in days]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["band", "slot", "b"])
+
+
+POTA_API = "https://api.pota.app"
+
+
+def load_pota_park(ref):
+    """POTA's record of a park and every activation listed for it, from POTA's public data service: (park dict or None, activations as a
+    table of call, date, total, cw, phone, data). Only the park reference is sent. Raises RuntimeError when POTA cannot be reached."""
+    def ask(url, params=None, timeout=20):
+        for attempt in (1, 2):                    # one retry: a connection that is reset once usually works the second time
+            try:
+                resp = requests.get(url, params=params, headers=HEADERS, timeout=timeout)
+                resp.raise_for_status()
+                return resp
+            except requests.RequestException:
+                if attempt == 2:
+                    raise
+
+    try:
+        park = ask(f"{POTA_API}/park/{ref}")
+        acts = ask(f"{POTA_API}/park/activations/{ref}", {"count": "all"}, 30)
+        info, rows = (park.json() if park.content else None), (acts.json() or [])
+    except (requests.RequestException, ValueError) as exc:
+        raise RuntimeError(f"POTA could not be reached ({exc.__class__.__name__}).") from exc
+    table = pd.DataFrame({"call": [str(r.get("activeCallsign", "")) for r in rows],
+                          "date": pd.to_datetime([str(r.get("qso_date", "")) for r in rows], format="%Y%m%d", errors="coerce"),
+                          "total": [int(r.get("totalQSOs") or 0) for r in rows], "cw": [int(r.get("qsosCW") or 0) for r in rows],
+                          "phone": [int(r.get("qsosPHONE") or 0) for r in rows], "data": [int(r.get("qsosDATA") or 0) for r in rows]})
+    return (info if isinstance(info, dict) and info.get("reference") else None), table.dropna(subset=["date"]).reset_index(drop=True)
 
 
 _RECENT = {}                  # callsign -> (answer, when it was asked): misses and guesses are kept for an hour, so a band is never asked twice

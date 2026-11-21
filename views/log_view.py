@@ -8,8 +8,9 @@ import streamlit as st
 
 import log_check as lc
 import log_check_html as lh
+import space_weather as sw
 from compare_stats import locate as skimmer_location
-from data_sources import download_rbn_day, load_contact_places, load_nearby, load_rbn_listening, skimmer_data
+from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, skimmer_data
 from maps import build_map, great_circle
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
 from ui_common import BANNER, KM_PER_MILE
@@ -23,6 +24,32 @@ MAX_DAYS = 4                    # each day is a large file to read, so a log is 
 def _signature(raw, power, call, grid, spots):
     """What a finished comparison was made from, so a new file, power, callsign, place or spots start again."""
     return (hashlib.sha1(raw).hexdigest(), float(power), call, grid, len(spots), str(spots["time"].min()), str(spots["time"].max()))
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _space_history(start_iso, end_iso):
+    """The Kp, solar flux and flares over a past stretch of time, kept for an hour (GFZ Potsdam and NOAA)."""
+    return sw.history(pd.Timestamp(start_iso), pd.Timestamp(end_iso))
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _pota_park(ref):
+    """POTA's record of a park and its activations, kept for six hours. Raises RuntimeError when POTA cannot be reached (and so is not kept)."""
+    return load_pota_park(ref)
+
+
+def _pota_cards(log, call):
+    """One comparison card for each park the log was made from (at most four), or a note when POTA cannot be reached."""
+    for ref in lc.pota_refs(log)[:4]:
+        try:
+            park, acts = _pota_park(ref)
+        except RuntimeError as exc:
+            st.caption(f"{ref}: {exc} The park comparison is left out.")
+            continue
+        if park is None and acts.empty:
+            st.caption(f"POTA does not know {ref}, so there is no park comparison.")
+            continue
+        st.html(lh.CSS + lh.pota_html(lc.pota_compare(log, ref, park, acts, call)))
 
 
 def _where(grid, call, skimmers):
@@ -290,7 +317,7 @@ def log_page():
     # The page is laid out in this order whatever order the work finishes in: who followed you, the session chart, the maps, the band
     # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
-    followers_slot, chart_slot, maps_slot, conditions_slot, work, compare_slot = (st.container() for _ in range(6))
+    followers_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, pota_slot, work, compare_slot = (st.container() for _ in range(9))
     maps_hold = maps_slot.empty()
     if not cw.empty:
         maps_hold.caption("The maps appear here when the RBN spots have been read.")
@@ -318,6 +345,19 @@ def log_page():
                 st.html(lh.CSS + regions_html)
             with st.expander("Another view: the percent of stations that could have heard you"):
                 st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, mode, zone))
+    with reports_slot:      # who hears whom comes from the log alone, so it is drawn at once
+        balance = lh.balance_html(lc.reports_balance(log))
+        if balance:
+            st.html(lh.CSS + balance)
+    with space_slot:
+        if len(days) <= MAX_DAYS:
+            first_t, last_t = lc.space_span(log)
+            weather = _space_history(str(first_t), str(last_t))
+            weather_html = lh.space_weather_html(weather, log, lc.space_notes(weather, log["time"].min(), log["time"].max()))
+            if weather_html:
+                st.html(lh.CSS + weather_html)
+    with pota_slot:
+        _pota_cards(log, call)
     with work:
         if cw.empty:
             st.info(icon=":material/info:", body="There are no CW contacts in this log, so there is nothing to set beside the RBN spots. "

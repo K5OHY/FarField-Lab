@@ -1625,6 +1625,221 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual(html.count('<div class="lc-share">'), 1)                           # only US East, with 22, gets a bar
         self.assertIn("32%", html)
 
+    def test_the_dx_card_says_how_much_wspr_it_rests_on(self):
+        grid = self.dx_grid()
+        ev = grid.attrs["evidence"]
+        self.assertEqual((ev["transmitters"], ev["receivers"], ev["reports"]), (1, 46, 122))   # N5TX, 30 US and 16 German receivers, 90 + 32 spots
+        self.assertGreater(ev["farthest_km"], 7000)
+        html = lh.dx_windows_html(grid, [], 100.0, "CW")
+        self.assertIn("122 WSPR reports from 1 transmitter within 300 miles of you, decoded by 46 stations as far away as", html)
+        self.assertIn("That is few transmitters, so the picture is thin.", html)
+        again = lc.add_rbn_far(grid, pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), {}, HOME)
+        self.assertEqual(again.attrs["evidence"], ev)                                       # kept when the RBN skimmers are added
+        self.assertNotIn("The evidence:", lh.dx_windows_html(self.dx_table([("15m", [(1, 1, 3, 0, 0, {})] * 7)]), [], 75.0, "CW"))   # a hand-made grid has none
+
+    def balance_log(self):
+        rows = ([("20m", "579", "559")] * 12 + [("15m", "599", "599")] * 12 + [("40m", "579", "579")] * 5 + [("30m", "559", "579")] * 12
+                + [("17m", "579", "579")] * 12 + [("10m", "-12", "-08")] * 12)
+        return lc.parse_adif("".join(f"<CALL:6>W{i:04d} <QSO_DATE:8>20261118 <TIME_ON:4>20{i % 60:02d} <BAND:{len(b)}>{b} <MODE:2>CW "
+                                     f"<RST_RCVD:{len(r)}>{r} <RST_SENT:{len(t)}>{t} <EOR>" for i, (b, r, t) in enumerate(rows)))
+
+    def test_the_reports_say_who_hears_whom_only_where_there_is_something_to_say(self):
+        bal = lc.reports_balance(self.balance_log()).set_index("band")
+        self.assertEqual(list(bal.index)[0], "All bands")
+        self.assertEqual(bal.loc["20m", "reading"], "they hear you stronger than you hear them")      # S7 given, S5 received: +12 dB
+        self.assertAlmostEqual(bal.loc["20m", "diff_db"], 12.0)
+        self.assertEqual(bal.loc["30m", "reading"], "you hear them stronger than they hear you")
+        self.assertEqual(bal.loc["17m", "reading"], "about equal")
+        self.assertEqual(bal.loc["40m", "reading"], "too few reports to say")                       # 5 contacts
+        self.assertIn("mostly S9 both ways", bal.loc["15m", "reading"])                              # a habit, not a measurement
+        self.assertNotIn("10m", bal.index)                                                          # digital dB reports are not S reports
+        html = lh.balance_html(bal.reset_index())
+        self.assertIn("Do they hear you as well as you hear them?", html)
+        self.assertIn("+12 dB", html)
+        self.assertIn("-12 dB", html)
+        self.assertEqual(html.count("&ndash;"), 2)                                                  # no difference shown for 40m or 15m
+        self.assertEqual(lh.balance_html(lc.reports_balance(lc.parse_adif("<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:4>2000 <BAND:3>20m <MODE:2>CW <EOR>"))), "")
+
+    def fake_space(self, events_start="2026-10-21T00:00:00", kp_fail=False):
+        class Resp:
+            def __init__(self, body):
+                self.body = body
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self.body
+
+        def get(url, params=None, **k):
+            if "gfz" in url:
+                if kp_fail:
+                    raise RuntimeError("down")
+                if params["index"] == "Kp":
+                    times = [f"2026-11-12T{h:02d}:00:00Z" for h in (0, 3, 6, 9, 12, 15, 18, 21)] + ["2026-11-13T00:00:00Z"]
+                    return Resp({"Kp": [1.0, 1.333, 4.667, 0.0, 0.333, 1.0, 2.0, 5.0, 1.0], "datetime": times})
+                return Resp({"Fobs": [115.5, 119.3], "datetime": ["2026-11-12T00:00:00Z", "2026-11-13T00:00:00Z"]})
+            return Resp([{"type": "XRA", "begin_datetime": events_start, "max_datetime": "2026-11-12T15:12:00", "particulars1": "M2.3"},
+                         {"type": "XRA", "begin_datetime": events_start, "max_datetime": "2026-11-12T15:12:00", "particulars1": "M2.1"},   # the second satellite
+                         {"type": "XRA", "begin_datetime": events_start, "max_datetime": "2026-11-12T19:00:00", "particulars1": "C4.9"},
+                         {"type": "XRA", "begin_datetime": events_start, "max_datetime": "2026-11-12T23:30:00", "particulars1": "X1.0"},   # after the session
+                         {"type": "FLA", "begin_datetime": events_start, "max_datetime": "2026-11-12T16:00:00", "particulars1": ""}])
+        return get
+
+    def test_space_weather_history_reads_kp_flux_and_flares_for_a_past_stretch(self):
+        start, end = pd.Timestamp("2026-11-12 14:00"), pd.Timestamp("2026-11-12 22:00")
+        with mock.patch.object(sw.requests, "get", self.fake_space()):
+            wx = sw.history(start, end)
+        self.assertEqual([round(v, 1) for _, v in wx["kp"]], [0.3, 1.0, 2.0, 5.0])            # the 3-hour steps that touch 14:00 to 22:00
+        self.assertEqual([v for _, v in wx["flux"]], [115.5, 119.3])
+        self.assertEqual(wx["flares"], [(pd.Timestamp("2026-11-12 15:12"), "M2.3"), (pd.Timestamp("2026-11-12 19:00"), "C4.9")])   # the stronger of two reports
+        with mock.patch.object(sw.requests, "get", self.fake_space(events_start="2026-11-12T00:00:00")):
+            self.assertIsNone(sw.history(start, end)["flares"])                                 # older than the list NOAA keeps
+        with mock.patch.object(sw.requests, "get", self.fake_space(kp_fail=True)):
+            wx = sw.history(start, end)
+        self.assertIsNone(wx["kp"])                                                             # a feed that fails is None, nothing raises
+        self.assertIsNotNone(wx["flares"])
+
+    def test_the_space_weather_lines_state_the_facts(self):
+        start, end = pd.Timestamp("2026-11-12 14:00"), pd.Timestamp("2026-11-12 22:00")
+        quiet = {"kp": [(pd.Timestamp("2026-11-12 12:00"), 1.0), (pd.Timestamp("2026-11-12 15:00"), 2.0)], "flux": [(pd.Timestamp("2026-11-12"), 115.5)],
+                 "flares": [(pd.Timestamp("2026-11-12 19:00"), "C4.9")]}
+        text = " ".join(a + " " + b for a, b in lc.space_notes(quiet, start, end))
+        self.assertIn("Kp stayed at 2 or lower (quiet).", text)
+        self.assertIn("Solar flux was about 116.", text)
+        self.assertIn("No M or X flares. The strongest flare was C4.9", text)
+        stormy = dict(quiet, kp=[(pd.Timestamp("2026-11-12 18:00"), 5.0)], flares=[(pd.Timestamp("2026-11-12 15:12"), "M2.3"), (pd.Timestamp("2026-11-12 17:00"), "X1.0")])
+        text = " ".join(a + " " + b for a, b in lc.space_notes(stormy, start, end))
+        self.assertIn("Kp reached 5 (a geomagnetic storm, G1) in the three hours from 18:00Z.", text)
+        self.assertIn("A flare of class X1.0 peaked at 17:00Z (one of 2 M or X flares).", text)
+        old = lc.space_notes(dict(quiet, flares=None), start, end)
+        self.assertIn("Flares are not shown.", [a for a, _ in old])
+        self.assertNotIn("should", text)                                                        # no advice
+        after = dict(quiet, kp=[(pd.Timestamp("2026-11-12 12:00"), 1.0), (pd.Timestamp("2026-11-12 22:00"), 5.0)],
+                     flux=[(pd.Timestamp("2026-11-12"), 115.5), (pd.Timestamp("2026-11-13"), 140.0)], flares=[(pd.Timestamp("2026-11-12 23:00"), "X2.0")])
+        text = " ".join(a + " " + b for a, b in lc.space_notes(after, start, pd.Timestamp("2026-11-12 21:30")))
+        self.assertIn("Kp stayed at 1 or lower", text)                                           # the Kp 5 step began after the session ended
+        self.assertIn("Solar flux was about 116.", text)                                         # the next day's flux is not the session's
+        self.assertIn("No flares were listed.", text)                                         # and neither is a flare after the last contact
+
+    def test_the_space_weather_picture_shows_kp_flares_and_your_contacts(self):
+        log = self.cond_log()
+        start, end = lc.space_span(log)
+        self.assertEqual((start, end), (pd.Timestamp("2026-11-18 19:00"), pd.Timestamp("2026-11-18 23:00")))
+        wx = {"kp": [(pd.Timestamp("2026-11-18 18:00"), 1.0), (pd.Timestamp("2026-11-18 21:00"), 5.0)], "flux": [(pd.Timestamp("2026-11-18"), 120.0)],
+              "flares": [(pd.Timestamp("2026-11-18 20:30"), "M1.5"), (pd.Timestamp("2026-11-18 21:30"), "C2.0")]}
+        html = lh.space_weather_html(wx, log, lc.space_notes(wx, start, end))
+        self.assertIn("Space weather during your session", html)
+        self.assertEqual(html.count('class="lc-kp"'), 2)
+        self.assertIn("rgb(76,175,80)", html)                                                    # a quiet step is green
+        self.assertIn("rgb(210,80,80)", html)                                                    # Kp 5 is red
+        self.assertIn("M1.5 flare, peak 20:30Z", html)
+        self.assertEqual(html.count('class="lc-kq"'), 3)                                         # the contacts fall in 3 half hours
+        self.assertEqual(lh.space_weather_html({"kp": None, "flux": None, "flares": None}, log, []), "")
+
+    def pota_log(self):
+        def rec(call, day, hhmm, mode, extra):
+            return (f"<CALL:{len(call)}>{call} <QSO_DATE:8>{day} <TIME_ON:4>{hhmm} <BAND:3>20m <MODE:{len(mode)}>{mode} {extra}<EOR>")
+        ref = "<MY_POTA_REF:7>US-3053 "
+        recs = ([rec(f"W{i}AA", "20261112", f"17{i:02d}", "CW", ref) for i in range(3)] + [rec("K1SSB", "20261112", "1800", "SSB", ref)]
+                + [rec(f"K{i}BB", "20261113", f"18{i:02d}", "CW", ref) for i in range(5)]
+                + [rec(f"N{i}CC", "20261114", f"19{i:02d}", "CW", "<MY_SIG:4>POTA <MY_SIG_INFO:7>US-3053 ") for i in range(2)]
+                + [rec("W9ZZ", "20261114", "2000", "CW", "")])                                         # a contact with no park
+        return lc.parse_adif("".join(recs))
+
+    def pota_acts(self):
+        rows = [("K5OHY", "20261112", 4, 3, 1, 0), ("K5OHY", "20261113", 5, 5, 0, 0), ("N5NU", "20261113", 9, 2, 7, 0), ("N5NU", "20261112", 6, 6, 0, 0),
+                ("AI5YA", "20261019", 3, 0, 3, 0)]
+        return pd.DataFrame({"call": [r[0] for r in rows], "date": pd.to_datetime([r[1] for r in rows], format="%Y%m%d"), "total": [r[2] for r in rows],
+                             "cw": [r[3] for r in rows], "phone": [r[4] for r in rows], "data": [r[5] for r in rows]})
+
+    def test_the_park_is_read_from_the_log_one_activation_for_each_utc_day(self):
+        log = self.pota_log()
+        self.assertEqual(lc.pota_refs(log), ["US-3053"])
+        self.assertEqual(list(log["my_pota"].unique()), ["US-3053", ""])                         # MY_POTA_REF, or MY_SIG_INFO when MY_SIG is POTA
+        days = lc.pota_days(log, "US-3053").set_index("date")
+        self.assertEqual(int(days.loc[pd.Timestamp("2026-11-12"), "total"]), 4)
+        self.assertEqual((int(days.loc[pd.Timestamp("2026-11-12"), "cw"]), int(days.loc[pd.Timestamp("2026-11-12"), "phone"])), (3, 1))
+        self.assertEqual(int(days.loc[pd.Timestamp("2026-11-14"), "total"]), 2)                  # the contact with no park is not counted
+        two = lc.parse_adif("<CALL:5>W1AAA <QSO_DATE:8>20261112 <TIME_ON:4>1700 <BAND:3>20m <MODE:2>CW <MY_POTA_REF:17>US-3053, K-1234 <EOR>"
+                            "<CALL:5>W2AAA <QSO_DATE:8>20261112 <TIME_ON:4>1701 <BAND:3>20m <MODE:2>CW <MY_POTA_REF:7>US-3053 <EOR>")
+        self.assertEqual(lc.pota_refs(two), ["US-3053", "K-1234"])                                # a two-fer counts for both parks
+        self.assertEqual(lc.pota_refs(self.cond_log()), [])
+
+    def test_an_activation_is_ranked_against_every_activation_listed_for_the_park(self):
+        park = {"reference": "US-3053", "name": "San Angelo", "parktypeDesc": "State Park", "locationName": "Texas"}
+        card = lc.pota_compare(self.pota_log(), "US-3053", park, self.pota_acts(), "K5OHY/P")
+        self.assertEqual((card["n_acts"], card["n_activators"], card["yours_listed"]), (5, 3, 2))
+        self.assertEqual(card["first"], ("AI5YA", pd.Timestamp("2026-10-19")))
+        d12, d13, d14 = card["rows"]
+        self.assertEqual(d13["ranks"]["total"], (3, 5))                                           # 9 and 6 are bigger than 5
+        self.assertEqual(d13["ranks"]["cw"], (2, 4))
+        self.assertNotIn("phone", d13["ranks"])                                                   # no phone QSOs that day
+        self.assertEqual((d12["ranks"]["total"], d12["ranks"]["cw"], d12["ranks"]["phone"]), ((4, 5), (3, 4), (3, 3)))
+        self.assertEqual((d12["nth"], d13["nth"]), (1, 2))
+        self.assertFalse(d14["listed"])                                                          # not on POTA yet: ranked by the log's own 2
+        self.assertEqual(d14["ranks"]["total"], (6, 6))
+        notes = dict(lc.pota_notes(card))
+        text13 = notes["13 Nov 2026: 5 QSOs."]
+        self.assertIn("the 3rd most QSOs of the 5 activations listed for this park", text13)
+        self.assertIn("By mode: 5 CW QSOs (2nd of 4).", text13)
+        self.assertIn("your 2nd activation of this park listed by POTA", text13)
+        self.assertIn("It is your biggest there.", text13)                                         # 5 is more than the 4 of the other listed day
+        self.assertNotIn("biggest there", notes["12 Nov 2026: 4 QSOs."])
+        self.assertIn("POTA does not list this activation under K5OHY", notes["14 Nov 2026: 2 QSOs."])
+        big = self.pota_acts().assign(total=lambda d: d["total"].where(d["call"] != "K5OHY", 50))
+        top = dict(lc.pota_notes(lc.pota_compare(self.pota_log(), "US-3053", park, big, "K5OHY")))["13 Nov 2026: 50 QSOs."]
+        self.assertIn("the most QSOs of any activation listed", top)
+        self.assertIn("Your log has 5 QSOs; POTA lists 50.", top)                                  # when the counts differ, both are said
+        empty = lc.pota_compare(self.pota_log(), "US-3053", None, self.pota_acts().iloc[0:0], "K5OHY")
+        self.assertEqual(empty["n_acts"], 0)
+        self.assertIn("the only activation listed", dict(lc.pota_notes(empty))["12 Nov 2026: 4 QSOs."])
+
+    def test_the_park_card_shows_the_counts_the_notes_and_the_biggest_activations(self):
+        park = {"reference": "US-3053", "name": "San Angelo", "parktypeDesc": "State Park", "locationName": "Texas"}
+        html = lh.pota_html(lc.pota_compare(self.pota_log(), "US-3053", park, self.pota_acts(), "K5OHY"))
+        self.assertIn("How this park compares: US-3053 San Angelo", html)
+        self.assertIn("State Park, Texas", html)
+        self.assertIn("first activated by", html)
+        self.assertIn("AI5YA", html)
+        self.assertIn("13 Nov 2026: 5 QSOs.", html)
+        self.assertIn("K5OHY <small>(you)</small>", html)                                         # your own rows in the biggest list are marked
+        self.assertIn("can be out of date", html)
+        self.assertLess(html.index(">N5NU<") if ">N5NU<" in html else html.index("N5NU"), html.index("AI5YA", html.index("The biggest")))   # biggest first
+
+    def test_pota_is_asked_for_a_park_with_only_its_reference(self):
+        class Resp:
+            def __init__(self, body, content=b"x"):
+                self.body, self.content = body, content
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self.body
+
+        asked = []
+
+        def get(url, params=None, **k):
+            asked.append((url, params))
+            if "activations" in url:
+                return Resp([{"activeCallsign": "K5OHY", "qso_date": "20261113", "totalQSOs": 457, "qsosCW": 436, "qsosDATA": 0, "qsosPHONE": 21}])
+            return Resp({"reference": "US-3053", "name": "San Angelo"})
+
+        with mock.patch.object(ds.requests, "get", get):
+            park, acts = ds.load_pota_park("US-3053")
+        self.assertEqual(park["name"], "San Angelo")
+        self.assertEqual(acts.iloc[0].to_dict(), {"call": "K5OHY", "date": pd.Timestamp("2026-11-13"), "total": 457, "cw": 436, "phone": 21, "data": 0})
+        self.assertEqual([u for u, _ in asked], ["https://api.pota.app/park/US-3053", "https://api.pota.app/park/activations/US-3053"])
+        self.assertEqual(asked[1][1], {"count": "all"})                                          # nothing about you is sent, only the park
+        with mock.patch.object(ds.requests, "get", lambda url, params=None, **k: Resp(None, b"")):
+            park, acts = ds.load_pota_park("US-0000")
+        self.assertIsNone(park)
+        self.assertTrue(acts.empty)                                                              # a park POTA does not know
+        with mock.patch.object(ds.requests, "get", mock.Mock(side_effect=ds.requests.ConnectionError("down"))):
+            with self.assertRaises(RuntimeError):
+                ds.load_pota_park("US-3053")
+
     def test_the_followers_diamond_is_drawn_above_the_blocks(self):
         rule = lh.CSS[lh.CSS.index(".lc-d{"):]
         self.assertIn("z-index:3", rule[:rule.index("}")])                                   # blocks stacked above it no longer hide it

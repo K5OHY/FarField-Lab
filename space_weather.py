@@ -1,8 +1,9 @@
 """Current space weather from NOAA's Space Weather Prediction Center (free public feeds), and a short plain-English reading of it
 for HF operators. The numbers are global, not specific to any path: the WSPR picture on the Band conditions page is what is
 actually working near you, and this explains the why and gives an early warning of change."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
+import pandas as pd
 import requests
 
 from wspr_data import HEADERS
@@ -34,6 +35,51 @@ def _rows(text):
         parts = line.split()
         if len(parts) > 4 and parts[0].isdigit() and len(parts[0]) == 4:
             out.append(parts)
+    return out
+
+
+GFZ = "https://kp.gfz-potsdam.de/app/json/"      # GFZ Potsdam's Kp and solar flux archive (CC BY 4.0): any past date
+EVENTS = "/json/edited_events.json"              # SWPC's list of solar events, kept for about a month
+
+
+def _gfz(index, start, end, timeout):
+    resp = requests.get(GFZ, params={"start": f"{start:%Y-%m-%dT%H:%M:%SZ}", "end": f"{end:%Y-%m-%dT%H:%M:%SZ}", "index": index},
+                        headers=HEADERS, timeout=timeout)
+    resp.raise_for_status()
+    body = resp.json()
+    return [(pd.Timestamp(t).tz_localize(None), float(v)) for t, v in zip(body["datetime"], body[index])]
+
+
+def history(start, end, timeout=20):
+    """Space weather over a past stretch of time (naive UTC `start` and `end`): 'kp' as (start of the 3 hours, Kp), 'flux' as (day, solar
+    flux), and 'flares' as (time of the peak, class such as 'C2.1') from the X-ray events NOAA still lists. Each part is None when it could not
+    be read; 'flares' is also None when the stretch is older than NOAA's list. Never raises."""
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    out = {"kp": None, "flux": None, "flares": None}
+    try:
+        out["kp"] = [(t, v) for t, v in _gfz("Kp", start.floor("D"), end.ceil("D"), timeout) if t + timedelta(hours=3) > start and t < end]
+    except Exception:
+        pass
+    try:
+        out["flux"] = [(t, v) for t, v in _gfz("Fobs", start.floor("D"), end.ceil("D"), timeout) if v > 0]
+    except Exception:
+        pass
+    try:
+        resp = requests.get(SWPC + EVENTS, headers=HEADERS, timeout=timeout)
+        resp.raise_for_status()
+        events = resp.json()
+        first = min(pd.Timestamp(e["begin_datetime"]) for e in events if e.get("begin_datetime"))
+        if start > first + timedelta(days=1):                       # the list reaches back far enough to have seen this stretch
+            seen = {}
+            for e in events:
+                cls = e.get("particulars1") or ""
+                if e.get("type") == "XRA" and cls[:1] in ("A", "B", "C", "M", "X") and e.get("max_datetime"):
+                    peak = pd.Timestamp(e["max_datetime"]).floor("min")
+                    if start <= peak <= end:
+                        seen[peak] = max(seen.get(peak, ""), cls, key=lambda c: (("ABCMX".index(c[:1])), float(c[1:] or 0)))   # two satellites report each flare
+            out["flares"] = sorted(seen.items())
+    except Exception:
+        pass
     return out
 
 

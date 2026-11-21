@@ -99,6 +99,7 @@ def parse_adif(text):
             mode = f["SUBMODE"].upper()
         rows.append({"call": f["CALL"].upper(), "time": when, "band": band, "mode": mode, "state": f.get("STATE", "").upper(),
                      "country": f.get("COUNTRY", ""), "cont": f.get("CONT", "").upper(), "pota_ref": f.get("POTA_REF", ""),
+                     "my_pota": (f.get("MY_POTA_REF") or (f.get("MY_SIG_INFO", "") if f.get("MY_SIG", "").upper() == "POTA" else "")).upper(),
                      "rst_sent": f.get("RST_SENT", ""), "rst_rcvd": f.get("RST_RCVD", ""),
                      "station": (f.get("STATION_CALLSIGN") or f.get("OPERATOR") or "").upper(), "my_grid": f.get("MY_GRIDSQUARE", "")})
     if not rows:
@@ -227,6 +228,136 @@ def report_summary(log):
     return {"received": float(got.mean()) if got.notna().any() else float("nan"),
             "sent": float(gave.mean()) if gave.notna().any() else float("nan"),
             "n": int(got.notna().sum()), "s9": int((got == 9).sum()), "weakest": float(got.min()) if got.notna().any() else float("nan")}
+
+
+BALANCE_MIN = 10             # contacts with a report both ways needed before a band says anything about who hears whom
+BALANCE_EQUAL_DB = 3.0       # within this many dB (half an S-unit) the two directions are called about equal
+HABIT_SHARE = 0.9            # when this share of the reports were S9 both ways, they are habit and say little
+DB_PER_S = 6.0               # one S-unit is 6 dB
+
+
+def _balance_row(x, name):
+    got, gave = x["got"], x["gave"]
+    diff = float((got - gave).mean() * DB_PER_S)
+    habit = float(((got == 9) & (gave == 9)).mean())
+    if len(x) < BALANCE_MIN:
+        reading = "too few reports to say"
+    elif habit >= HABIT_SHARE:
+        reading = "mostly S9 both ways, so this says little"
+    elif abs(diff) < BALANCE_EQUAL_DB:
+        reading = "about equal"
+    else:
+        reading = "they hear you stronger than you hear them" if diff > 0 else "you hear them stronger than they hear you"
+    return {"band": name, "n": len(x), "got": float(got.mean()), "gave": float(gave.mean()), "diff_db": diff, "habit": habit, "reading": reading}
+
+
+def reports_balance(log):
+    """Who hears whom, from the reports in the log: for each band (and 'All bands' first), the contacts that carry an S report both ways, the
+    average S they gave you (`got`) and you gave them (`gave`), the difference in dB (positive: they hear you stronger) and a plain reading.
+    A band with fewer than BALANCE_MIN such contacts is not read, and neither is one whose reports are nearly all S9 both ways, because
+    many operators send a 9 out of habit. Digital dB reports are left out. A difference can come from their station as easily as yours."""
+    d = log.assign(got=log["rst_rcvd"].map(s_digit), gave=log["rst_sent"].map(s_digit)).dropna(subset=["got", "gave"])
+    if d.empty:
+        return pd.DataFrame(columns=["band", "n", "got", "gave", "diff_db", "habit", "reading"])
+    rows = [_balance_row(d, "All bands")] + [_balance_row(d[d["band"] == b], b) for b in bands_top_down(d)]
+    return pd.DataFrame(rows)
+
+
+# ------------------------------------------------------------------------------------------------------------- POTA: how a park compares
+
+POTA_REF = re.compile(r"^[A-Z0-9]{1,4}-\d{3,6}$")
+POTA_METRICS = (("total", "QSOs"), ("cw", "CW QSOs"), ("phone", "phone QSOs"), ("data", "data QSOs"))
+_PHONE = ("SSB", "USB", "LSB", "AM", "FM")
+
+
+def pota_refs(log):
+    """The parks the log was made from (MY_POTA_REF, or MY_SIG_INFO when MY_SIG is POTA), most contacts first. A two-fer lists two."""
+    counts = {}
+    for cell in log["my_pota"]:
+        for ref in {r.strip().upper() for r in str(cell).split(",")}:
+            if POTA_REF.match(ref):
+                counts[ref] = counts.get(ref, 0) + 1
+    return sorted(counts, key=lambda r: -counts[r])
+
+
+def pota_days(log, ref):
+    """The activations of one park in the log, one per UTC day (POTA's rule): date, contacts, and how many were CW, phone and data."""
+    mine = log[log["my_pota"].map(lambda c: ref in {r.strip().upper() for r in str(c).split(",")})]
+    mode = mine["mode"].str.upper()
+    kind = mode.map(lambda m: "cw" if m == "CW" else "phone" if m in _PHONE else "data")
+    day = mine["time"].dt.normalize()
+    out = pd.DataFrame({"date": day, "kind": kind}).groupby(["date", "kind"]).size().unstack(fill_value=0)
+    for k in ("cw", "phone", "data"):
+        if k not in out:
+            out[k] = 0
+    out["total"] = out[["cw", "phone", "data"]].sum(axis=1)
+    return out.reset_index()[["date", "total", "cw", "phone", "data"]]
+
+
+def _who(call):
+    """A callsign without its portable suffix (K5OHY/P is K5OHY): the longest part that has a digit."""
+    parts = [p for p in str(call).upper().split("/") if any(c.isdigit() for c in p)] or [str(call).upper()]
+    return max(parts, key=len)
+
+
+def _ordinal(n):
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def pota_compare(log, ref, park, acts, call):
+    """How the log's activations of a park compare with every activation POTA lists for it. `park` is POTA's record of the park (or None),
+    `acts` its activations (call, date, total, cw, phone, data). For each of the log's days: POTA's count when that day is listed under
+    the callsign (else the log's own), and the rank among the listed activations by QSOs, CW, phone and data QSOs (1 is the most; a tie
+    shares a rank). Counts are what activators uploaded to POTA, so they can be out of date."""
+    me = _who(call)
+    acts = acts.assign(who=acts["call"].map(_who)) if len(acts) else pd.DataFrame(columns=["call", "date", "total", "cw", "phone", "data", "who"])
+    rows = []
+    mine_listed = acts[acts["who"] == me].groupby("date")[["total", "cw", "phone", "data"]].sum().sort_index()
+    for r in pota_days(log, ref).itertuples():
+        ours = {"total": int(r.total), "cw": int(r.cw), "phone": int(r.phone), "data": int(r.data)}
+        listed = r.date in mine_listed.index
+        use = {k: int(mine_listed.at[r.date, k]) for k in ours} if listed else ours
+        ranks = {}
+        for key, _ in POTA_METRICS:
+            v = use[key]
+            if v > 0:
+                others = acts.drop(acts[(acts["who"] == me) & (acts["date"] == r.date)].index)       # everyone else's listed activations
+                ranks[key] = (1 + int((others[key] > v).sum()), int((others[key] > 0).sum()) + 1)
+        nth = (list(mine_listed.index).index(r.date) + 1) if listed else len(mine_listed) + 1
+        rows.append({"date": r.date, "ours": ours, "listed": listed, "use": use, "ranks": ranks, "nth": nth})
+    first = acts.sort_values("date").iloc[0] if len(acts) else None
+    return {"ref": ref, "name": (park or {}).get("name", ""), "kind": (park or {}).get("parktypeDesc", ""), "where": (park or {}).get("locationName", ""),
+            "known": bool(park), "n_acts": len(acts), "n_activators": int(acts["who"].nunique()) if len(acts) else 0, "yours_listed": len(mine_listed),
+            "first": (str(first["call"]), first["date"]) if first is not None else None, "rows": rows, "me": me,
+            "my_totals": {d: int(t) for d, t in mine_listed["total"].items()},
+            "top": acts.sort_values(["total", "date"], ascending=[False, True]).head(5)[["date", "call", "total", "cw", "phone", "data", "who"]]}
+
+
+def pota_notes(card):
+    """The comparison in plain words, as (lead, rest) pairs, one per activation in the log."""
+    notes = []
+    for r in card["rows"]:
+        use, ranks = r["use"], r["ranks"]
+        parts = []
+        if "total" in ranks:
+            rank, n = ranks["total"]
+            parts.append("the most QSOs of any activation listed for this park" if rank == 1 and n > 1 else
+                         f"the {_ordinal(rank)} most QSOs of the {n} activations listed for this park" if n > 1 else "the only activation listed for this park")
+        modes = [f"{use[k]} {label} ({_ordinal(ranks[k][0])} of {ranks[k][1]})" for k, label in POTA_METRICS[1:] if k in ranks]
+        text = ("That is " + parts[0] + "." if parts else "")
+        if modes:
+            text += " By mode: " + ", ".join(modes) + "."
+        if r["listed"]:
+            text += f" It was your {_ordinal(r['nth'])} activation of this park listed by POTA."
+            others = [t for d, t in card["my_totals"].items() if d != r["date"]]
+            if others and use["total"] > max(others):
+                text += " It is your biggest there."
+            if r["ours"]["total"] != use["total"]:
+                text += f" Your log has {r['ours']['total']} QSOs; POTA lists {use['total']}."
+        else:
+            text += f" POTA does not list this activation under {card['me']}, so the rank uses the {r['ours']['total']} QSOs in your log."
+        notes.append((f"{r['date']:%d %b %Y}: {use['total']} QSOs.", text.strip()))
+    return notes
 
 
 # ------------------------------------------------------------------------------------------------------- where the contacts were
@@ -497,6 +628,7 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
     made = log.groupby(["slot", "band"]).size()
     made_dx = log[dx_contacts_mask(log)].groupby(["slot", "band"]).size()
     rows = []
+    seen_tx, seen_rx, n_reports, farthest = set(), set(), 0, 0.0
     for panel, (first, last) in enumerate(condition_panels(log)):
         start, end = first - timedelta(minutes=LOOKBACK_MIN), last + timedelta(minutes=CONDITIONS_SLOT_MIN)
         frames, t = [], start
@@ -507,10 +639,16 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
                 frames.append(part[part["band"].isin(bands)])
             t = t2
         wspr = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        if len(wspr):
+            seen_tx |= set(wspr["tx"])
+            seen_rx |= set(wspr["rx"])
+            n_reports += len(wspr)
         for slot in pd.date_range(first, last, freq=f"{CONDITIONS_SLOT_MIN}min"):
             res = (cond.analyze(wspr, home, power_w, mode, (slot + timedelta(minutes=CONDITIONS_SLOT_MIN)).to_pydatetime(), LOOKBACK_MIN,
                                 antenna_db, 3.0) if len(wspr) else None)
             rec = res["receivers"] if res is not None else pd.DataFrame()
+            if len(rec):
+                farthest = max(farthest, float(rec["km"].max()))
             for band in bands:
                 receivers = good = dx_heard = dx_good = 0
                 dx_regions = {}
@@ -525,14 +663,18 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
                 rows.append({"panel": panel, "slot": slot, "band": band, "receivers": receivers, "good": good, "share": share,
                              "contacts": int(made.get((slot, band), 0)), "dx_heard": dx_heard, "dx_good": dx_good, "dx_regions": dx_regions,
                              "dx_contacts": int(made_dx.get((slot, band), 0)), "rbn_far": 0})
-    return pd.DataFrame(rows, columns=["panel", "slot", "band", "receivers", "good", "share", "contacts", "dx_heard", "dx_good", "dx_regions",
-                                       "dx_contacts", "rbn_far"])
+    out = pd.DataFrame(rows, columns=["panel", "slot", "band", "receivers", "good", "share", "contacts", "dx_heard", "dx_good", "dx_regions",
+                                      "dx_contacts", "rbn_far"])
+    out.attrs["evidence"] = {"transmitters": len(seen_tx), "receivers": len(seen_rx), "reports": n_reports, "farthest_km": farthest}
+    return out
 
 
 def add_rbn_far(grid, spots, locs, home):
     """The grid with `rbn_far` filled in: for each half hour and band, how many different skimmers DX_MILES or more from you spotted you.
     `locs` is the skimmer list (callsign to place); a skimmer it does not know is not counted."""
+    evidence = dict(grid.attrs.get("evidence") or {})
     grid = grid.assign(rbn_far=0)
+    grid.attrs["evidence"] = evidence
     if spots is None or spots.empty or grid.empty:
         return grid
     far = {}
@@ -545,7 +687,9 @@ def add_rbn_far(grid, spots, locs, home):
         return grid
     s = s.assign(slot=s["time"].dt.floor(f"{CONDITIONS_SLOT_MIN}min"), who=s["spotter"].map(far))
     counts = s.groupby(["slot", "band"])["who"].nunique()
-    return grid.assign(rbn_far=[int(counts.get((slot, band), 0)) for slot, band in zip(grid["slot"], grid["band"])])
+    out = grid.assign(rbn_far=[int(counts.get((slot, band), 0)) for slot, band in zip(grid["slot"], grid["band"])])
+    out.attrs["evidence"] = evidence
+    return out
 
 
 def _join(names):
@@ -616,6 +760,55 @@ def dx_notes(grid, power_w, max_lines=7):
                     if heard else f"No WSPR stations over {miles} miles away reported on {band}.")
         notes.append((lead, f"{text} You made {n} contacts on {band}{outside(d)}.{rbn_note(d)}"))
     return notes[:max_lines]
+
+
+def _k(v):
+    return f"{v:.0f}" if abs(v - round(v)) < 0.17 else f"{v:.1f}"
+
+
+def _kp_word(k):
+    return "quiet" if k < 3 else "unsettled" if k < 4 else "active" if k < 5 else f"a geomagnetic storm, G{int(k) - 4}"
+
+
+def space_span(log):
+    """The stretch of time the space weather is shown for: from an hour before the first contact to an hour after the last."""
+    return log["time"].min().floor("h") - timedelta(hours=1), log["time"].max().ceil("h") + timedelta(hours=1)
+
+
+def space_notes(wx, start, end):
+    """What the space weather did between `start` and `end` (the first and last contact), as (lead, rest) pairs: the highest Kp, the solar flux,
+    and the flares. `wx` is space_weather.history. Kp and flares are worldwide figures, so they say whether something unusual was going on, not what worked near you."""
+    notes = []
+    when = (lambda t: f"{t:%d %b %H:%M}Z") if (end - start) > timedelta(hours=30) else (lambda t: f"{t:%H:%M}Z")
+    kp = [(t, v) for t, v in (wx.get("kp") or []) if t + timedelta(hours=3) > start and t < end]       # only the steps that touch the session itself
+    if kp:
+        t, top = max(kp, key=lambda p: p[1])
+        if top < 3:
+            notes.append((f"Kp stayed at {_k(top)} or lower (quiet).", "The magnetic field was calm for the whole session."))
+        else:
+            notes.append((f"Kp reached {_k(top)} ({_kp_word(top)}) in the three hours from {when(t)}.",
+                          "Geomagnetic disturbance can weaken HF paths that cross the polar regions. Kp is worldwide, so the picture above is what worked near you."))
+    flux = [v for t, v in (wx.get("flux") or []) if start.normalize() <= t <= end]      # the days the session fell on
+    if flux:
+        lo, hi = min(flux), max(flux)
+        notes.append((f"Solar flux was about {sum(flux) / len(flux):.0f}.", f"Daily readings from {lo:.0f} to {hi:.0f}; the higher it is, the more the upper bands tend to open."
+                      if hi - lo >= 1 else "The higher it is, the more the upper bands tend to open."))
+    flares = wx.get("flares")
+    if flares is None:
+        if wx.get("kp") is not None or wx.get("flux") is not None:
+            notes.append(("Flares are not shown.", "NOAA keeps its flare list for about a month, or it could not be read."))
+    else:
+        flares = [(t, c) for t, c in flares if start <= t <= end]
+        big = [(t, c) for t, c in flares if c[:1] in ("M", "X")]
+        if big:
+            t, c = max(big, key=lambda p: ("MX".index(p[1][:1]), float(p[1][1:] or 0)))
+            notes.append((f"A flare of class {c} peaked at {when(t)}" + (f" (one of {len(big)} M or X flares)." if len(big) > 1 else "."),
+                          "A flare like that can fade HF for a while on the sunlit side of the earth. It does not affect every path."))
+        else:
+            top = max(flares, key=lambda p: ("ABCMX".index(p[1][:1]), float(p[1][1:] or 0)))[1] if flares else None
+            notes.append(("No M or X flares." if top else "No flares were listed.",
+                          f"The strongest flare was {top}, too small to matter for HF." if top else "The X-ray flux stayed low."))
+    return notes
 
 
 def _pc(x):

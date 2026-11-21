@@ -5,7 +5,7 @@ from html import escape
 import numpy as np
 import pandas as pd
 
-from log_check import DX_FIRST, DX_MILES, NEAR_REGIONS, bands_top_down
+from log_check import BALANCE_MIN, DX_FIRST, DX_MILES, HABIT_SHARE, NEAR_REGIONS, bands_top_down, pota_notes
 
 BLUE, TEAL, AMBER = "#5B8CFF", "#19B5AE", "#F0A020"
 
@@ -100,6 +100,8 @@ CSS = """<style>
 .lc-key .sw{display:inline-flex;align-items:center;gap:6px}.lc-key .sw b{display:inline-block;width:22px;height:13px;border-radius:4px;border:1px solid var(--line)}
 .lc-reg{border-collapse:collapse;width:100%;font-size:13.5px}.lc-reg td,.lc-reg th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
 .lc-reg th{font-weight:600;font-size:12px;opacity:.7}.lc-reg small{opacity:.65}
+.lc-kp{position:absolute;bottom:6px;border-radius:2px 2px 0 0}.lc-storm{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgb(230,120,40);opacity:.8}
+.lc-fl{position:absolute;top:50%;border-radius:50%;border:1px solid Canvas}.lc-kq{position:absolute;bottom:6px;background:var(--a);border-radius:1.5px 1.5px 0 0}
 .lc-reg .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:rgb(32,178,170);margin-right:6px}.lc-reg .no{opacity:.35}
 .lc-two{display:grid;grid-template-columns:minmax(280px,1.05fr) 1fr;gap:20px;align-items:start}
 .lc-facts{display:grid;gap:10px}.lc-fact{border:1px solid var(--line);border-radius:12px;padding:10px 13px}
@@ -156,6 +158,18 @@ def _local_time(s, tz_name):
         return ""
 
 
+def _evidence_line(grid):
+    """How much WSPR the DX picture rests on, so a thin picture looks thin: the reports, the transmitters near you, the stations that decoded
+    them and how far away the farthest was."""
+    ev = grid.attrs.get("evidence") or {}
+    if not ev.get("reports"):
+        return ""
+    far = round(ev["farthest_km"] / 1.609344, -2)
+    thin = " That is few transmitters, so the picture is thin." if ev["transmitters"] < 5 else ""
+    return (f'<p class="sub"><b>The evidence:</b> {ev["reports"]:,} WSPR reports from {ev["transmitters"]} transmitter{"s" if ev["transmitters"] != 1 else ""} within 300 miles of you, decoded by '
+            f'{ev["receivers"]:,} stations as far away as {far:,.0f} miles.{thin}</p>')
+
+
 def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None):
     """When a signal like yours could have reached DX while you were on the air: a box for each band and half hour that counts the receivers
     DX_MILES or more away that would have heard it, with your contacts (diamond), contacts outside North America (star) and skimmers that far
@@ -191,6 +205,7 @@ def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None):
             '<p class="sub"><b>How to read it:</b> read across a row to follow a band over time. A dash means no station that far would have heard you; '
             'a striped box means stations that far heard WSPR, but none strongly enough. Bands have different numbers of stations, so use the counts to '
             'compare hours, not to rank bands.</p>'
+            + _evidence_line(grid)
             + "".join(panels)
             + '<div class="lc-key"><span class="sw"><b style="background:rgba(32,178,170,.88)"></b>3 or more would hear you</span>'
               '<span class="sw"><b style="background:rgba(32,178,170,.40)"></b>1 or 2</span>'
@@ -284,6 +299,88 @@ def conditions_html(grid, notes, power_w, mode="CW", tz_name=None):
               'and one hour with another. It is not an exact chance of a contact (the percentages run high), and bands cannot be fairly compared with each other: '
               'a band with many distant stations, such as 20m, tends to show a lower share.</p>'
             '</div></div>')
+
+
+def balance_html(bal):
+    """Who hears whom, by band: the average S they gave you and you gave them, the difference in dB, and a plain reading. Empty when no
+    contact carries a report both ways."""
+    if bal.empty:
+        return ""
+    rows = []
+    for r in bal.itertuples():
+        diff = f"{r.diff_db:+.0f} dB" if r.n >= BALANCE_MIN and r.habit < HABIT_SHARE else "&ndash;"
+        label = f"<b>{escape(r.band)}</b>"
+        rows.append(f"<tr><td>{label}</td><td>{r.n}</td><td>S{r.got:.1f}</td><td>S{r.gave:.1f}</td><td>{diff}</td><td>{escape(r.reading)}</td></tr>")
+    return ('<div class="lc"><div class="lc-card"><h4>Do they hear you as well as you hear them?</h4>'
+            '<p class="sub">From the reports in your log. A report is the S in RST (579 is S7); one S-unit is about 6 dB. A positive difference means the stations '
+            'you worked gave you stronger reports than you gave them. Many operators send a 9 out of habit, and a difference can come from their antenna, their noise or their '
+            'habits as easily as from your station, so this is a rough picture, not a measurement. A band needs at least '
+            f'{BALANCE_MIN} contacts with a report both ways before it says anything.</p>'
+            '<div class="lc-cgw"><table class="lc-reg"><tr><th>Band</th><th>Contacts with reports both ways</th><th>They gave you</th><th>You gave them</th>'
+            '<th>Difference</th><th>Reading</th></tr>' + "".join(rows) + "</table></div></div></div>")
+
+
+KP_COLOURS = ("rgb(76,175,80)", "rgb(230,161,23)", "rgb(210,80,80)")
+
+
+def space_weather_html(wx, log, notes):
+    """The space weather over the session: Kp in 3 hour steps, the flares at their peak, and your contacts in the same hours, with the lines
+    that say it in words. Empty when nothing could be read."""
+    from log_check import space_span
+    if not (wx.get("kp") or wx.get("flux") or wx.get("flares")):
+        return ""
+    start, end = space_span(log)
+    minutes = (end - start).total_seconds() / 60
+    left = lambda t: max(0.0, min(100.0, (t - start).total_seconds() / 60 / minutes * 100))
+    ticks_t = list(_ticks(start, end))
+    ticks = "".join(f'<i class="lc-tick" style="left:{left(t):.3f}%"></i>' for t in ticks_t)
+    axis = "".join(f'<span style="left:{left(t):.3f}%">{t:%H:%M}Z</span>' for t in ticks_t)
+    kp = ""
+    for t, v in wx.get("kp") or []:
+        a, b = max(t, start), min(t + pd.Timedelta(hours=3), end)
+        colour = KP_COLOURS[0 if v < 3 else 1 if v < 5 else 2]
+        kp += (f'<i class="lc-kp" style="left:{left(a):.3f}%;width:calc({left(b) - left(a):.3f}% - 2px);height:{max(3.0, v / 9 * 44):.1f}px;background:{colour}" '
+               f'title="Kp {v:.1f}, the three hours from {t:%H:%M}Z"></i>')
+    flares = ""
+    for t, c in wx.get("flares") or []:
+        size = {"X": 12, "M": 9}.get(c[:1], 5)
+        colour = {"X": "rgb(210,80,80)", "M": "rgb(230,161,23)"}.get(c[:1], "rgb(140,140,140)")
+        flares += (f'<i class="lc-fl" style="left:{left(t):.3f}%;width:{size}px;height:{size}px;margin:{-size / 2:.1f}px 0 0 {-size / 2:.1f}px;background:{colour}" '
+                   f'title="{c} flare, peak {t:%H:%M}Z"></i>')
+    slot = log.assign(slot=log["time"].dt.floor("30min")).groupby("slot").size()
+    top = max(int(slot.max()), 1) if len(slot) else 1
+    bars = "".join(f'<i class="lc-kq" style="left:{left(t):.3f}%;width:calc({30 / minutes * 100:.3f}% - 1px);height:{max(2.0, n / top * 30):.1f}px" '
+                   f'title="{n} contacts, {t:%H:%M}Z"></i>' for t, n in slot.items())
+    lane = lambda label, body, h: (f'<div class="lc-lane"><div class="lc-lab" style="padding-top:{h // 2 - 8}px"><b>{label}</b></div>'
+                                   f'<div class="lc-plot" style="height:{h}px">{ticks}{body}</div></div>')
+    says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(a)}</b> {escape(b)}</li>" for a, b in notes) + "</ul>") if notes else ""
+    storm = f'<i class="lc-storm" style="top:{50 - 5 / 9 * 44:.1f}px" title="Kp 5: a geomagnetic storm"></i>'
+    return ('<div class="lc"><div class="lc-card"><h4>Space weather during your session</h4>'
+            '<p class="sub">Kp is the worldwide measure of magnetic disturbance (0 is calm, 5 and above is a storm), shown in three-hour steps; the dots are solar flares at '
+            'their peak (grey C, amber M, red X). Your contacts are along the bottom. These are worldwide figures: they say whether something unusual was going on, '
+            'not what worked near you. Times are UTC.</p>'
+            '<div class="lc-chart">' + lane("Kp", kp + storm, 56) + lane("Flares", flares, 30) + lane("Contacts", bars, 40)
+            + f'<div class="lc-axis">{axis}</div></div>' + says + '</div></div>')
+
+
+def pota_html(card):
+    """How a park compares: a few counts about the park, one line for each activation in the log, and the five biggest activations listed there."""
+    n = card["n_acts"]
+    tiles = ('<div class="lc-tiles">' + _tile(n, "--b", "activations listed", "in POTA's list for this park")
+             + _tile(card["n_activators"], "--t", "activators", "different stations")
+             + _tile(card["yours_listed"], "--a", "yours listed", f"by {escape(card['me'])}")
+             + _tile(escape(card["first"][0]) if card["first"] else "&ndash;", "--g", "first activated by",
+                     f"{card['first'][1]:%d %b %Y}" if card["first"] else "") + "</div>")
+    says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(a)}</b> {escape(b)}</li>" for a, b in pota_notes(card)) + "</ul>") if card["rows"] else ""
+    top = card["top"]
+    rows = "".join(f"<tr><td>{r.date:%d %b %Y}</td><td>{escape(r.call)}" + (" <small>(you)</small>" if r.who == card["me"] else "")
+                   + f"</td><td>{r.total}</td><td>{r.cw}</td><td>{r.phone}</td><td>{r.data}</td></tr>" for r in top.itertuples())
+    table = ('<p class="sub" style="margin-top:12px"><b>The biggest activations listed for this park</b></p><div class="lc-cgw"><table class="lc-reg"><tr><th>Date</th><th>Station</th>'
+             '<th>QSOs</th><th>CW</th><th>Phone</th><th>Data</th></tr>' + rows + "</table></div>") if len(top) else ""
+    place = ", ".join(x for x in (card["kind"], card["where"]) if x)
+    return ('<div class="lc"><div class="lc-card"><h4>How this park compares: ' + escape(f"{card['ref']} {card['name']}".strip()) + "</h4>"
+            f'<p class="sub">{escape(place)}{" · " if place else ""}Counts from POTA\'s public activation list, as the activators uploaded them, so they can be out of date. '
+            'An activation is one UTC day at the park. Ranks are by QSOs, with the most first; a tie shares a rank.</p>' + tiles + says + table + '</div></div>')
 
 
 def band_table_html(bands, min_contacts=3):
