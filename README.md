@@ -58,7 +58,7 @@ Free hosting can fall asleep: click the button to wake it. A local copy also rem
 
 In the sidebar, choose **Spots from: RBN or WSPR**. For RBN, choose **Download a day** or **Paste spots**.
 
-**RBN, Download a day.** Pick a day or a range (up to 7 days). Works for anything up to yesterday (UTC), because RBN publishes a day's file after that day ends. Only spots of your callsign are kept.
+**RBN, Download a day.** Pick a day or a range (up to 7 days). Works for anything up to yesterday (UTC), because RBN publishes a day's file after that day ends. Only spots of your callsign are kept. Where a live collector has been set up (see [collector/SETUP.md](collector/SETUP.md)), today works too: its spots come from RBN's live feed, and the page says if the collector began part way through the day or lost its connection, so you know what may be missing.
 
 **RBN, Paste spots.** For spots from the last few minutes or hours, and for quick tests. Look up your callsign on [reversebeacon.net](https://www.reversebeacon.net/), copy the spot rows, paste them into the box, and click Load spots. The app reads each field by what it looks like, so odd spacing is fine.
 
@@ -385,6 +385,8 @@ The **Help and README** page in the app shows this README, so the instructions a
 | `views/` | One file per page: `spots_view.py` (My spots), `compare_view.py` (comparing antennas), `conditions_view.py` (Band conditions), `compare_page.py`, `inputs.py` (the sidebar choices and loading both spots pages share), `test_link.py` (a whole test in a link), `help_view.py` (Help and README) |
 | `ui_common.py` | Settings, colours, constants and small helpers shared by the pages |
 | `data_sources.py` | Getting spots: the RBN download and pasted rows, WSPR from wspr.live, the skimmer list |
+| `live_rbn.py` | Today's RBN spots from the live collector, when one is set up (the address is `LIVE_RBN_URL` in the settings); does nothing without it |
+| `collector/` | The live collector: `rbn_service.py` stays connected to RBN's live feed on an always-on machine and answers "the spots of this callsign today"; `setup_vm.sh` and `SETUP.md` put it on a free Google Cloud machine; `rbn_listen.py` is a one-off tool that counts the feed's rate |
 | `simulate_validation.py` | Simulated tests with a known antenna difference, run through the program's own analysis, to check how often the summary is right, wrong and how often the 95% range holds the truth |
 | `docs/METHODOLOGY.md` | The technical methodology: every rule and number behind a summary, how it was checked, and its limits |
 | `disk_cache.py` | Remembers days that are over (the RBN file, WSPR spots and who was on the band), so each is fetched once and wspr.live's limit of 20 requests a minute is not used up on repeats |

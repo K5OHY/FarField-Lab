@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 import example_data
+import live_rbn
 from data_sources import download_rbn_day, load_wspr, parse_pasted_data, resolve_home
 from ui_common import (
     BAND_COLORS,
@@ -297,7 +298,8 @@ def _source_choice(ss):
     else:
         ss.setdefault("how_in", ss.get("_how_last", HOW_OPTIONS[0]))
         how = st.radio("How to get them", HOW_OPTIONS, key="how_in", horizontal=True, on_change=_source_changed, args=(ss,),
-                       help="Download needs the day to be over (UTC). Paste works for today: copy the spots from reversebeacon.net.")
+                       help="Download uses RBN's daily file, which is published once the UTC day is over"
+                            + (", and today's spots come from the live feed." if live_rbn.available() else ". Paste works for today: copy the spots from reversebeacon.net."))
         ss["_how_last"] = how
         source = "Paste from RBN site" if how == HOW_OPTIONS[1] else "Download by date"
     ss["src_in"] = ss["_src_seen"] = source
@@ -321,8 +323,9 @@ def where_inputs(ss, cfg, second_call=False):
     callsign_b = ""
     pasted, days, span = "", [], cfg.get("span")
     if source in ("Download by date", WSPR_SOURCE):
-        # RBN publishes a day's file once the UTC day is over; WSPR spots are there up to a few minutes ago
-        last_day = (datetime.now(timezone.utc) - timedelta(days=0 if source == WSPR_SOURCE else 1)).date()
+        # RBN publishes a day's file once the UTC day is over, so today comes from the live collector when there is one; WSPR spots are
+        # there up to a few minutes ago
+        last_day = (datetime.now(timezone.utc) - timedelta(days=0 if source == WSPR_SOURCE or live_rbn.available() else 1)).date()
         ss.setdefault("day_in", last_day)
         ss.setdefault("from_in", last_day - timedelta(days=MAX_DAYS - 1))
         ss.setdefault("to_in", last_day)
@@ -483,12 +486,18 @@ def load_spots(ss, skimmers, where):
         else:
             if not days:
                 raise RuntimeError("The 'To' date must be on or after the 'From' date.")
-            frames, failed = [], []
+            frames, failed, live_notes = [], [], []
             bar = st.progress(0.0, text="Downloading RBN data… (each day can take a minute)")
             for i, d in enumerate(days):
                 bar.progress(i / len(days), text=f"Downloading {d:%Y-%m-%d} ({i + 1} of {len(days)})…")
                 try:
-                    frames.append(download_rbn_day(d.strftime("%Y%m%d"), where.callsign))
+                    if d == live_rbn.today():                                   # not in a daily file yet: ask the live collector
+                        live, live_note = live_rbn.fetch(where.callsign, d)
+                        frames.append(live)
+                        if live_note:
+                            live_notes.append(live_note)
+                    else:
+                        frames.append(download_rbn_day(d.strftime("%Y%m%d"), where.callsign))
                 except Exception as e:
                     failed.append(f"{d:%Y-%m-%d}: {e}")
             bar.empty()
@@ -497,6 +506,7 @@ def load_spots(ss, skimmers, where):
             for msg in failed:
                 st.warning(f"Skipped {msg}")
             df = pd.concat(frames, ignore_index=True)
+            notice = " ".join(live_notes) or notice
             ss.file_date = f"{days[0]:%Y%m%d}" + (f"-{days[-1]:%Y%m%d}" if len(days) > 1 else "")
         ss.raw, ss.callsign = df, where.callsign
         ss.kind, ss.locs, ss.tx_call, ss.tx_call_b = ("WSPR" if where.source == WSPR_SOURCE else "RBN"), locs, tx_call, tx_call_b

@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from datetime import date
+from unittest import mock
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
@@ -225,6 +226,105 @@ class MySpotsPage(unittest.TestCase):
         at = page("spots_page", call="K5OHY", src="wspr", date="2026-10-04", band="20m", go="1").run()
         self.assertEqual(errors(at), [])
         self.assertGreater(len(at.session_state["raw"]), 100)
+
+
+class LiveToday(unittest.TestCase):
+    """Today's RBN spots from the live collector: offered only when one is set up and working, and said plainly when part of the day is missing."""
+
+    def body(self, **extra):
+        body = {"call": "K5OHY", "date": "2026-11-22", "columns": ["callsign", "freq", "band", "dx", "mode", "db", "date", "speed", "tx_mode"],
+                "rows": [["3B8GL", 14033.0, "20m", "K5OHY", "CQ", 22, "2026-11-22 14:05:07", 24, "CW"],
+                         ["3D2AG", 7022.3, "40m", "K5OHY", "CQ", -3, "2026-11-22 14:06:30", 21, "CW"]],
+                "collected_from": None, "gaps": [], "covered": True, "newest_spot": "2026-11-22 14:06:30", "now": "2026-11-22 14:07:00"}
+        body.update(extra)
+        return body
+
+    def reply(self, body, status=200):
+        from unittest import mock
+        r = mock.Mock(ok=status < 400, status_code=status)
+        r.json.return_value = body
+        return r
+
+    def test_nothing_changes_when_no_collector_is_set_up(self):
+        import live_rbn
+        with mock.patch.dict(os.environ, {"LIVE_RBN_URL": ""}):
+            live_rbn._healthy.clear()
+            self.assertFalse(live_rbn.available())
+            with self.assertRaises(RuntimeError):
+                live_rbn.fetch("K5OHY", date(2026, 11, 22))
+
+    def test_a_collector_is_offered_only_while_it_answers_and_is_connected(self):
+        import live_rbn
+        with mock.patch.dict(os.environ, {"LIVE_RBN_URL": "https://example.test/"}):
+            for body, expected in (({"ok": True, "connected": True}, True), ({"ok": True, "connected": False}, False)):
+                live_rbn._healthy.clear()
+                with mock.patch.object(live_rbn.requests, "get", return_value=self.reply(body)):
+                    self.assertEqual(live_rbn.available(), expected)
+            live_rbn._healthy.clear()
+            with mock.patch.object(live_rbn.requests, "get", side_effect=live_rbn.requests.ConnectionError("down")):
+                self.assertFalse(live_rbn.available())
+        live_rbn._healthy.clear()
+
+    def test_the_answer_becomes_a_table_like_the_daily_files_and_a_full_day_has_no_note(self):
+        import live_rbn
+        calls = []
+
+        def get(url, **k):
+            calls.append((url, k))
+            return self.reply(self.body())
+
+        with mock.patch.dict(os.environ, {"LIVE_RBN_URL": "https://example.test/", "LIVE_RBN_KEY": "k"}), mock.patch.object(live_rbn.requests, "get", get):
+            df, note = live_rbn.fetch("K5OHY", date(2026, 11, 22))
+        self.assertIsNone(note)
+        self.assertEqual(list(df.columns), ["spotter", "freq", "band", "dx", "mode", "snr", "time", "speed", "tx_mode"])
+        self.assertEqual((df["snr"].tolist(), df["spotter"].tolist()), ([22, -3], ["3B8GL", "3D2AG"]))
+        self.assertEqual(str(df["time"].iloc[0]), "2026-11-22 14:05:07")
+        self.assertEqual(calls[0][0], "https://example.test/spots")
+        self.assertEqual(calls[0][1]["params"], {"call": "K5OHY", "date": "2026-11-22"})
+        self.assertEqual(calls[0][1]["headers"]["X-Api-Key"], "k")
+
+    def test_missing_spots_are_said_plainly(self):
+        import live_rbn
+        day = date(2026, 11, 22)
+        late = live_rbn.coverage_note(self.body(collected_from="2026-11-22 09:41:00"), day)
+        self.assertIn("only began listening at 09:41 UTC", late)
+        self.assertIn("daily file the next day", late)
+        gap = live_rbn.coverage_note(self.body(gaps=[["2026-11-22 03:10:00", "2026-11-22 03:55:00"]]), day)
+        self.assertIn("lost its connection to RBN between 03:10–03:55 UTC", gap)
+        many = live_rbn.coverage_note(self.body(gaps=[[f"2026-11-22 0{h}:00:00", f"2026-11-22 0{h}:30:00"] for h in range(6)]), day)
+        self.assertIn("and 2 more", many)
+        self.assertIn("no record of 22 Nov", live_rbn.coverage_note(self.body(covered=False), day))
+
+    def test_a_collector_that_will_not_answer_gives_a_message_and_not_a_crash(self):
+        import live_rbn
+        with mock.patch.dict(os.environ, {"LIVE_RBN_URL": "https://example.test"}):
+            with mock.patch.object(live_rbn.requests, "get", side_effect=live_rbn.requests.ConnectionError("down")):
+                with self.assertRaises(RuntimeError) as why:
+                    live_rbn.fetch("K5OHY", date(2026, 11, 22))
+            self.assertIn("paste your spots", str(why.exception))
+            with mock.patch.object(live_rbn.requests, "get", return_value=self.reply({"error": "too many requests; wait a minute"}, 429)):
+                with self.assertRaises(RuntimeError) as why:
+                    live_rbn.fetch("K5OHY", date(2026, 11, 22))
+            self.assertIn("429", str(why.exception))
+
+    def test_the_page_offers_today_and_loads_it_from_the_collector(self):
+        import live_rbn
+        from datetime import datetime, timezone
+        import pandas as pd
+        today = datetime.now(timezone.utc).date()
+        spots = pd.DataFrame({"spotter": ["3B8GL", "3D2AG"], "freq": [14033.0, 7022.3], "band": ["20m", "40m"], "dx": ["K5OHY", "K5OHY"], "snr": [22, 18],
+                              "time": pd.to_datetime([f"{today} 14:05:07", f"{today} 14:06:30"])})
+        note = "Spots for today come from RBN's live feed: the live collector only began listening at 09:41 UTC, so spots before that are missing."
+        with mock.patch.object(live_rbn, "available", return_value=True), mock.patch.object(live_rbn, "fetch", return_value=(spots, note)) as fetch:
+            at = page("spots_page", call="K5OHY", grid="DM81wx", src="rbn", go="1").run()
+            self.assertEqual(errors(at), [])
+            self.assertEqual(at.session_state["day_in"], today)                      # today is offered, and is where the date opens
+            fetch.assert_called_once()
+            self.assertEqual(len(at.session_state["raw"]), 2)
+            self.assertTrue(any(note in w.value for w in at.warning))                # what is missing is shown above the map
+        with mock.patch.object(live_rbn, "available", return_value=False):
+            at = page("spots_page", call="K5OHY", grid="DM81wx", src="rbn").run()
+            self.assertLess(at.session_state["day_in"], today)                       # with no collector, the last day offered is yesterday, as before
 
 
 class ComparePage(unittest.TestCase):

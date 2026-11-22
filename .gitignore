@@ -6,3 +6,7 @@ settings.json
 .spotters_refreshed
 RBN_Map-main/
 .claude/
+collector/out/
+*.db
+*.db-wal
+*.db-shm
