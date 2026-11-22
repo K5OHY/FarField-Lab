@@ -1,4 +1,4 @@
-"""The Log check page: upload a contact log (ADIF) and the callsign, place and days come from the log. The RBN spots and the WSPR stations
+"""The Log analysis page: upload a contact log (ADIF) and the callsign, place and days come from the log. The RBN spots and the WSPR stations
 near you are fetched, and the log is set beside them."""
 import hashlib
 import threading

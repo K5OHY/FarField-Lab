@@ -24,7 +24,7 @@ def main():
     pages = [st.Page(spots_page, title="My spots", icon=":material/cell_tower:", url_path="spots", default=True),
              st.Page(compare_page, title="Compare antennas", icon=":material/balance:", url_path="compare"),
              st.Page(conditions_page, title="Band conditions", icon=":material/public:", url_path="conditions"),
-             st.Page(log_page, title="Log check", icon=":material/fact_check:", url_path="log"),
+             st.Page(log_page, title="Log analysis", icon=":material/fact_check:", url_path="log"),
              st.Page(help_page, title="Help and README", icon=":material/help:", url_path="help")]
     inputs.keep_between_pages()  # so the README and back does not lose a test's setup
     st.navigation(pages).run()

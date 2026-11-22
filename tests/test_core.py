@@ -1021,7 +1021,7 @@ class FarApart(unittest.TestCase):
 
 
 class LogCheck(unittest.TestCase):
-    """The log check: reading an ADIF file, the facts from the log alone, and setting it beside spots and WSPR (made-up data)."""
+    """The log analysis: reading an ADIF file, the facts from the log alone, and setting it beside spots and WSPR (made-up data)."""
 
     ADIF = ("Header text\n<ADIF_VER:5>3.1.5 <EOH>\n"
             "<CALL:5>W1AAA <QSO_DATE:8>20261118 <TIME_ON:6>200000 <BAND:3>20m <MODE:2>CW <STATE:2>PA <CONT:2>NA <EOR>\n"
@@ -1172,7 +1172,7 @@ class LogCheck(unittest.TestCase):
 
 
 class LogCheckPictures(unittest.TestCase):
-    """The HTML for the log check: nothing breaks when numbers are missing, and the chart has a block for every contact."""
+    """The HTML for the log analysis: nothing breaks when numbers are missing, and the chart has a block for every contact."""
 
     def setUp(self):
         self.log = lc.parse_adif("".join(

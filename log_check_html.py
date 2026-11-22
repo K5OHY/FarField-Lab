@@ -1,4 +1,4 @@
-"""The look of the Log check tab: HTML and SVG built from the tables in log_check.py. Colors are fixed mid-tones that read on both the
+"""The look of the Log analysis page: HTML and SVG built from the tables in log_check.py. Colors are fixed mid-tones that read on both the
 light and the dark theme, and every block of text takes the page's own color, so nothing here follows the theme by hand."""
 from html import escape
 

@@ -1,4 +1,4 @@
-"""A picture and a short text for sharing a Log check, made from the log's own numbers and, for a POTA log, how its park compares. Nothing here
+"""A picture and a short text for sharing a Log analysis, made from the log's own numbers and, for a POTA log, how its park compares. Nothing here
 reads the network, and nothing is saved: the picture and the text are built on the page for the person who uploaded the log to post as they like.
 They state only what the log and POTA's list say, in plain words."""
 import io
@@ -69,7 +69,7 @@ def share_png(facts):
     """The summary as a 1200 by 630 picture, as PNG bytes."""
     fig = Figure(figsize=SIZE, dpi=100)
     fig.patch.set_facecolor(BG)
-    fig.text(0.04, 0.925, "FARFIELD LAB · LOG CHECK", color=TEAL, fontsize=10, fontweight="bold", va="center")
+    fig.text(0.04, 0.925, "FARFIELD LAB · LOG ANALYSIS", color=TEAL, fontsize=10, fontweight="bold", va="center")
     who = " · ".join(x for x in (facts["call"], facts["dates"]) if x)
     fig.text(0.96, 0.925, who, color=FG, fontsize=15, fontweight="bold", va="center", ha="right")
     title = textwrap.wrap(facts["title"], 44)[:2] or [""]

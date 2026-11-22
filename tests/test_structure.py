@@ -34,6 +34,18 @@ class Structure(unittest.TestCase):
         with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
             self.assertIn("# FarField Lab", f.read())
 
+    def test_the_log_page_is_called_log_analysis_everywhere_a_visitor_reads_it(self):
+        """The page was first called Log check; the name a visitor sees is Log analysis, and the address /log stays so shared links keep working."""
+        for name in ("web.py", "README.md", "docs/METHODOLOGY.md", "share_card.py"):
+            with open(os.path.join(HERE, *name.split("/")), encoding="utf-8") as f:
+                text = f.read()
+            self.assertNotIn("Log check", text, name)
+            self.assertNotIn("LOG CHECK", text, name)
+        with open(os.path.join(HERE, "web.py"), encoding="utf-8") as f:
+            web = f.read()
+        self.assertIn('title="Log analysis"', web)
+        self.assertIn('url_path="log"', web)
+
     def test_receivers_are_described_as_on_the_band_not_listening(self):
         """One word for the idea, everywhere a visitor reads it: a receiver that decoded something in your slots was 'on the band'."""
         for name in ("views/compare_view.py", "README.md", "docs/METHODOLOGY.md"):

@@ -1,4 +1,4 @@
-"""Log check: a contact log (ADIF) set beside the Reverse Beacon Network spots and the WSPR picture. Nothing here draws a page or
+"""Log analysis: a contact log (ADIF) set beside the Reverse Beacon Network spots and the WSPR picture. Nothing here draws a page or
 asks the network; the functions take tables and return tables, so they can be tested with made-up data.
 
 What is compared, band by band, for the stretches of the log where you were on a band:
