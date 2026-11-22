@@ -386,14 +386,19 @@ def take_autoload(ss, load):
     return load
 
 
-def view_controls(ss, cfg, pick, kind, comparing=False):
+def view_controls(ss, cfg, pick, kind, comparing=False, band_box=True):
     """The 'Filters' section of the sidebar and the 'More settings' box under it. Call it inside `with st.sidebar:`. When comparing WSPR spots you pick
-    your test's cycles on the page, so the time window is not offered. Returns what was chosen."""
+    your test's cycles on the page, so the time window is not offered. Returns what was chosen. With `band_box` False the Band box is left out (the My spots page offers band buttons above its map,
+    for the bands that have spots) and the band is whatever is already chosen, All when nothing is."""
     st.header("Filters")
     bands = ["All"] + list(BAND_COLORS)
-    ss.setdefault("band_choice", bands[pick(bands, "band")])
-    band_choice = st.selectbox("Band", bands, key="band_choice",
-                               help="A WSPR antenna test has to be judged one band at a time." if comparing else None)
+    if band_box:
+        ss.setdefault("band_choice", bands[pick(bands, "band")])
+        band_choice = st.selectbox("Band", bands, key="band_choice",
+                                   help="A WSPR antenna test has to be judged one band at a time." if comparing else None)
+    else:
+        ss.setdefault("band_choice", "All")
+        band_choice = ss["band_choice"] if ss["band_choice"] in bands else "All"
     lo_t, hi_t = time(0, 0), time(23, 59)
     if kind == "WSPR" and ss.raw is not None and not ss.raw.empty:
         # The slider covers just the span of the spots loaded rather than all day, and starts out showing all of it.

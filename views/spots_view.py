@@ -23,8 +23,8 @@ def _azimuth_single_section(spots, locs, home, callsign, noun, units, scale):
     views = _views(units)
     c1, c2 = st.columns([3, 2])
     if bands > 1:
-        c1.caption(f"{bands} bands are loaded, so the dots are coloured by band. Choose a single band in the Band box to see average "
-                   "signal strength and reach by direction and distance.")
+        c1.caption(f"{bands} bands are loaded, so the dots are coloured by band. Choose a single band with the band buttons above the map "
+                   "to see average signal strength and reach by direction and distance.")
         layer = "dots"
     else:
         layer = {"Average signal strength": "snr", f"{noun.capitalize()}s heard": "reach"}[
@@ -56,7 +56,7 @@ def _azimuth_single_section(spots, locs, home, callsign, noun, units, scale):
 def _session_report_view(spots, locs, home, units, noun, band_choice):
     """The Session report tab: what the loaded spots say about each band you used, and when."""
     if band_choice != "All":
-        st.caption(f"This tab shows every band you loaded; the Band filter ({band_choice}) only applies to the map tab.")
+        st.caption(f"This tab shows every band you loaded; the band you chose on the map tab ({band_choice}) only applies there.")
     for line in sr.headline(spots, locs, home, units, noun):
         st.markdown(f"- {line}")
 
@@ -113,6 +113,25 @@ def _session_report_view(spots, locs, home, units, noun, band_choice):
         st.dataframe(sr.country_table(spots), width="stretch", hide_index=True)
 
 
+def _band_buttons(spots):
+    """A row of buttons above the map: All, then one for each band that has spots (with how many), so there is nothing to scroll past.
+    It opens on All, which is every spot of the day. A band chosen earlier that has no spots now (another day) falls back to All, and
+    with only one band there is nothing to choose. Returns the band chosen."""
+    ss = st.session_state
+    counts = spots["band"].value_counts()
+    order = [b for b in BAND_COLORS if b in counts.index] + sorted(b for b in counts.index if b not in BAND_COLORS)
+    if len(order) < 2:
+        ss["band_choice"] = "All"
+        return "All"
+    options = ["All"] + order
+    if ss.get("band_choice") not in options:
+        ss["band_choice"] = "All"
+    return st.radio("Band", options, horizontal=True, key="band_choice",
+                    format_func=lambda b: f"All ({len(spots):,})" if b == "All" else f"{b} ({counts[b]:,})",
+                    help="Only the bands that have spots are listed, with how many. The map, the numbers and the charts under it follow the band you pick; "
+                         "the Session report tab always shows every band.")
+
+
 def spots_page():
     if BANNER.exists():
         st.image(str(BANNER), width="stretch")
@@ -134,7 +153,7 @@ def spots_page():
                   help="Clears everything: the callsign, grid, date and loaded spots.")
         where.load = inputs.take_autoload(ss, load)
         st.divider()
-        view = inputs.view_controls(ss, cfg, pick, where.kind)
+        view = inputs.view_controls(ss, cfg, pick, where.kind, band_box=False)
         st.caption(f":material/satellite_alt: {refresh_msg}")
     inputs.remember(ss, cfg, where, view)
     inputs.load_spots(ss, skimmers, where)
@@ -147,7 +166,7 @@ def spots_page():
         return
     if inputs.nothing_found_message(ss):
         return
-    band_choice, units, tiles, show_all = view.band, view.units, view.tiles, view.show_all
+    units, tiles, show_all = view.units, view.tiles, view.show_all
 
     wspr = ss.kind == "WSPR"
     locs = ss.locs if wspr else skimmers
@@ -156,10 +175,8 @@ def spots_page():
     spots = ss.raw
     spots = spots[(spots["time"].dt.time >= view.start_t) & (spots["time"].dt.time <= view.end_t) & (spots["snr"] >= view.min_snr)]
     all_bands = spots
-    if band_choice != "All":
-        spots = spots[spots["band"] == band_choice]
     if spots.empty:
-        st.warning("No spots match the current filters. Set **Band** to All, or widen the UTC time window in the sidebar.")
+        st.warning("No spots match the current filters. Widen the UTC time window, or lower the minimum SNR, in the sidebar.")
         return
 
     lat, lon, label = ss.home
@@ -173,6 +190,8 @@ def spots_page():
                    f"{ss.raw['time'].max():%H:%M} UTC. Sent something since? Click **Load spots** again.")
     tab_map, tab_report = st.tabs([":material/map: Map & direction", ":material/event_note: Session report"])
     with tab_map:
+        band_choice = _band_buttons(all_bands)
+        spots = all_bands if band_choice == "All" else all_bands[all_bands["band"] == band_choice]
         stats = compute_stats(spots, locs, home)
         missing = {s for s in spots["spotter"].unique() if skimmer_location(s, locs) is None}
         placed = sorted((s, b) for s in spots["spotter"].unique() if (b := placed_by_base(s, locs)))  # shown at the base callsign's place

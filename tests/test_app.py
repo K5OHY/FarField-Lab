@@ -183,6 +183,34 @@ class MySpotsPage(unittest.TestCase):
         self.assertEqual(len(at.tabs), 2)  # Map & direction, Session report
         self.assertTrue(any("call=K5OHY" in c.value for c in at.sidebar.code))
 
+    def test_the_map_has_band_buttons_for_the_bands_that_have_spots_and_opens_on_all(self):
+        at = page_after_example("spots_page", "map").run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual([s.label for s in at.sidebar.selectbox if s.label == "Band"], [])       # the sidebar Band box is gone from this page
+        raw = at.session_state["raw"]
+        raw = raw[raw["snr"] >= 0]                                                               # the page's minimum SNR is 0 dB
+        bands = [r for r in at.main.radio if r.key == "band_choice"][0]
+        self.assertEqual(bands.value, "All")
+        present = set(raw["band"])
+        self.assertGreater(len(present), 1)
+        self.assertEqual(set(bands.options[1:]), {f"{b} ({n:,})" for b, n in raw["band"].value_counts().items()})   # only bands with spots, each with its count
+        self.assertEqual(bands.options[0], f"All ({len(raw):,})")
+        one = max(present, key=lambda b: (raw["band"] == b).sum())
+        bands.set_value(one)
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["band_choice"], one)
+        shown = [m.value for m in at.metric if m.label == "Spots"][0]
+        self.assertEqual(shown, f"{int((raw['band'] == one).sum()):,}")                          # the numbers follow the band
+        self.assertEqual(len(at.tabs), 2)
+
+    def test_a_band_with_no_spots_today_falls_back_to_all(self):
+        at = page_after_example("spots_page", "map")
+        at.session_state["band_choice"] = "2200m"
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["band_choice"], "All")
+
     def test_the_log_check_page_asks_for_a_log_and_nothing_else(self):
         at = page("log_page").run()
         self.assertEqual(errors(at), [])

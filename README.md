@@ -70,7 +70,7 @@ WSPR differs from RBN in a few ways: SNR is mostly negative (about -30 to +5 dB)
 
 - Paths from you to every station that heard you, drawn as great circles and coloured by band.
 - Dots sized and coloured by SNR. Click one for every spot from that station. The farthest station is circled.
-- Filters: **Band**, **UTC time window** (one-minute steps), and **Minimum SNR** (RBN). They update the map instantly.
+- Band buttons above the map: **All** (every spot of the day) and one for each band that has spots, so a single click shows just that band. The sidebar filters are the **UTC time window** (one-minute steps) and **Minimum SNR** (RBN). They update the map instantly.
 - A **Session report** tab for the whole day, across every band you loaded: when you were heard on each band, a band-by-hour grid (spots, farthest reach or median signal), a band scorecard, and how many stations heard you on each band by region (US East/Central/West, Canada, Europe, Asia and so on). It counts time you were *heard*, not time on the air, because a spot only exists when someone heard you.
 - A **World view from your station** below the map: the same azimuthal map, coloured by average SNR or by how many stations heard you in each direction and distance cell.
 - Stats above the map, a compass chart of your spots by direction below it, and a sortable spot table.
