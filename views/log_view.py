@@ -11,7 +11,7 @@ import log_check_html as lh
 import share_card as sc
 import space_weather as sw
 from compare_stats import locate as skimmer_location
-from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, skimmer_data
+from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, load_sota_summit, skimmer_data
 from maps import build_map, great_circle, park_map
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
 from ui_common import BANNER, KM_PER_MILE
@@ -41,20 +41,37 @@ def _pota_park(ref):
     return load_pota_park(ref)
 
 
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _sota_summit(ref):
+    """SOTA's record of a summit and its activations, kept for six hours. Raises RuntimeError when SOTA cannot be reached (and so is not kept)."""
+    return load_sota_summit(ref)
+
+
+def _log_grids(log):
+    """The grid square the log gives each station, by callsign (the first one given), so those stations are placed with no lookup."""
+    if "their_grid" not in log:
+        return {}
+    given = log[log["their_grid"] != ""].drop_duplicates("call")
+    return dict(zip(given["call"], given["their_grid"]))
+
+
 def _pota_cards(log, call):
-    """One card for each park the log was made from (at most four): a headline across the top, then a map and what is known about the park on the
-    left and how the activations compare on the right. A note instead when POTA cannot be reached. Returns the comparisons that were made."""
+    """One card for each park (POTA) or summit (SOTA) the log was made from (at most four): a headline across the top, then a map and what is known
+    about the place on the left and how the activations compare on the right. A note instead when the program cannot be reached. Returns the
+    comparisons that were made."""
     cards = []
-    for ref in lc.pota_refs(log)[:4]:
+    jobs = [("POTA", r) for r in lc.pota_refs(log)] + [("SOTA", r) for r in lc.sota_refs(log)]
+    for program, ref in jobs[:4]:
+        noun = "summit" if program == "SOTA" else "park"
         try:
-            park, acts, totals = _pota_park(ref)
+            park, acts, totals = _sota_summit(ref) if program == "SOTA" else _pota_park(ref)
         except RuntimeError as exc:
-            st.caption(f"{ref}: {exc} The park comparison is left out.")
+            st.caption(f"{ref}: {exc} The {noun} comparison is left out.")
             continue
         if park is None and acts.empty:
-            st.caption(f"POTA does not know {ref}, so there is no park comparison.")
+            st.caption(f"{program} does not know {ref}, so there is no {noun} comparison.")
             continue
-        card = lc.pota_compare(log, ref, park, acts, call, totals)
+        card = lc.pota_compare(log, ref, park, acts, call, totals, program)
         cards.append(card)
         banner = lh.pota_banner_html(card)
         if banner:
@@ -62,7 +79,7 @@ def _pota_cards(log, call):
         if park and park.get("latitude") is not None and park.get("longitude") is not None:
             left, right = st.columns([2, 3])
             left.iframe(park_map(float(park["latitude"]), float(park["longitude"]), f"{ref} {park.get('name', '')}".strip()).get_root().render(), height=300)
-            facts = lh.park_facts_html(card)
+            facts = lh.summit_facts_html(card) if program == "SOTA" else lh.park_facts_html(card)
             if facts:
                 left.html(lh.CSS + facts)
             right.html(lh.CSS + lh.pota_html(card))
@@ -190,7 +207,7 @@ def _regions_section(result):
     st.html(lh.CSS + lh.regions_html(regions, pick))
 
 
-def _places_for(rows, digest, skimmers):
+def _places_for(rows, digest, skimmers, grids=None):
     """Where the stations on one band were, looked up only for the ones not looked up before. Kept for this log, so each station is
     only looked up once however often you change band."""
     saved = st.session_state.get("log_places")
@@ -199,7 +216,7 @@ def _places_for(rows, digest, skimmers):
     todo = [r for r in rows if r[0] not in saved["tried"]]
     if todo:
         bar = st.progress(0.0, text="Looking up where your contacts were…")
-        found = load_contact_places(todo, skimmers, progress=lambda done, total: bar.progress(done / total, text=f"Looked up {done} of {total}…"))
+        found = load_contact_places(todo, skimmers, progress=lambda done, total: bar.progress(done / total, text=f"Looked up {done} of {total}…"), grids=grids)
         bar.empty()
         if len(found):
             saved["places"] = pd.concat([saved["places"], found]) if len(saved["places"]) else found
@@ -217,10 +234,12 @@ def _prefetch_places(log, skimmers, digest):
     jobs = [list(log[log["band"] == band].drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
             for band in log["band"].value_counts().index]
 
+    grids = _log_grids(log)
+
     def run():
         for rows in jobs:
             try:
-                load_contact_places(rows, skimmers, workers=4)
+                load_contact_places(rows, skimmers, workers=4, grids=grids)
             except Exception:
                 pass
     threading.Thread(target=run, daemon=True, name="log-places").start()
@@ -253,7 +272,7 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     mine = log[log["band"] == pick]
     shown_log = mine[mine["mode"] == "CW"] if cw_only else mine
     rows = list(shown_log.drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
-    places = _places_for(rows, digest, locs)
+    places = _places_for(rows, digest, locs, _log_grids(log))
     worked = lc.where_worked(shown_log, places)
     worked = worked.assign(bands_worked=worked["call"].map(log.groupby("call")["band"].nunique()))
     lo, hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)

@@ -491,37 +491,59 @@ def park_facts_html(card):
     return ('<div class="lc"><div class="lc-card"><h4>About the park</h4><ul class="lc-says">' + "".join(f"<li>{f}</li>" for f in facts) + "</ul></div></div>") if facts else ""
 
 
+def summit_facts_html(card):
+    """About the summit, from SOTA's record of it: where it is, how high, its points, who first activated it (from the list), and a link to its
+    page on the SOTA website. Empty when SOTA has no record of the summit."""
+    p = card["park"]
+    if not p:
+        return ""
+    facts = []
+    if card["where"]:
+        facts.append(escape(card["where"]))
+    if p.get("altM"):
+        facts.append(f"{int(p['altM']):,} m ({int(p.get('altFt') or 0):,} ft) high" + (f" \u00b7 grid {escape(str(p['locator']))}" if p.get("locator") else ""))
+    if p.get("points") is not None:
+        facts.append(f"{int(p['points'])} points" + (f" plus {int(p['bonusPoints'])} bonus" if p.get("bonusPoints") else ""))
+    if card["first"]:
+        facts.append(f"First activation listed: <b>{escape(card['first'][0])}</b>, {card['first'][1]:%d %b %Y}")
+    facts.append(f'<a href="https://www.sota.org.uk/Summit/{escape(card["ref"], quote=True)}" target="_blank" rel="noopener noreferrer">this summit on the SOTA website</a>')
+    return '<div class="lc"><div class="lc-card"><h4>About the summit</h4><ul class="lc-says">' + "".join(f"<li>{f}</li>" for f in facts) + "</ul></div></div>"
+
+
 def pota_banner_html(card):
-    """The headline of the park card, large: the best day of the log against every activation listed for the park, and where you stand among
-    its activators. Empty when no day of the log has a rank."""
+    """The headline of the park or summit card, large: the best day of the log against every activation listed, and where you stand among its
+    activators. Empty when no day of the log has a rank."""
     from log_check import pota_headline
     h = pota_headline(card)
     if h is None:
         return ""
-    return ('<div class="lc"><div class="lc-hero"><div class="k">POTA PARK ' + escape(card["ref"]) + f'</div><h3>{escape(h["title"])}</h3><p>{escape(h["line"])}</p>'
+    label = f"{card.get('program', 'POTA')} {card.get('noun', 'park').upper()} "
+    return ('<div class="lc"><div class="lc-hero"><div class="k">' + escape(label + card["ref"]) + f'</div><h3>{escape(h["title"])}</h3><p>{escape(h["line"])}</p>'
             + (f'<p class="s">{escape(h["standing"])}</p>' if h["standing"] else "") + "</div></div>")
 
 
 def pota_html(card):
-    """How a park compares: a few counts, one line for each activation in the log and for everything under your callsign, and two short tables:
-    the park's top activators and its biggest activations."""
-    tiles = ('<div class="lc-tiles">' + _tile(f"{card['n_acts']:,}", "--b", "activations at this park", "listed by POTA")
+    """How a park or summit compares: a few counts, one line for each activation in the log and for everything under your callsign, and two short
+    tables: the top activators and the biggest activations. SOTA lists QSOs only, so its tables have no mode columns."""
+    noun, program = card.get("noun", "park"), card.get("program", "POTA")
+    modes = program == "POTA"
+    tiles = ('<div class="lc-tiles">' + _tile(f"{card['n_acts']:,}", "--b", f"activations at this {noun}", f"listed by {program}")
              + _tile(f"{card['n_activators']:,}", "--t", "activators", "different stations")
              + _tile(f"{card['yours_listed']:,}", "--a", "your activations here", f"listed under {escape(card['me'])}") + "</div>")
     says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(a)}</b> {escape(b)}</li>" for a, b in pota_notes(card)) + "</ul>") if card["rows"] else ""
     act = card["top_activators"]
     rows_a = "".join(f"<tr><td>{escape(str(who))}" + (" <small>(you)</small>" if who == card["me"] else "")
-                     + f"</td><td>{int(r.activations):,}</td><td>{int(r.qsos):,}</td><td>{int(r.cw):,}</td></tr>" for who, r in act.iterrows())
-    table_a = ('<p class="sub" style="margin-top:12px"><b>The park\'s top activators</b> (by QSOs listed)</p><div class="lc-cgw"><table class="lc-reg"><tr><th>Station</th>'
-               '<th>Activations</th><th>QSOs</th><th>CW QSOs</th></tr>' + rows_a + "</table></div>") if len(act) else ""
+                     + f"</td><td>{int(r.activations):,}</td><td>{int(r.qsos):,}</td>" + (f"<td>{int(r.cw):,}</td>" if modes else "") + "</tr>" for who, r in act.iterrows())
+    table_a = (f'<p class="sub" style="margin-top:12px"><b>The {noun}\'s top activators</b> (by QSOs listed)</p><div class="lc-cgw"><table class="lc-reg"><tr><th>Station</th>'
+               '<th>Activations</th><th>QSOs</th>' + ("<th>CW QSOs</th>" if modes else "") + '</tr>' + rows_a + "</table></div>") if len(act) else ""
     top = card["top"]
     rows = "".join(f"<tr><td>{r.date:%d %b %Y}</td><td>{escape(r.call)}" + (" <small>(you)</small>" if r.who == card["me"] else "")
-                   + f"</td><td>{r.total:,}</td><td>{r.cw:,}</td><td>{r.phone:,}</td><td>{r.data:,}</td></tr>" for r in top.itertuples())
-    table = ('<p class="sub" style="margin-top:12px"><b>The biggest activations listed for this park</b></p><div class="lc-cgw"><table class="lc-reg"><tr><th>Date</th><th>Station</th>'
-             '<th>QSOs</th><th>CW</th><th>Phone</th><th>Data</th></tr>' + rows + "</table></div>") if len(top) else ""
-    return ('<div class="lc"><div class="lc-card"><h4>How this park compares: ' + escape(f"{card['ref']} {card['name']}".strip()) + "</h4>"
-            '<p class="sub">Counts from POTA\'s public activation list, as the activators uploaded them, so they can be out of date. '
-            'An activation is one UTC day at the park. Ranks are by QSOs, with the most first; a tie shares a rank.</p>' + tiles + says + table_a + table + '</div></div>')
+                   + f"</td><td>{r.total:,}</td>" + (f"<td>{r.cw:,}</td><td>{r.phone:,}</td><td>{r.data:,}</td>" if modes else "") + "</tr>" for r in top.itertuples())
+    table = (f'<p class="sub" style="margin-top:12px"><b>The biggest activations listed for this {noun}</b></p><div class="lc-cgw"><table class="lc-reg"><tr><th>Date</th><th>Station</th>'
+             '<th>QSOs</th>' + ("<th>CW</th><th>Phone</th><th>Data</th>" if modes else "") + '</tr>' + rows + "</table></div>") if len(top) else ""
+    return (f'<div class="lc"><div class="lc-card"><h4>How this {noun} compares: ' + escape(f"{card['ref']} {card['name']}".strip()) + "</h4>"
+            f'<p class="sub">Counts from {program}\'s public activation list, as the activators uploaded them, so they can be out of date. '
+            f'An activation is one UTC day at the {noun}. Ranks are by QSOs, with the most first; a tie shares a rank.</p>' + tiles + says + table_a + table + '</div></div>')
 
 
 def band_table_html(bands, min_contacts=3):
@@ -776,6 +798,8 @@ def followers_html(log, summary, rows=LADDER_ROWS):
                                         f"Longest quiet gap: {summary['longest_gap_min']:.1f} minutes."))
     if summary["park_to_park"]:
         facts.append(_fact("Park to park", f"<b>{summary['park_to_park']} contacts</b> with {summary['parks']} park{'s' if summary['parks'] != 1 else ''}."))
+    if summary.get("summit_to_summit"):
+        facts.append(_fact("Summit to summit", f"<b>{summary['summit_to_summit']} contacts</b> with {summary['summits']} summit{'s' if summary['summits'] != 1 else ''}."))
     dupes = same_band_repeats(log)
     if dupes:
         facts.append(_fact("Worked twice on a band", f"{dupes} station{'s were' if dupes != 1 else ' was'} logged more than once on the same band."))

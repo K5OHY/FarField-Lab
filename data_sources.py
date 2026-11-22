@@ -213,6 +213,34 @@ def load_pota_park(ref):
     return (info if isinstance(info, dict) and info.get("reference") else None), table.dropna(subset=["date"]).reset_index(drop=True), totals
 
 
+SOTA_API = "https://api2.sota.org.uk/api"
+
+
+def load_sota_summit(ref):
+    """SOTA's record of a summit and every activation listed for it, from SOTA's public data service: (summit dict or None, activations as a table of
+    call, date, total, cw, phone, data (SOTA gives the QSOs of an activation, not the modes, so the mode columns are 0), and None). Only the
+    summit reference is sent. Raises RuntimeError when SOTA cannot be reached."""
+    def ask(url):
+        for attempt in (1, 2):
+            try:
+                resp = requests.get(url, headers=HEADERS, timeout=30)
+                resp.raise_for_status()
+                return resp
+            except requests.RequestException:
+                if attempt == 2:
+                    raise
+
+    try:
+        summit = ask(f"{SOTA_API}/summits/{ref}").json()
+        rows = ask(f"{SOTA_API}/activations/{ref}").json() or []
+    except (requests.RequestException, ValueError) as exc:
+        raise RuntimeError(f"SOTA could not be reached ({exc.__class__.__name__}).") from exc
+    dates = pd.to_datetime([str(r.get("activationDate", "")) for r in rows], utc=True, errors="coerce")
+    table = pd.DataFrame({"call": [str(r.get("ownCallsign", "")) for r in rows], "date": dates.tz_localize(None).normalize() if len(rows) else pd.to_datetime([]),
+                          "total": [int(r.get("qsos") or 0) for r in rows]}).assign(cw=0, phone=0, data=0)
+    return (summit if isinstance(summit, dict) and summit.get("summitCode") else None), table.dropna(subset=["date"]).reset_index(drop=True), None
+
+
 _RECENT = {}                  # callsign -> (answer, when it was asked): misses and guesses are kept for an hour, so a band is never asked twice
 RECENT_SECONDS = 3600
 
@@ -242,17 +270,38 @@ def _place_without_lookup(call, state, country):
     return finish_place((guess[0], guess[1], None, f"center of {guess[2]}") if guess else None, state, country)
 
 
-def load_contact_places(rows, skimmers, progress=None, workers=6):
+def _place_from_log_grid(call, state, country, grids):
+    """A contact placed from the grid square the log itself gives (the centre of its 4 character square, so a street is never drawn), or None."""
+    from rbn_data import maidenhead_to_latlon
+    grid = str((grids or {}).get(call, "")).strip()
+    if len(grid) < 4:
+        return None
+    for size in (8, 6, 4):
+        if len(grid) >= size:
+            try:
+                lat, lon = maidenhead_to_latlon(grid[:size])
+            except ValueError:
+                continue
+            return finish_place((lat, lon, grid[:size], "grid square in the log"), state, country)
+    return None
+
+
+def load_contact_places(rows, skimmers, progress=None, workers=6, grids=None):
     """Where each station in a log was, as a table indexed by call (lat, lon, level, source, grid). `rows` is a list of
     (call, state, country). Exact answers are shown at the centre of the 4 character grid square, a miss falls back to the centre of
     the state in the log, and a call that cannot be placed at all is left out. Stations the log puts outside North America are placed at
-    the centre of their country without a lookup. A few lookups run at once; `progress(done, total)` is called as they finish."""
+    the centre of their country without a lookup. `grids` maps a call to the grid square the log gives it: such a contact is placed from that, with no
+    lookup at all. A few lookups run at once; `progress(done, total)` is called as they finish."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     done, out = 0, {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {}
         for call, state, country in rows:
-            if country in _NORTH_AMERICA:
+            from_log = _place_from_log_grid(call, state, country, grids)
+            if from_log:
+                out[call] = from_log
+                done += 1
+            elif country in _NORTH_AMERICA:
                 futures[pool.submit(_found, call, skimmers)] = (call, state, country)
             else:
                 placed = _place_without_lookup(call, state, country)

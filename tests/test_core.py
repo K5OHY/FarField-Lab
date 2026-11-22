@@ -1882,7 +1882,7 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertIn("activations at this park", html)
         self.assertIn("your activations here", html)
         banner = lh.pota_banner_html(card)
-        self.assertIn("The 3rd biggest activation listed at San Angelo", banner)
+        self.assertIn("Your biggest activation at San Angelo", banner)                              # 3rd of 5 is not a top rank, but more than your other listed day
         self.assertIn("You are its 2nd activator of 3 by QSOs: 2 activations and 9 QSOs, 8 of them CW.", banner)    # 15 for N5NU, 9 for you, 3 for AI5YA
         self.assertIn("The park's top activators", html)
         self.assertIn("K5OHY <small>(you)</small>", html)                                         # your own rows in the lists are marked
@@ -2072,9 +2072,9 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual(facts["call"], "K5OHY")
         self.assertEqual(facts["dates"], "18 Nov 2026")
         self.assertEqual([label for _, label, _ in facts["numbers"]], ["contacts", "DXCC entities", "bands", "US states"])
-        self.assertTrue(facts["title"].startswith("The 3rd biggest activation listed at San Angelo"))
+        self.assertTrue(facts["title"].startswith("Your biggest activation at San Angelo"))
         text = sc.share_text(facts)
-        self.assertTrue(text.startswith("K5OHY \u00b7 18 Nov 2026\nThe 3rd biggest activation listed at San Angelo"))
+        self.assertTrue(text.startswith("K5OHY \u00b7 18 Nov 2026\nYour biggest activation at San Angelo"))
         self.assertIn("9 contacts \u00b7 6 DXCC entities \u00b7 2 bands \u00b7 3 US states", text)
         self.assertIn("DX: ", text)
         self.assertTrue(text.endswith("Made with FarField Lab (farfieldlab.streamlit.app)"))
@@ -2087,6 +2087,115 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertTrue(sc.share_png(plain).startswith(b"\x89PNG"))
         long = dict(facts, title="A very long park name " * 8, subtitle="and a very long line " * 20, lines=["x" * 400])
         self.assertTrue(sc.share_png(long).startswith(b"\x89PNG"))                                      # long text is cut, never an error
+
+    def sota_log(self):
+        def rec(call, hhmm, **f):
+            extra = "".join(f"<{k.upper()}:{len(str(v))}>{v} " for k, v in f.items())
+            return f"<CALL:{len(call)}>{call} <QSO_DATE:8>20260330 <TIME_ON:4>{hhmm} <BAND:3>20m <MODE:2>CW {extra}<EOR>"
+        rows = [rec(f"W{i}AA", f"21{i:02d}", my_sota_ref="W5N/CN-001", gridsquare="EM12" if i % 2 else "FN31pr") for i in range(6)]
+        rows += [rec("W4C", "2210", my_sota_ref="W5N/CN-001", sota_ref="W4C/WM-010", gridsquare="EM73"), rec("W7W", "2211", my_sota_ref="W5N/CN-001", sota_ref="W7W/KG-031"),
+                 rec("W7X", "2212", my_sota_ref="W5N/CN-001", sota_ref="W7W/KG-O31")]                     # the same summit again, typed with a letter O
+        return lc.parse_adif("".join(rows))
+
+    def sota_acts(self):
+        rows = [("K5OHY", "2026-03-30", 9), ("KG5DRT", "2021-12-17", 92), ("WZ4M", "2026-03-01", 55)]
+        return pd.DataFrame({"call": [r[0] for r in rows], "date": pd.to_datetime([r[1] for r in rows]), "total": [r[2] for r in rows]}).assign(cw=0, phone=0, data=0)
+
+    def test_a_sota_log_carries_its_summit_the_other_summit_and_the_grid(self):
+        log = self.sota_log()
+        self.assertEqual(lc.sota_refs(log), ["W5N/CN-001"])
+        self.assertEqual(lc.pota_refs(log), [])                                                  # not a park
+        self.assertEqual(list(log["sota_ref"].iloc[-3:]), ["W4C/WM-010", "W7W/KG-031", "W7W/KG-O31"])
+        self.assertEqual(log["their_grid"].iloc[0], "FN31PR")
+        self.assertEqual((lc.clean_sota("W7W/KG-O31"), lc.clean_sota("w5n/cn-001"), lc.clean_sota("US-3053"), lc.clean_sota("")), ("W7W/KG-031", "W5N/CN-001", "", ""))
+        s = lc.summary(log)
+        self.assertEqual((s["summit_to_summit"], s["summits"]), (3, 2))                          # three contacts, two different summits once the O is read as a 0
+        self.assertIn("Summit to summit", lh.followers_html(log, s))
+        by_sig = lc.parse_adif("<CALL:5>W1AAA <QSO_DATE:8>20260330 <TIME_ON:4>2100 <BAND:3>20m <MODE:2>CW <MY_SIG:4>SOTA <MY_SIG_INFO:10>W5T/GU-018 <EOR>")
+        self.assertEqual(lc.sota_refs(by_sig), ["W5T/GU-018"])                                   # MY_SIG and MY_SIG_INFO work as well
+
+    def test_a_summit_is_ranked_by_qsos_only_and_worded_as_a_summit(self):
+        log = self.sota_log()
+        summit = {"summitCode": "W5N/CN-001", "name": "Camp Wilderness Ridge", "points": 6, "bonusPoints": None, "altM": 2262, "altFt": 7420, "locator": "DM72oa",
+                  "regionName": "Cornudas Mountains", "associationName": "USA - New Mexico", "latitude": 32.0227, "longitude": -104.8042}
+        card = lc.pota_compare(log, "W5N/CN-001", summit, self.sota_acts().iloc[1:], "K5OHY", None, "SOTA")        # this day is not listed under K5OHY yet
+        self.assertEqual((card["program"], card["noun"], card["kind"]), ("SOTA", "summit", "Summit"))
+        self.assertEqual(list(card["rows"][0]["ranks"]), ["total"])                              # no mode ranks: SOTA lists QSOs only
+        self.assertEqual(card["rows"][0]["ranks"]["total"], (3, 3))
+        head = lc.pota_headline(card)
+        self.assertIn("SOTA lists for this summit", head["line"])
+        self.assertIn("It is not on SOTA yet", head["line"])
+        listed = lc.pota_compare(log, "W5N/CN-001", summit, self.sota_acts(), "K5OHY", None, "SOTA")
+        self.assertEqual(listed["rows"][0]["ranks"]["total"], (3, 3))                            # 9 QSOs, with 92 and 55 listed for other stations
+        self.assertEqual(lc.pota_headline(listed)["title"], "Your activation at Camp Wilderness Ridge")
+        two = self.sota_acts().iloc[[0, 1]].assign(total=[200, 92])
+        self.assertIn("more than the other activation SOTA lists for this summit", lc.pota_headline(lc.pota_compare(log, "W5N/CN-001", summit, two, "K5OHY", None, "SOTA"))["line"])
+        html = lh.pota_html(listed)
+        self.assertIn("How this summit compares: W5N/CN-001 Camp Wilderness Ridge", html)
+        self.assertIn("activations at this summit", html)
+        self.assertIn("listed by SOTA", html)
+        self.assertNotIn("CW QSOs", html)                                                        # no mode columns for SOTA
+        self.assertNotIn("<th>CW</th>", html)
+        self.assertIn("SOTA SUMMIT W5N/CN-001", lh.pota_banner_html(card))
+        facts = lh.summit_facts_html(card)
+        self.assertIn("Cornudas Mountains, USA - New Mexico", facts)
+        self.assertIn("2,262 m (7,420 ft) high", facts)
+        self.assertIn("grid DM72oa", facts)
+        self.assertIn("6 points", facts)
+        self.assertIn('href="https://www.sota.org.uk/Summit/W5N/CN-001"', facts)
+        self.assertEqual(lh.summit_facts_html(dict(card, park={})), "")
+        self.assertIn("park", lh.pota_html(lc.pota_compare(self.pota_log(), "US-3053", {"name": "San Angelo"}, self.pota_acts(), "K5OHY")))   # POTA is unchanged
+
+    def test_sota_is_asked_for_a_summit_with_only_its_reference(self):
+        class Resp:
+            def __init__(self, body):
+                self.body = body
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self.body
+
+        asked = []
+
+        def get(url, **k):
+            asked.append(url)
+            if "/activations/" in url:
+                return Resp([{"id": 1, "userId": 5, "activationDate": "2026-03-30T00:00:00Z", "ownCallsign": "K5OHY", "qsos": 113},
+                             {"id": 2, "userId": 6, "activationDate": "2021-12-17T00:00:00Z", "ownCallsign": "KG5DRT", "qsos": 92}])
+            return Resp({"summitCode": "W5N/CN-001", "name": "Camp Wilderness Ridge", "points": 6})
+
+        with mock.patch.object(ds.requests, "get", get):
+            summit, acts, totals = ds.load_sota_summit("W5N/CN-001")
+        self.assertEqual(summit["name"], "Camp Wilderness Ridge")
+        self.assertIsNone(totals)
+        self.assertEqual(asked, ["https://api2.sota.org.uk/api/summits/W5N/CN-001", "https://api2.sota.org.uk/api/activations/W5N/CN-001"])
+        self.assertEqual(acts.iloc[0].to_dict(), {"call": "K5OHY", "date": pd.Timestamp("2026-03-30"), "total": 113, "cw": 0, "phone": 0, "data": 0})
+        with mock.patch.object(ds.requests, "get", lambda url, **k: Resp({"message": "nothing"} if "/summits/" in url else [])):
+            summit, acts, _ = ds.load_sota_summit("W9X/ZZ-999")
+        self.assertIsNone(summit)                                                                # a summit SOTA does not know
+        self.assertTrue(acts.empty)
+        with mock.patch.object(ds.requests, "get", mock.Mock(side_effect=ds.requests.ConnectionError("down"))):
+            with self.assertRaises(RuntimeError):
+                ds.load_sota_summit("W5N/CN-001")
+
+    def test_contacts_with_a_grid_in_the_log_are_placed_with_no_lookup(self):
+        asked = []
+
+        def lookup(call, skimmers=None):
+            asked.append(call)
+            return None
+
+        rows = [("W1AAA", "PA", "United States"), ("W2BBB", "NY", "United States"), ("DL1AAA", "", "Fed. Rep. of Germany"), ("W4CCC", "FL", "United States")]
+        grids = {"W1AAA": "FN31pr", "DL1AAA": "JO62", "W2BBB": "xx"}            # a grid for a German station too; a nonsense grid for W2BBB; none for W4CCC
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(os.environ, {"RBN_CACHE_DIR": folder}), mock.patch.object(ds, "lookup_callsign_location", lookup):
+            ds._RECENT.clear()
+            table = ds.load_contact_places(rows, {}, workers=1, grids=grids)
+        self.assertEqual(sorted(asked), ["W2BBB", "W4CCC"])                                    # only the two without a usable grid were looked up
+        self.assertEqual((table.loc["W1AAA", "level"], table.loc["W1AAA", "source"], table.loc["W1AAA", "grid"]), ("grid", "grid square in the log", "FN31"))   # shown at the 4 character centre
+        self.assertEqual(table.loc["DL1AAA", "grid"], "JO62")                                  # a station abroad is placed from its grid too
+        self.assertAlmostEqual(table.loc["W1AAA", "lat"], 41.5)
 
     def test_the_followers_diamond_is_drawn_above_the_blocks(self):
         rule = lh.CSS[lh.CSS.index(".lc-d{"):]

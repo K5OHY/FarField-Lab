@@ -99,6 +99,8 @@ def parse_adif(text):
             mode = f["SUBMODE"].upper()
         rows.append({"call": f["CALL"].upper(), "time": when, "band": band, "mode": mode, "state": f.get("STATE", "").upper(),
                      "country": f.get("COUNTRY", ""), "cont": f.get("CONT", "").upper(), "pota_ref": f.get("POTA_REF", ""),
+                     "my_sota": (f.get("MY_SOTA_REF") or (f.get("MY_SIG_INFO", "") if f.get("MY_SIG", "").upper() == "SOTA" else "")).upper(),
+                     "sota_ref": f.get("SOTA_REF", "").strip().upper(), "their_grid": f.get("GRIDSQUARE", "").strip().upper(),
                      "dxcc": f.get("DXCC", "").strip(), "cqz": f.get("CQZ", "").strip(), "ituz": f.get("ITUZ", "").strip(),
                      "my_pota": (f.get("MY_POTA_REF") or (f.get("MY_SIG_INFO", "") if f.get("MY_SIG", "").upper() == "POTA" else "")).upper(),
                      "rst_sent": f.get("RST_SENT", ""), "rst_rcvd": f.get("RST_RCVD", ""),
@@ -171,6 +173,7 @@ def summary(log):
             "per_hour": per_hour, "on_air_hours": float(on_air.sum() / 3600), "median_gap_s": float(gaps.median()) if len(gaps) else float("nan"),
             "longest_gap_min": float(gaps.max() / 60) if len(gaps) else float("nan"), "best_hour": n_best, "best_hour_start": start_best,
             "park_to_park": int(log["pota_ref"].ne("").sum()), "parks": int(log.loc[log["pota_ref"] != "", "pota_ref"].nunique()),
+            "summit_to_summit": int((_summits_of(log) != "").sum()), "summits": int(_summits_of(log).replace("", pd.NA).dropna().nunique()),
             "bands": bands_top_down(log)}
 
 
@@ -264,26 +267,59 @@ def reports_balance(log):
     return pd.DataFrame(rows)
 
 
-# ------------------------------------------------------------------------------------------------------------- POTA: how a park compares
+# ------------------------------------------------------------------------------------------------------------- POTA and SOTA: how a place compares
 
 POTA_REF = re.compile(r"^[A-Z0-9]{1,4}-\d{3,6}$")
+SOTA_REF = re.compile(r"^[A-Z0-9]{1,4}/[A-Z]{2}-\d{3}$")
 POTA_METRICS = (("total", "QSOs"), ("cw", "CW QSOs"), ("phone", "phone QSOs"), ("data", "data QSOs"))
 _PHONE = ("SSB", "USB", "LSB", "AM", "FM")
+
+
+def clean_sota(text):
+    """A SOTA summit reference tidied (W7W/KG-O31, typed with a letter O, becomes W7W/KG-031), or an empty string when it is not one."""
+    t = str(text).strip().upper()
+    m = re.match(r"^([A-Z0-9]{1,4}/[A-Z]{2}-)([0-9O]{3})$", t)
+    return (m.group(1) + m.group(2).replace("O", "0")) if m else (t if SOTA_REF.match(t) else "")
+
+
+def _summits_of(log):
+    """The summit each contact was made with (the other station's SOTA_REF, tidied), or an empty string."""
+    return log["sota_ref"].map(clean_sota) if "sota_ref" in log else pd.Series("", index=log.index)
+
+
+def _cell_refs(cell, program):
+    out = set()
+    for r in str(cell).split(","):
+        r = clean_sota(r) if program == "SOTA" else r.strip().upper()
+        if r:
+            out.add(r)
+    return out
 
 
 def pota_refs(log):
     """The parks the log was made from (MY_POTA_REF, or MY_SIG_INFO when MY_SIG is POTA), most contacts first. A two-fer lists two."""
     counts = {}
     for cell in log["my_pota"]:
-        for ref in {r.strip().upper() for r in str(cell).split(",")}:
+        for ref in _cell_refs(cell, "POTA"):
             if POTA_REF.match(ref):
                 counts[ref] = counts.get(ref, 0) + 1
     return sorted(counts, key=lambda r: -counts[r])
 
 
-def pota_days(log, ref):
-    """The activations of one park in the log, one per UTC day (POTA's rule): date, contacts, and how many were CW, phone and data."""
-    mine = log[log["my_pota"].map(lambda c: ref in {r.strip().upper() for r in str(c).split(",")})]
+def sota_refs(log):
+    """The summits the log was made from (MY_SOTA_REF, or MY_SIG_INFO when MY_SIG is SOTA), most contacts first."""
+    counts = {}
+    if "my_sota" in log:
+        for cell in log["my_sota"]:
+            for ref in _cell_refs(cell, "SOTA"):
+                counts[ref] = counts.get(ref, 0) + 1
+    return sorted(counts, key=lambda r: -counts[r])
+
+
+def pota_days(log, ref, program="POTA"):
+    """The activations of one park or summit in the log, one per UTC day (the rule of both programs): date, contacts, and how many were CW, phone and data."""
+    col = "my_sota" if program == "SOTA" else "my_pota"
+    mine = log[log[col].map(lambda c: ref in _cell_refs(c, program))]
     mode = mine["mode"].str.upper()
     kind = mode.map(lambda m: "cw" if m == "CW" else "phone" if m in _PHONE else "data")
     day = mine["time"].dt.normalize()
@@ -305,21 +341,23 @@ def _ordinal(n):
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
-def pota_compare(log, ref, park, acts, call, stats=None):
-    """How the log's activations of a park compare with every activation POTA lists for it. `park` is POTA's record of the park (or None),
-    `acts` its activations (call, date, total, cw, phone, data). For each of the log's days: POTA's count when that day is listed under
-    the callsign (else the log's own), and the rank among the listed activations by QSOs, CW, phone and data QSOs (1 is the most; a tie
-    shares a rank). Counts are what activators uploaded to POTA, so they can be out of date."""
+def pota_compare(log, ref, park, acts, call, stats=None, program="POTA"):
+    """How the log's activations of a park (POTA) or a summit (SOTA) compare with every activation the program lists for it. `park` is the program's
+    record of the place (or None), `acts` its activations (call, date, total, cw, phone, data; SOTA gives the total only). For each of the log's
+    days: the program's count when that day is listed under the callsign (else the log's own), and the rank among the listed activations by
+    QSOs (and, for POTA, CW, phone and data QSOs; 1 is the most; a tie shares a rank). Counts are what activators uploaded, so they can be out of date."""
     me = _who(call)
+    sota = program == "SOTA"
+    metrics = POTA_METRICS[:1] if sota else POTA_METRICS
     acts = acts.assign(who=acts["call"].map(_who)) if len(acts) else pd.DataFrame(columns=["call", "date", "total", "cw", "phone", "data", "who"])
     rows = []
     mine_listed = acts[acts["who"] == me].groupby("date")[["total", "cw", "phone", "data"]].sum().sort_index()
-    for r in pota_days(log, ref).itertuples():
+    for r in pota_days(log, ref, program).itertuples():
         ours = {"total": int(r.total), "cw": int(r.cw), "phone": int(r.phone), "data": int(r.data)}
         listed = r.date in mine_listed.index
         use = {k: int(mine_listed.at[r.date, k]) for k in ours} if listed else ours
         ranks = {}
-        for key, _ in POTA_METRICS:
+        for key, _ in metrics:
             v = use[key]
             if v > 0:
                 others = acts.drop(acts[(acts["who"] == me) & (acts["date"] == r.date)].index)       # everyone else's listed activations
@@ -330,10 +368,13 @@ def pota_compare(log, ref, park, acts, call, stats=None):
     by_who = (acts.groupby("who").agg(activations=("date", "size"), qsos=("total", "sum"), cw=("cw", "sum")) if len(acts)
               else pd.DataFrame(columns=["activations", "qsos", "cw"]))
     standing = None
-    if me in by_who.index:         # where you stand among everyone who has activated the park, by what is listed under your callsign
+    if me in by_who.index:         # where you stand among everyone who has activated the place, by what is listed under your callsign
         mine = by_who.loc[me]
         standing = {k: (1 + int((by_who[k] > mine[k]).sum()), int((by_who[k] > 0).sum()), int(mine[k])) for k in ("qsos", "activations", "cw") if mine[k] > 0}
-    return {"ref": ref, "name": (park or {}).get("name", ""), "kind": (park or {}).get("parktypeDesc", ""), "where": (park or {}).get("locationName", ""),
+    p = park or {}
+    where = ", ".join(x for x in (p.get("regionName"), p.get("associationName")) if x) if sota else p.get("locationName", "")
+    return {"ref": ref, "name": p.get("name", ""), "kind": "Summit" if sota else p.get("parktypeDesc", ""), "where": where,
+            "program": program, "noun": "summit" if sota else "park",
             "known": bool(park), "n_acts": len(acts), "n_activators": int(acts["who"].nunique()) if len(acts) else 0, "yours_listed": len(mine_listed),
             "first": (str(first["call"]), first["date"]) if first is not None else None, "rows": rows, "me": me,
             "my_totals": {d: int(t) for d, t in mine_listed["total"].items()}, "park": park or {}, "stats": stats, "standing": standing,
@@ -342,8 +383,9 @@ def pota_compare(log, ref, park, acts, call, stats=None):
 
 
 def pota_headline(card):
-    """The one thing to say about a park first: the log's best day there against every activation POTA lists, and where you stand among the park's
+    """The one thing to say about a park or summit first: the log's best day there against every activation listed, and where you stand among the
     activators. Returns {'title', 'line', 'standing'} (standing may be empty), or None when no day of the log has a rank."""
+    noun, program = card.get("noun", "park"), card.get("program", "POTA")
     rows = [r for r in card["rows"] if "total" in r["ranks"]]
     if not rows:
         return None
@@ -354,18 +396,20 @@ def pota_headline(card):
     others = [t for d, t in card["my_totals"].items() if d != best["date"]]
     mine = bool(others) and total > max(others)
     when = f"{best['date']:%d %b %Y}"
-    if n > 1 and rank == 1:
-        title, line = f"The biggest activation listed at {name}", f"{when}: {total:,} QSOs, the most of any of the {n:,} activations POTA lists for this park."
-    elif n > 1 and rank <= max(3, round(n * 0.05)):
-        title, line = f"The {_ordinal(rank)} biggest activation listed at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations POTA lists for this park."
+    if n == 2 and rank == 1:
+        title, line = f"The biggest activation listed at {name}", f"{when}: {total:,} QSOs, more than the other activation {program} lists for this {noun}."
+    elif n > 1 and rank == 1:
+        title, line = f"The biggest activation listed at {name}", f"{when}: {total:,} QSOs, the most of any of the {n:,} activations {program} lists for this {noun}."
+    elif n > 1 and rank <= max(round(n * 0.05), min(3, n // 2)):        # the top few, but never the bottom half of a short list
+        title, line = f"The {_ordinal(rank)} biggest activation listed at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations {program} lists for this {noun}."
     elif n > 1 and mine:
-        title, line = f"Your biggest activation at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations POTA lists for this park."
+        title, line = f"Your biggest activation at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations {program} lists for this {noun}."
     elif n > 1:
-        title, line = f"Your activation at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations POTA lists for this park."
+        title, line = f"Your activation at {name}", f"{when}: {total:,} QSOs, the {_ordinal(rank)} most of the {n:,} activations {program} lists for this {noun}."
     else:
-        title, line = f"Your activation at {name}", f"{when}: {total:,} QSOs, the only activation POTA lists for this park."
+        title, line = f"Your activation at {name}", f"{when}: {total:,} QSOs, the only activation {program} lists for this {noun}."
     if not best["listed"]:
-        line += " It is not on POTA yet, so this uses the QSOs in your log."
+        line += f" It is not on {program} yet, so this uses the QSOs in your log."
     standing, s = "", card.get("standing")
     if s and "qsos" in s:
         r, m, q = s["qsos"]
@@ -377,16 +421,18 @@ def pota_headline(card):
 
 
 def pota_notes(card):
-    """The comparison in plain words, as (lead, rest) pairs, one per activation in the log, with where you stand among the park's activators
+    """The comparison in plain words, as (lead, rest) pairs, one per activation in the log, with where you stand among the activators
     added when the headline does not carry it."""
+    noun, program = card.get("noun", "park"), card.get("program", "POTA")
     notes = []
     for r in card["rows"]:
         use, ranks = r["use"], r["ranks"]
         text = ""
         if "total" in ranks:
             rank, n = ranks["total"]
-            text = ("That is the most QSOs of any of the {:,} activations listed for this park.".format(n) if rank == 1 and n > 1 else
-                    f"That is the {_ordinal(rank)} most QSOs of the {n:,} activations listed for this park." if n > 1 else "It is the only activation listed for this park.")
+            text = (f"That is more QSOs than the other activation listed for this {noun}." if rank == 1 and n == 2 else
+                    f"That is the most QSOs of any of the {n:,} activations listed for this {noun}." if rank == 1 and n > 1 else
+                    f"That is the {_ordinal(rank)} most QSOs of the {n:,} activations listed for this {noun}." if n > 1 else f"It is the only activation listed for this {noun}.")
         modes = [f"{use[k]:,} {label} ({_ordinal(ranks[k][0])} of {ranks[k][1]:,})" for k, label in POTA_METRICS[1:] if k in ranks]
         if modes:
             text += " By mode: " + ", ".join(modes) + "."
@@ -396,15 +442,16 @@ def pota_notes(card):
             if others and use["total"] > max(others):
                 text += " It is your biggest there."
             if r["ours"]["total"] != use["total"]:
-                text += f" Your log has {r['ours']['total']:,} QSOs; POTA lists {use['total']:,}."
+                text += f" Your log has {r['ours']['total']:,} QSOs; {program} lists {use['total']:,}."
         else:
-            text += f" POTA does not list this activation under {card['me']}, so the rank uses the {r['ours']['total']:,} QSOs in your log."
+            text += f" {program} does not list this activation under {card['me']}, so the rank uses the {r['ours']['total']:,} QSOs in your log."
         notes.append((f"{r['date']:%d %b %Y}: {use['total']:,} QSOs.", text.strip()))
     head = pota_headline(card)
     if head is None and card.get("standing") and "qsos" in card["standing"]:
         r, m, q = card["standing"]["qsos"]
-        notes.append((f"You are the park's {_ordinal(r)} activator of {m} by QSOs.", f"{q:,} QSOs listed under {card['me']}."))
+        notes.append((f"You are the {noun}'s {_ordinal(r)} activator of {m} by QSOs.", f"{q:,} QSOs listed under {card['me']}."))
     return notes
+
 
 
 # ------------------------------------------------------------------------------------------------------------- what you worked
