@@ -1244,6 +1244,23 @@ class HelpPage(unittest.TestCase):
         self.assertEqual(len(at.get("image")), 2)  # the brand strip, and the README's picture of one pair of transmissions
         self.assertTrue(os.path.exists(os.path.join(HERE, "images", "two-transmissions.png")))
 
+    def test_the_help_page_has_a_tab_for_each_part_and_loses_no_section_of_the_readme(self):
+        """The Help page splits the README into tabs. A section added to the README later must still show up, and a link from one part
+        to another (which would go nowhere from inside a tab) must not be left as a dead link."""
+        import re
+        at = page("help_page").run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual([t.label for t in at.tabs], ["Start here", "My spots", "Compare antennas", "Band conditions", "Log analysis",
+                                                       "Troubleshooting", "Deep dive and code"])
+        text = "\n".join(m.value for m in at.markdown)
+        with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        for title in re.findall(r"^## (.+)$", readme, re.M):
+            if title not in ("What it looks like", "Quick start"):      # the screenshots are for GitHub; the quick start is drawn by the page
+                self.assertIn(title, text, f"README section {title!r} is missing from the Help page")
+        self.assertNotIn("](#", text)
+        self.assertIn("[Log analysis](#log-analysis)", readme)          # the README's own jump links cover every page
+
 
 class SetupSurvivesOtherPages(unittest.TestCase):
     """Going to the README and back used to bring the Compare page back with its test setup reset (Dale N3HXZ, November 2026):

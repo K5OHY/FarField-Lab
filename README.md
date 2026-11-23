@@ -6,7 +6,7 @@
 
 See where your signal is heard, how strong it is, and how conditions change. Map the [Reverse Beacon Network](https://www.reversebeacon.net/) stations that spotted your CQ, or the [WSPR](https://wsprnet.org/) stations that heard your beacon. Compare which of two antennas, frequencies or power levels is getting out better, using real-world signal measurements. And check which bands are open and where you would be heard right now.
 
-**Jump to:** [Quick start](#quick-start) · [The map](#the-map) · [Compare two antennas](#compare-two-antennas) · [Band conditions](#band-conditions-now) · [Run it locally](#run-it-locally) · [Troubleshooting](#troubleshooting)
+**Jump to:** [Quick start](#quick-start) · [My spots](#the-map) · [Compare antennas](#compare-two-antennas) · [Band conditions](#band-conditions-now) · [Log analysis](#log-analysis) · [Examples](#examples) · [Troubleshooting](#troubleshooting) · [Deep dive](#deep-dive-for-the-curious) · [Run it locally](#run-it-locally)
 
 **Use it online, nothing to install: [farfieldlab.streamlit.app](https://farfieldlab.streamlit.app/)** (the project was called RBN Signal Mapper before; the old addresses still work)
 
@@ -18,7 +18,7 @@ See where your signal is heard, how strong it is, and how conditions change. Map
 
 **Comparing two antennas.** The rest of these screens are from a real test: K5OHY's WSPR transmitter on 20m on 4 October 2026, 12 transmissions switched between a 40m loop at 20 ft (A) and a 20m dipole at 40 ft (B). The dipole won clearly.
 
-**The summary** is the coloured card at the top, labelled *Summary* (earlier versions called it the summary), in plain English: who reached more receivers, who was stronger and by how much, and whether changing conditions could explain it. The three tiles above it give the headline numbers, and the *Signal advantage* tile is the summary's strength figure. The tabs below it hold the evidence.
+**The summary** is the coloured card at the top, labelled *Summary*, in plain English: who reached more receivers, who was stronger and by how much, and whether changing conditions could explain it. The three tiles above it give the headline numbers, and the *Signal advantage* tile is the summary's strength figure. The tabs below it hold the evidence.
 
 ![The compare result](images/compare-result.jpg)
 
@@ -36,6 +36,21 @@ See where your signal is heard, how strong it is, and how conditions change. Map
 
 ## Quick start
 
+Open [farfieldlab.streamlit.app](https://farfieldlab.streamlit.app/), or [run it on your own computer](#run-it-locally). Then pick what you want to do:
+
+| I want to… | Open | What you do |
+| --- | --- | --- |
+| See where I was heard | **My spots** | Type your callsign, pick a day, click **Load spots**. [More](#the-map) |
+| Compare two antennas | **Compare antennas** | Load the spots from your test, say how you switched, read the result. [More](#compare-two-antennas) |
+| See which bands are open | **Band conditions** | Enter your callsign or grid square, set your power and mode. [More](#band-conditions-now) |
+| Make sense of a session | **Log analysis** | Set your power, upload your ADIF log. [More](#log-analysis) |
+
+**Just looking?** My spots has a **Try an example** button, Band conditions has **Try an example location**, and Compare antennas opens with six real tests: [see the examples](#examples).
+
+**Stuck?** [Troubleshooting](#troubleshooting). **Want the working?** [Deep dive](#deep-dive-for-the-curious).
+
+## Examples
+
 **Just looking? Open an example.** The Compare page opens with six real tests, each set up the way it was run and each labelled with how its antennas were switched:
 
 - **Switched after every transmission:** a 40m loop against a 20m dipole, 12 transmissions, and a quarter-wave vertical against a 2 element vertical on 1 November 2026, 16 transmissions with four in the middle left out (both K5OHY).
@@ -43,12 +58,7 @@ See where your signal is heard, how strong it is, and how conditions change. Map
 - **Told apart by frequency:** a quick CW check on the Reverse Beacon Network, the same loop and dipole on 14069.5 and 14070.5 kHz (K5OHY).
 - **Each antenna has its own callsign:** two short WSPR tests by Callum (M0MCX, DX Commander) on 14 January 2026, a delta loop against a vertical, on 20m and on 40m. A is the antenna that sent first, as in his log: the delta loop (M0MCX) on 20m and the vertical (M0XXT) on 40m. Each is only three pairs of transmissions, so treat them as a demonstration of how the page works and what a short test can and cannot say, not a ruling on the antennas.
 
-**With your own data:**
-
-1. Open the site (or [run it locally](#run-it-locally)).
-2. Type your **callsign** in the sidebar.
-3. Pick where the spots come from, then click **Load spots**. To test antennas, open the **Compare antennas** page: it shows the three steps (load your spots, say how you switched, read the result) and explains how to run a good test.
-4. Use the filters in the sidebar, and download the map, a PDF report, or the spots and tables as CSV if you want to share or keep them.
+## Sharing a view
 
 **Share what you are looking at.** Once spots are loaded, the sidebar shows a link to this view and your browser's address bar holds the same link. Send it to someone and they land on the same callsign, date and band, with the spots already loaded. The same link also brings your sidebar choices back if you refresh the page or your computer sleeps. On the Compare page the link also carries the whole test: the antenna names, how you switched, the start and order, a pasted block schedule, any antenna cells you corrected by hand, and the averaging choices, so the person you send it to sees the same summary.
 
@@ -80,7 +90,18 @@ WSPR differs from RBN in a few ways: SNR is mostly negative (about -30 to +5 dB)
 
 Your location comes from the grid you typed, else the RBN skimmer list, else the FCC ([callook.info](https://callook.info)), else [HamDB](https://hamdb.org), else the centre of your country (the app warns you). Enter a grid for an exact pin.
 
-### Log analysis
+## Log analysis
+
+Upload a log from your logging program and see your session beside who heard you.
+
+1. Set the power you ran in the box above the uploader. A log does not record it, and the page starts working the moment a log loads.
+2. Upload an ADIF file (most logging programs can export one). Your callsign, grid square and days come from the log.
+3. Read down the page. Pick a band under the two maps to compare who spotted you with who you worked.
+
+**You get:** the session in numbers, who followed you from band to band, what you worked (DXCC entities, states, zones), a session chart, two maps (the skimmers that spotted you and the stations you worked), how the bands were doing for DX while you were on, space weather, and for a POTA or SOTA log how your activation compares with the others at that park or summit. The log is used for that visit only and is not saved.
+
+<details>
+<summary><b>Deep dive: everything the Log analysis page shows, and how to read it</b></summary>
 
 Open **Log analysis** in the menu, set the power you ran (the box above the uploader; a log does not say, and the calculations start the moment a log is loaded, so set it first), and upload an ADIF file (most logging programs can export one). Everything else comes from the log: your callsign and grid square are filled in from it (change them if they are wrong), and the days are read from its dates. The page then downloads your RBN spots for those days and fetches the WSPR picture on its own. The log is used for that visit only and is not saved. A log of up to four days is compared. The page leads with the story of the session (who followed you, the session chart, the maps, the band conditions during it, the space weather and who hears whom) and puts the comparison with RBN and the Band conditions page below it. The session chart is drawn from the log at once, and the RBN spots are added to it when they have been read. The strength estimate against a typical WSPR station is in the comparison section, not among the top figures, because it is the most experimental number on the page. RBN makes each UTC day's file at 00:02 UTC the next day, so a log works from then on; before that the page says when it will be ready and shows the facts from the log alone.
 
@@ -106,6 +127,8 @@ How to read the band rows:
 - **A band by region.** Below the rows, pick a band to see it region by region, DX first: the contacts and stations worked in each region, how many skimmers were on the band there and how many spotted you, and what the page said (greyed when fewer than 3 WSPR receivers stand behind it). The row above pools every region, so a good result in one region can hide behind a poor one in another.
 - **Strength vs typical.** Skimmers that spotted you and are also WSPR receivers are matched. Their reports are set against the WSPR stations near you, restated to your power. Skimmers and WSPR receivers are different equipment, and an ordinary station reads about 10 dB higher on RBN than on the page (found from two checks of stations whose power is known), so that 10 dB is taken off. What is left is a rough hint of how much stronger or weaker than a typical station you were. A striped bar means fewer than 8 matched receivers.
 - The place used is the grid square in your log (or the one you type over it), so a log made portable is compared from where you were.
+
+</details>
 
 ## Compare two antennas
 
@@ -186,6 +209,9 @@ Differences are always shown as who is ahead and by how much (for example *B +2.
 
 This section is the short version. The [technical methodology](docs/METHODOLOGY.md) lists every rule and number, how the program was checked (including tests where A and B are the same antenna), and what it does not establish.
 
+<details>
+<summary><b>Deep dive: how the comparison works, and the math step by step</b></summary>
+
 The idea is simple: ask the same receivers about both antennas, so everything that stays the same for both antennas drops out. A receiver in Germany has its own noise level and its own path to you, and those stable effects are the same for A and B. Conditions that change over time are not the same, which is why the antennas are alternated and why a result is worth repeating on another day. Subtract the receiver's report for A from its report for B and what is left is the difference between the antennas at that receiver. That is the **relative gain** (B minus A, in dB, so A is the reference and B the test; the program works with A minus B internally and shows who is ahead and by how much). Do it for every receiver that heard both and average the results, and you have one number for how much better or worse B is than A, with a 95% range showing how uncertain that number is. WSPR reports move dB for dB with your power as a good approximation, so a difference in transmit power is simply added or subtracted first.
 
 Only receivers that heard both antennas count, only receivers that were on the band during both antennas' transmissions (they decoded other stations in those slots), and every receiver counts on its own, even when several are at one place. The long-test method (relative gain at each receiver, linear-power averaging and long alternating blocks) comes from the work of [Dale, N3HXZ](https://www.n3hxz.net/), who compares antennas this way with WSPR. The quick paired test is this app's own.
@@ -232,6 +258,8 @@ A few words used below. A *reading* is one SNR report in dB. The *middle value* 
 
 **How sure is that number?** The app also gives a 95% range. Suppose B comes out +4 dB stronger with a range of +3 to +5 dB: the whole range is above zero, which is good evidence that B is stronger. If the range ran from -1 to +9 dB, there is too much uncertainty to call a winner. (Strictly, a 95% range means that if you repeated the test many times, about 95 of every 100 ranges built this way would contain the true value, provided the method's assumptions hold.) A side is declared ahead only when the whole range is on its side of zero and the gap is at least 1 dB. A smaller gap is called no meaningful difference, which covers two cases: the whole range sits inside 1 dB, or a lead is probably real but under 1 dB. Neither proves the antennas are identical, and a short test can still be fooled by changing propagation.
 
+</details>
+
 <details>
 <summary><b>For the math-minded: the formulas</b></summary>
 
@@ -274,6 +302,9 @@ In a long-blocks test there are no pairs, so the Signal advantage and the Averag
 
 ### How the summary is decided
 
+<details>
+<summary><b>Deep dive: the rules the summary uses</b></summary>
+
 - **Strength.** Only stations that heard both sides count, so each station is its own control. Each station's difference is averaged, with a 95% range. A side wins if the whole range favours it and the gap is at least 1 dB. A smaller gap is called *no meaningful difference*, meaning either that the range sits inside 1 dB or that a lead is real but too small to matter; it does not prove the antennas are identical.
 - **Reach.** How many different stations heard each side. For WSPR it is judged one pair of transmissions at a time, because fading on your end moves every receiver together. It needs at least 6 decisive pairs, ones where one antenna reached more stations (ties don't count), so a short test often can't call it.
 - **Too close to call** means the data aren't strong enough to separate the antennas. One may look ahead, but ordinary variation could explain the gap, and the summary says how often a lead that size, in that direction, would still appear if the two truly reached equally (for example about 12% of the time). That is not the same as the antennas being equal, and it is not the probability that one is better. For RBN it also says how much more data would settle it.
@@ -281,7 +312,14 @@ In a long-blocks test there are no pairs, so the Signal advantage and the Averag
 - **Two ways of averaging.** The dB average and the linear (power) average are explained under *How the comparison works*, above. The **Linear average** tab shows both so you can check that they agree.
 - **Fairness.** For WSPR only receivers that were on the band during both sides' transmissions count, and cycles heard by 2 or fewer receivers, or by under 5% of the usual number, are ignored when normal cycles are heard by many more (usually a few receivers with a wrong clock, which also happens in a slot where you skipped a transmission). A cycle with no partner on the other antenna is left out. Power differences are corrected (WSPR carries the power). Every skimmer counts on its own, even several at one place. They see the same sky, so a place with many receivers weighs more in the average. If A and B were sent more than about 10 minutes apart, the summary warns that the time of day could explain the difference.
 
+</details>
+
 ## Band conditions now
+
+Which bands look open from here right now? Enter your callsign or grid square (or use **My location**), set your power and mode, and read the band tiles. Click a band to look closer. It is an estimate from the WSPR stations near you in the last half hour, restated for your power and mode: a guide good to a few dB, not a promise. A band with no reports is not necessarily closed.
+
+<details>
+<summary><b>Deep dive: every part of the page, and how far to trust the percentages</b></summary>
 
 The **Band conditions** page (in the sidebar menu) tells you which bands are open and where a signal like yours would be heard, which helps when you are deciding whether to change band at a park. It takes the WSPR stations transmitting near you (your grid square or callsign, within an area you choose) over the last half hour (or the last hour or two, your choice; a shorter look-back follows a band that is opening or fading more closely), and restates each report for **your power and mode**: SNR moves dB for dB with power, and each mode needs a minimum SNR, so the gap is your margin. The page's link remembers your choices, including that you used **My location** (never the position itself), so a browser refresh or a bookmark opens where you left off and asks the browser for your location again; choosing *Allow* in the browser's site settings, not *Allow this time*, stops it asking. The **Refresh** button beside the spots line, and *Refresh now* in the sidebar, ask wspr.live for the latest spots without reloading the page.
 
@@ -310,6 +348,18 @@ Once your location is known, a **MUF near you** card shows the maximum usable fr
 The differences between stations (power, antenna, local noise) are smaller than the spread within each. But of the skimmers the figures said could hear a station, only about 1 in 10 spotted it below the usual RBN spotting level (about 2 dB above the CW figure), 4 in 10 at a margin of 0 to 5 dB over it, 5 in 10 at 5 to 10 dB and about 7 in 10 at 15 dB or more (from the station with the most data), because skimmers are not all listening and the station was not calling CQ the whole time. 30m was the least consistent band, and DX beyond 3,000 miles had too few matches to check. A band marked **opening** is usually a little stronger now than the figures show, since they average the look-back.
 
 It is a guide good to a few dB, not a promise: it only counts receivers that heard the nearby WSPR stations (so with more power than they used you would be heard in more places), WSPR receivers are often quiet sites, and the mode thresholds are approximate. There is a box for how your antenna compares with theirs. The modes are CW, SSB, FT8 and WSPR, each with the SNR it needs. **CW** is the strength a hunter needs to copy you. Being spotted by an RBN skimmer, which is what gets you onto the spotting sites, takes about 2 dB more, because it also needs a skimmer that is listening and you calling CQ. That gap was measured from real CW activations (first two stations, then a week of four stations, see the table above), so it is a guide from a small sample: keep a margin if you want to be spotted. Find yourself by callsign, by grid square (a park, say), or with a **Use my location** button that asks your browser for your position; the area around you can be set in miles or kilometres.
+
+</details>
+
+## Deep dive (for the curious)
+
+The pages explain themselves. This is where the working is.
+
+- **[Technical methodology](docs/METHODOLOGY.md).** Every rule and number, how the program was checked (including tests where A and B are the same antenna), and what it does not establish.
+- **[How the comparison works](#compare-two-antennas) and the math, step by step.** Folded away in the Compare antennas section; open the *Deep dive* blocks.
+- **[Checked against a published study](#checked-against-a-published-study).** How the results compare with published work.
+- **[Dale, N3HXZ](https://www.n3hxz.net/).** The long-test method this app's second mode follows.
+- **[Files](#files) and [Data sources and thanks](#data-sources-and-thanks).** What each file is for, and where the data comes from.
 
 ## Checked against a published study
 
@@ -360,7 +410,7 @@ The skimmer list refreshes itself every 24 hours. To force it: `.venv\Scripts\py
 
 ## Help inside the app
 
-The **Help and README** page in the app shows this README, so the instructions are always at hand. The sidebar has a link to the README and code on GitHub.
+The **Help and README** page in the app opens with the same four tasks as the home page, then has one tab for each part of this README (My spots, Compare antennas, Band conditions, Log analysis, Troubleshooting, Deep dive), with the long explanations folded closed. The sidebar has a link to the README and code on GitHub.
 
 ## Troubleshooting
 
