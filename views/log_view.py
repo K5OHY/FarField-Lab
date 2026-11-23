@@ -14,7 +14,7 @@ from compare_stats import locate as skimmer_location
 from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, load_sota_summit, skimmer_data
 from maps import build_map, great_circle, park_map
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
-from ui_common import BANNER, KM_PER_MILE
+from ui_common import BANNER, KM_PER_MILE, page_guide, preview
 from wspr_data import WsprError
 
 RADIUS_KM = 300 * KM_PER_MILE   # the WSPR stations counted as "near you", as on the Band conditions page
@@ -303,6 +303,8 @@ def log_page():
         st.title("FarField Lab")
     st.markdown('<p class="subtitle">Upload the log of a session and see it beside the skimmers that heard you and the WSPR stations '
                 'around you. The callsign, the place and the days come from the log.</p>', unsafe_allow_html=True)
+    guide = st.container()
+    picture = st.container()         # the example picture, drawn here (above the controls) while there is no log
     skimmers, _ = skimmer_data()
     # The power comes first: the work starts the moment a log is uploaded, so it has to be known by then. A log does not say it.
     power_box, _ = st.columns([1, 3])
@@ -315,9 +317,13 @@ def log_page():
     if file is not None:
         st.session_state["log_saved"] = (file.name, file.getvalue())
     saved = st.session_state.get("log_saved")
+    with guide:
+        page_guide("log")
     if saved is None:
         st.info(icon=":material/upload_file:", body="Upload an ADIF log to begin. Set your power above first if you ran something other than 100 W: "
                                                            "the calculations start as soon as a log is loaded and use it.")
+        with picture:
+            preview("log", "What you get: where the skimmers heard you on a band, beside the stations you worked on it. Here, a POTA activation on 20m.")
         return
     name, raw = saved
     if file is None:

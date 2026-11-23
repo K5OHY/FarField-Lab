@@ -2,7 +2,7 @@
 import streamlit as st
 
 from data_sources import skimmer_data
-from ui_common import RBN_SNR_SCALE, brand_strip, SPLIT_FREQ, SPLIT_LOG, WSPR_SNR_SCALE, WSPR_SOURCE
+from ui_common import RBN_SNR_SCALE, brand_strip, page_guide, preview, SPLIT_FREQ, SPLIT_LOG, WSPR_SNR_SCALE, WSPR_SOURCE
 from views import inputs, test_link
 from views.compare_view import compare_view
 
@@ -87,6 +87,7 @@ def compare_page():
     st.title(":material/balance: Compare antennas")
     st.markdown('<p class="subtitle">Which of two antennas, power levels or tests gets out better? Load the spots from one '
                 'station, say how you switched, and read the summary, with the evidence behind it.</p>', unsafe_allow_html=True)
+    guide = st.container()           # filled in once it is known whether anything is loaded
 
     skimmers, refresh_msg = skimmer_data()
     ss, cfg, pick = inputs.begin(default_source=WSPR_SOURCE)
@@ -103,6 +104,8 @@ def compare_page():
         link_slot = st.container()  # the link is drawn last, once the test's setup widgets exist
         st.caption(f":material/satellite_alt: {refresh_msg}")
     inputs.load_spots(ss, skimmers, where)
+    with guide:
+        page_guide("compare")
     _result(ss, skimmers, where, view)
     inputs.remember(ss, cfg, where, view, extra=test_link.params(ss, view.units), slot=link_slot)
 
@@ -113,6 +116,7 @@ def _result(ss, skimmers, where, view):
     if not (loaded and ss.get("setup_ok")):  # once the setup is confirmed the strip has done its job; the result gets the room
         _steps(loaded, comparing_rbn=where.kind == "RBN")
     if ss.raw is None:
+        preview("compare", "What you get: a real test, a 40m loop against a 20m dipole on 20m, with a plain statement of which was stronger and by how much.")
         _example_cards()
         _how_to_test()
         return

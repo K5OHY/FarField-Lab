@@ -10,7 +10,7 @@ import dashboard as dash
 import ionosphere as iono
 import space_weather as sw
 from data_sources import resolve_home, skimmer_data
-from ui_common import KM_PER_MILE, _views, brand_strip, load_settings
+from ui_common import KM_PER_MILE, _views, brand_strip, load_settings, page_guide, preview
 from world_map import MAX_KM, azimuth_map_figure, fit_radius_km
 from wspr_data import WsprError
 
@@ -336,6 +336,7 @@ def conditions_page():
     st.header(":material/public: Band conditions now")
     st.markdown('<p class="subtitle">Which bands are open and where you would be heard, worked out from the WSPR stations near '
                 'you in the last half hour, restated for your power and mode.</p>', unsafe_allow_html=True)
+    guide = st.container()
     skimmers, _ = skimmer_data()
     saved = st.session_state.get("cfg") or load_settings()
     ss = st.session_state
@@ -367,6 +368,8 @@ def conditions_page():
     ss.setdefault("cond_units", saved.get("units", "mi"))
     ss.setdefault("cond_power", 100.0)
     ss.setdefault("cond_window", 30)
+    with guide:
+        page_guide("conditions")
     with st.sidebar:
         st.header("Where")
         where = st.radio("Find me by", ["Callsign or grid", "My location"], horizontal=True, key="cond_where")
@@ -471,6 +474,7 @@ def conditions_page():
             st.button("Use my location", key="hero_cond", type="primary", on_click=_use_my_location,
                       help="Your browser asks before sharing your location. It is used only to find the WSPR stations near "
                            "you and is not saved.")
+            preview("conditions", "What you get: a tile for each band, the sun and the MUF, and which regions would hear you, from the WSPR stations near you.")
             return
         else:
             lat, lon, label = resolve_home(callsign, grid, skimmers)

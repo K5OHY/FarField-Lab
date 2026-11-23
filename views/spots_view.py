@@ -8,7 +8,7 @@ from compare_stats import locate as skimmer_location, placed_by_base
 from data_sources import skimmer_data
 from maps import ZOOM_HINT, _single_points, build_map, compute_stats
 from pdfs import single_report_pdf
-from ui_common import BANNER, BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, WSPR_SNR_SCALE, _views
+from ui_common import BANNER, BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, WSPR_SNR_SCALE, _views, page_guide, preview, task_chooser
 from views import inputs
 from world_map import MAX_KM, MIN_CELL, azimuth_map_figure, fit_radius_km
 
@@ -113,23 +113,31 @@ def _session_report_view(spots, locs, home, units, noun, band_choice):
         st.dataframe(sr.country_table(spots), width="stretch", hide_index=True)
 
 
-def _band_buttons(spots):
-    """A row of buttons above the map: All, then one for each band that has spots (with how many), so there is nothing to scroll past.
-    It opens on All, which is every spot of the day. A band chosen earlier that has no spots now (another day) falls back to All, and
-    with only one band there is nothing to choose. Returns the band chosen."""
+def _band_options(spots):
+    """The band buttons' choices: All, then one for each band that has spots, and how many spots each has. It opens on All, which is every
+    spot of the day. A band chosen earlier that has no spots now (another day) falls back to All, and with only one band there is nothing
+    to choose (the options come back empty). Done before the page is drawn, because the numbers on it follow the band; the buttons themselves
+    are drawn later by _band_buttons, just above the map, so switching band does not mean scrolling up and down."""
     ss = st.session_state
     counts = spots["band"].value_counts()
     order = [b for b in BAND_COLORS if b in counts.index] + sorted(b for b in counts.index if b not in BAND_COLORS)
     if len(order) < 2:
         ss["band_choice"] = "All"
-        return "All"
+        return [], counts
     options = ["All"] + order
     if ss.get("band_choice") not in options:
         ss["band_choice"] = "All"
-    return st.radio("Band", options, horizontal=True, key="band_choice",
-                    format_func=lambda b: f"All ({len(spots):,})" if b == "All" else f"{b} ({counts[b]:,})",
-                    help="Only the bands that have spots are listed, with how many. The map, the numbers and the charts under it follow the band you pick; "
-                         "the Session report tab always shows every band.")
+    return options, counts
+
+
+def _band_buttons(spots, options, counts):
+    """The row of band buttons (see _band_options). Nothing is drawn when there is only one band."""
+    if not options:
+        return
+    st.radio("Band", options, horizontal=True, key="band_choice",
+             format_func=lambda b: f"All ({len(spots):,})" if b == "All" else f"{b} ({counts[b]:,})",
+             help="Only the bands that have spots are listed, with how many. The map, the numbers and the charts under it follow the band you pick; "
+                  "the Session report tab always shows every band.")
 
 
 def spots_page():
@@ -137,9 +145,8 @@ def spots_page():
         st.image(str(BANNER), width="stretch")
     else:
         st.title("FarField Lab")
-    st.markdown('<p class="subtitle">Map the Reverse Beacon Network and WSPR stations that heard you, and see how strong '
-                'your signal was and in which directions. To find out which of two antennas does better, open '
-                '<b>Compare antennas</b> in the menu.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">See who heard your signal, how strong it was and in which directions.</p>', unsafe_allow_html=True)
+    guide = st.container()           # the closed "how to use this page" box, drawn here once something is loaded
 
     skimmers, refresh_msg = skimmer_data()
     ss, cfg, pick = inputs.begin()
@@ -158,12 +165,17 @@ def spots_page():
     inputs.remember(ss, cfg, where, view)
     inputs.load_spots(ss, skimmers, where)
     if ss.raw is None:
+        task_chooser("spots")
         st.info(icon=":material/arrow_back:", body="Enter your callsign and click **Load spots**. "
                 "The map is centered on your callsign's registered location unless you enter a grid square. "
                 "Just looking around? Click **Try an example** to see real spots.")
         st.button("Try an example", key="hero_map", type="primary", on_click=inputs.start_example, args=("map",),
                   help="Loads real RBN spots, so you can see what the map and reports look like.")
+        page_guide("spots")
+        preview("spots", "What you get: K5OHY's Reverse Beacon Network spots for 23 October 2025, with a line to every skimmer that heard the signal.")
         return
+    with guide:
+        page_guide("spots")
     if inputs.nothing_found_message(ss):
         return
     units, tiles, show_all = view.units, view.tiles, view.show_all
@@ -190,7 +202,8 @@ def spots_page():
                    f"{ss.raw['time'].max():%H:%M} UTC. Sent something since? Click **Load spots** again.")
     tab_map, tab_report = st.tabs([":material/map: Map & direction", ":material/event_note: Session report"])
     with tab_map:
-        band_choice = _band_buttons(all_bands)
+        band_options, band_counts = _band_options(all_bands)
+        band_choice = st.session_state["band_choice"]
         spots = all_bands if band_choice == "All" else all_bands[all_bands["band"] == band_choice]
         stats = compute_stats(spots, locs, home)
         missing = {s for s in spots["spotter"].unique() if skimmer_location(s, locs) is None}
@@ -210,6 +223,7 @@ def spots_page():
                    + (f" · ℹ️ {', '.join(f'{s} shown at {b}' + chr(39) + 's location' for s, b in placed[:3])}"
                       f"{f' and {len(placed) - 3} more' if len(placed) > 3 else ''}" if placed else ""))
 
+        _band_buttons(all_bands, band_options, band_counts)                   # just above the map, where it is in view while you look at it
         m = build_map(spots, locs, home, label, ss.callsign, show_all and not wspr, tiles, units, stats["farthest"],
                       scale=scale, noun=noun)
         map_html = m.get_root().render()
