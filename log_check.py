@@ -802,7 +802,7 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0, bin
     log = log.assign(slot=lf.bin_floor(log["time"], bin_min))
     made = log.groupby(["slot", "band"]).size()
     made_dx = log[dx_contacts_mask(log)].groupby(["slot", "band"]).size()
-    rows = []
+    rows, receiver_rows = [], []
     seen_tx, seen_rx, n_reports, farthest = set(), set(), 0, 0.0
     for panel, (first, last) in enumerate(condition_panels(log, bin_min)):
         start, end = first - timedelta(minutes=LOOKBACK_MIN), last + step
@@ -830,6 +830,7 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0, bin
             rec = res["receivers"] if res is not None else pd.DataFrame()
             if len(rec):
                 farthest = max(farthest, float(rec["km"].max()))
+                receiver_rows.append(rec[["band", "rx", "km", "bearing", "region", "verdict", "adj", "margin", "reports"]].assign(panel=panel, slot=slot))
             for band in bands:
                 receivers = good = dx_heard = dx_good = 0
                 dx_regions, dx_regions_heard = {}, {}
@@ -858,6 +859,12 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0, bin
     out.attrs["evidence"] = {"transmitters": len(seen_tx), "receivers": len(seen_rx), "reports": n_reports, "farthest_km": farthest,
                              "radius_km": radius_km}
     out.attrs["bin_min"] = bin_min
+    out.attrs["mode"], out.attrs["power_w"], out.attrs["home"] = mode, power_w, tuple(home)
+    receivers = pd.concat(receiver_rows, ignore_index=True) if receiver_rows else pd.DataFrame(
+        columns=["band", "rx", "km", "bearing", "region", "verdict", "adj", "margin", "reports", "panel", "slot"])
+    receivers["sector"] = receivers["bearing"].map(lf.sector_of)
+    receivers["continent"] = receivers["region"].map(lf.continent_of_region)
+    out.attrs["receivers"] = receivers          # one row for each receiver in each box and band: where it was, and whether it looked strong enough
     return out
 
 
@@ -891,7 +898,9 @@ def contact_places(log, home):
     (the 6 character grid when there is one), read for each contact, so a station that moved is placed where it was each time; failing that
     the centre of its state (North America), then the centre of its country by its callsign. `c_source` says which ('grid', 'state', 'country'
     or '' when it could not be placed), `c_approx` is True for the last two, `c_km` and `c_bearing` are the distance and the bearing from
-    `home`, `sector` is the compass sector of that bearing and `continent` comes from the log's CONT field, else from the callsign."""
+    `home` to the place, `sector` is the compass sector of that bearing and `continent` comes from the log's CONT field, else from the callsign.
+    `sector_whole` is the sector the contact can be counted in: the sector of its grid, or, for a contact placed only by its state, the sector
+    the whole state lies in (None when the state spreads over more than one, and for a country's centre); `sector_basis` says 'grid' or 'state'."""
     keys = list(zip(log["call"], log["state"], log["their_grid"], log["cont"], log["country"]))
     found = {}
     for key in set(keys):
@@ -904,45 +913,48 @@ def contact_places(log, home):
             point, source = (guess[0], guess[1]), "country"
         continent = cont if cont in lf.CONTINENT_NAMES else (country_continent(guess[2]) if guess else "") or ""
         if point is None:
-            found[key] = (np.nan, np.nan, "", False, np.nan, np.nan, None, continent)
+            found[key] = (np.nan, np.nan, "", False, np.nan, np.nan, None, continent, None, "")
             continue
         inv = Geodesic.WGS84.Inverse(home[0], home[1], float(point[0]), float(point[1]))
         bearing = inv["azi1"] % 360
-        found[key] = (float(point[0]), float(point[1]), source, source != "grid", inv["s12"] / 1000, bearing, lf.sector_of(bearing), continent)
-    cols = ["c_lat", "c_lon", "c_source", "c_approx", "c_km", "c_bearing", "sector", "continent"]
+        sector = lf.sector_of(bearing)
+        whole, basis = (sector, "grid") if source == "grid" else ((lf.state_sector(state, home), "state") if source == "state" else (None, ""))
+        found[key] = (float(point[0]), float(point[1]), source, source != "grid", inv["s12"] / 1000, bearing, sector, continent, whole if whole else None,
+                      basis if whole else "")
+    cols = ["c_lat", "c_lon", "c_source", "c_approx", "c_km", "c_bearing", "sector", "continent", "sector_whole", "sector_basis"]
     return log.assign(**{c: [found[k][i] for k in keys] for i, c in enumerate(cols)})
 
 
 def contact_direction_table(places, view="sector"):
-    """How many contacts were in each region, from contact_places' output. In the 'sector' view a contact counts only when its place is exact
-    (its own grid): a centre of a state or country can be hundreds of km from the station, so it could fall in the wrong sector, and those are
-    counted in a separate column instead. In the 'continent' view every contact counts, because a continent is known from the callsign
-    even when the place is not. Returns a table of Region, Contacts and (sector view) the contacts placed only approximately."""
-    exact_only = view != "continent"
+    """How many contacts were in each region, from contact_places' output. In the 'sector' view a contact counts when it can be pinned to one
+    sector: it has its own grid, or its state lies wholly in that sector as seen from you. A contact placed only at the centre of a state that
+    spreads over several sectors, or at the centre of a country, is between sectors and is counted apart, because that centre can be hundreds
+    of km from the station. In the 'continent' view every contact counts, because a continent is known from the callsign even when the
+    place is not. Returns a table of Region, Contacts and, in the sector view, how many of those were placed by their state."""
     if view == "continent":
         names = places["continent"].map(lambda c: lf.region_of_point(None, c, "continent"))
         order = list(lf.CONTINENT_NAMES.values())
-        counted, approx = names.notna(), pd.Series(False, index=places.index)
+        counted, by_state = names.notna(), pd.Series(False, index=places.index)
     else:
-        names = places["sector"].map(lambda s: lf.sector_label(s) if isinstance(s, str) else None)
+        names = places["sector_whole"].map(lambda s: lf.sector_label(s) if isinstance(s, str) else None)
         order = [lf.sector_label(s) for s in lf.SECTORS]
-        counted, approx = names.notna() & (places["c_source"] == "grid"), names.notna() & places["c_approx"]
-    rows = [{"Region": r, "Contacts": int((counted & (names == r)).sum()), "Placed only by state or country": int((approx & (names == r)).sum())}
-            for r in order]
-    out = pd.DataFrame(rows, columns=["Region", "Contacts", "Placed only by state or country"])
-    out = out[(out["Contacts"] > 0) | (out["Placed only by state or country"] > 0)].reset_index(drop=True)
-    if not exact_only:
-        out = out.drop(columns=["Placed only by state or country"])
-    out.attrs.update(counted=int(counted.sum()), approximate=int(approx.sum()), unplaced=int((places["c_source"] == "").sum()), total=len(places))
+        counted, by_state = names.notna(), names.notna() & (places["sector_basis"] == "state")
+    rows = [{"Region": r, "Contacts": int((counted & (names == r)).sum()), "Placed by state only": int((by_state & (names == r)).sum())} for r in order]
+    out = pd.DataFrame(rows, columns=["Region", "Contacts", "Placed by state only"])
+    out = out[out["Contacts"] > 0].reset_index(drop=True)
+    if view == "continent":
+        out = out.drop(columns=["Placed by state only"])
+    out.attrs.update(counted=int(counted.sum()), by_state=int(by_state.sum()), unplaced=int((places["c_source"] == "").sum()), total=len(places),
+                     between=int((~counted & (places["c_source"] != "")).sum()))
     return out
 
 
 def add_rbn_far(grid, spots, locs, home):
     """The grid with `rbn_far` filled in: for each half hour and band, how many different skimmers DX_MILES or more from you spotted you.
     `locs` is the skimmer list (callsign to place); a skimmer it does not know is not counted."""
-    evidence, bin_min = dict(grid.attrs.get("evidence") or {}), grid.attrs.get("bin_min", CONDITIONS_SLOT_MIN)
+    carried, bin_min = dict(grid.attrs), grid.attrs.get("bin_min", CONDITIONS_SLOT_MIN)
     grid = grid.assign(rbn_far=0)
-    grid.attrs.update(evidence=evidence, bin_min=bin_min)
+    grid.attrs.update(carried)
     if spots is None or spots.empty or grid.empty:
         return grid
     far = {}
@@ -956,7 +968,7 @@ def add_rbn_far(grid, spots, locs, home):
     s = s.assign(slot=lf.bin_floor(s["time"], bin_min), who=s["spotter"].map(far))
     counts = s.groupby(["slot", "band"])["who"].nunique()
     out = grid.assign(rbn_far=[int(counts.get((slot, band), 0)) for slot, band in zip(grid["slot"], grid["band"])])
-    out.attrs.update(evidence=evidence, bin_min=bin_min)
+    out.attrs.update(carried)
     return out
 
 

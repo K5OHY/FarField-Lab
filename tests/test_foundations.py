@@ -158,20 +158,59 @@ class DirectionTable(unittest.TestCase):
             rec("W1AAA", gridsquare="FN31pr"), rec("W1BBB", gridsquare="FN32aa"), rec("JA1AAA", gridsquare="PM95"),
             rec("W2CCC", state="NY", country="United States", cont="NA"), rec("DL1ABC")), HOME)
 
-    def test_a_direction_counts_only_contacts_placed_by_their_own_grid(self):
+    def test_a_direction_counts_a_contact_with_its_own_grid_or_a_state_wholly_in_that_direction(self):
         table = lc.contact_direction_table(self.places(), "sector")
         counted = dict(zip(table["Region"], table["Contacts"]))
-        self.assertEqual(sum(counted.values()), 3)                                          # the three with grids
-        self.assertEqual(table.attrs["counted"], 3)
-        self.assertEqual(table.attrs["approximate"], 2)                                     # a state's centre and a country's centre are left out
-        self.assertEqual(sum(table["Placed only by state or country"]), 2)
+        self.assertEqual(sum(counted.values()), 4)                                          # three by their grid, and New York, which lies wholly northeast of Texas
+        self.assertEqual(table.attrs["counted"], 4)
+        self.assertEqual(table.attrs["by_state"], 1)
+        self.assertEqual(sum(table["Placed by state only"]), 1)
+        self.assertEqual(table.attrs["between"], 1)                                         # a country's centre is too rough for a direction
         self.assertEqual(table.attrs["total"], 5)
+
+    def test_a_state_that_spreads_over_several_directions_is_between_them(self):
+        places = lc.contact_places(log_of(rec("W6AAA", state="CA", country="United States", cont="NA"),
+                                          rec("W5AAA", state="TX", country="United States", cont="NA")), HOME)
+        table = lc.contact_direction_table(places, "sector")
+        self.assertEqual(table.attrs["counted"], 0)                                         # California spans west and northwest; Texas is where you are
+        self.assertEqual(table.attrs["between"], 2)
+        self.assertTrue(places["sector_whole"].isna().all())
+
+    def test_the_contact_records_which_way_it_was_placed(self):
+        places = lc.contact_places(log_of(rec("W1AAA", gridsquare="FN31pr"), rec("W2CCC", state="NY", country="United States")), HOME)
+        self.assertEqual(places["sector_basis"].tolist(), ["grid", "state"])
+        self.assertEqual(places["sector_whole"].tolist(), ["NE", "NE"])
 
     def test_the_continent_view_counts_every_contact(self):
         table = lc.contact_direction_table(self.places(), "continent")
         counted = dict(zip(table["Region"], table["Contacts"]))
         self.assertEqual(counted, {"North America": 3, "Europe": 1, "Asia": 1})
-        self.assertNotIn("Placed only by state or country", table.columns)
+        self.assertNotIn("Placed by state only", table.columns)
+
+
+class WholeStates(unittest.TestCase):
+    """The question a state is asked: does all of it lie in one compass sector as seen from you?"""
+
+    def test_a_state_on_one_side_is_in_that_sector(self):
+        self.assertEqual(lf.state_sector("NY", HOME), "NE")
+        self.assertEqual(lf.state_sector("ME", HOME), "NE")
+        self.assertEqual(lf.state_sector("WA", HOME), "NW")
+        self.assertEqual(lf.state_sector("ny", HOME), "NE")                                   # case does not matter
+
+    def test_a_state_that_spreads_or_holds_you_is_in_none(self):
+        self.assertIsNone(lf.state_sector("CA", HOME))                                        # west and northwest
+        self.assertIsNone(lf.state_sector("FL", HOME))                                        # east and southeast
+        self.assertIsNone(lf.state_sector("TX", HOME))                                        # you are in it
+
+    def test_an_unknown_state_is_in_none(self):
+        self.assertIsNone(lf.state_sector("", HOME))
+        self.assertIsNone(lf.state_sector("ZZ", HOME))
+        self.assertIsNone(lf.state_sector(None, HOME))
+
+    def test_every_box_is_south_below_north_and_west_below_east(self):
+        for state, (south, north, west, east) in lf.STATE_BOXES.items():
+            self.assertLess(south, north, state)
+            self.assertLess(west, east, state)
 
 
 class Bandwidth(unittest.TestCase):

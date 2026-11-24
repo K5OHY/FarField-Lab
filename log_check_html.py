@@ -24,7 +24,7 @@ CSS = """<style>
 .lc-legend i{display:inline-block;width:11px;height:11px;vertical-align:-2px;margin-right:5px;border-radius:3px}
 .lc-legend i.pg{border-radius:50%;border:2.5px solid var(--a)}.lc-legend i.ac{border-radius:50%;background:var(--t)}
 .lc-legend i.dia{width:9px;height:9px;border-radius:0;transform:rotate(45deg);margin-right:7px;background:currentColor}
-.lc-bh,.lc-brow{display:grid;grid-template-columns:44px minmax(100px,1.1fr) 76px minmax(150px,1.6fr) minmax(120px,1.2fr) 190px;gap:14px;align-items:center}
+.lc-bh,.lc-brow{display:grid;grid-template-columns:44px minmax(120px,1.2fr) 90px minmax(170px,1.6fr);gap:14px;align-items:center}
 .lc-bh{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.65;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .lc-brow{padding:10px 0;border-bottom:1px solid var(--line)}.lc-brow:last-child{border-bottom:0}
 .lc-bname{font-size:18px;font-weight:750}
@@ -94,6 +94,19 @@ CSS = """<style>
 .lc-dx .cell.s3{background:rgba(32,178,170,.88)}.lc-dx .cell.s3 .p{color:#04201e}
 .lc-dx .cell.s1{background:rgba(32,178,170,.40)}
 .lc-dx .cell.none .p{opacity:.35;font-weight:500}
+.lc-dx .cell.sparse{background:repeating-linear-gradient(45deg,transparent 0 3px,rgba(128,128,128,.16) 3px 4px);border-style:dashed}.lc-dx .cell.sparse .p{opacity:.55;font-weight:500}
+.bc{border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:10px 0}.bc h5{margin:0 0 4px;font-size:16px;font-weight:600}.bc h5 small{font-size:12px;font-weight:400;opacity:.6;margin-left:8px}
+.bc-body{position:relative}.bc-act{position:absolute;left:104px;right:0;top:0;bottom:0;pointer-events:none}.bc-act i{position:absolute;top:0;bottom:0;border-radius:4px;background:currentColor;opacity:.09}
+.bc-row{display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;margin-top:2px}.bc-lab{font-size:12px;opacity:.78}.bc-lab i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--c)}
+.bc-trk{position:relative;height:17px;background-image:linear-gradient(90deg,var(--line) 0 1px,transparent 1px);background-size:calc(100% / var(--n)) 100%}
+.bc-bar{position:absolute;top:4px;height:9px;border-radius:4px;background:var(--c)}.bc-bar.p{opacity:.38}
+.bc-thin{position:absolute;top:4px;height:9px;border-radius:4px;border:1px dashed currentColor;opacity:.45;box-sizing:border-box}
+.bc-tick{position:absolute;top:5px;width:2px;height:8px;background:currentColor;opacity:.45}
+.bc-dot{position:absolute;top:3px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:2px solid Canvas;box-sizing:content-box;background:var(--c)}
+.bc-ring{position:absolute;top:2px;width:9px;height:9px;margin-left:-6px;border-radius:50%;border:2px solid #3b82f6;box-sizing:content-box;background:Canvas}
+.bc-none{font-size:12px;opacity:.55;line-height:17px;padding-left:4px}
+.bc-ax{position:relative;height:15px;margin-top:3px}.bc-ax span{position:absolute;font-size:11px;opacity:.6;transform:translateX(-50%)}
+.bc p{margin:8px 0 0;font-size:14px}.bc p.sub{font-size:12.5px;margin:3px 0 0}
 .lc-dx .m{display:flex;flex-wrap:wrap;gap:3px;align-items:center;justify-content:center;min-height:15px}
 .lc-dx .cell em{position:static}.lc-dx .cell em.st{color:var(--a);padding:0 4px}
 .lc-dx .cell em u{display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6;box-sizing:content-box}
@@ -115,8 +128,8 @@ CSS = """<style>
 .lc-fact.warn{border-color:var(--w)}.lc-fact.warn .h{color:var(--w);opacity:1}
 @media (max-width:820px){.lc-rh{display:none}.lc-rr{grid-template-columns:1fr 1fr}.lc-rr .rn{grid-column:1/-1}.lc-rr [data-l]:before{content:attr(data-l) ": ";opacity:.6}
 .lc-tiles{grid-template-columns:repeat(2,1fr)}.lc-two{grid-template-columns:1fr}
-.lc-bh{display:none}.lc-brow{grid-template-columns:48px 1fr;grid-template-areas:"n c" "n d" ". s" ". t";gap:6px 12px}
-.lc-bname{grid-area:n}.lc-cont{grid-area:c}.lc-sk{display:none}.lc-dumb{grid-area:d}.lc-str{grid-area:s}.lc-note{grid-area:t}}
+.lc-bh{display:none}.lc-brow{grid-template-columns:48px 1fr;grid-template-areas:"n c" "n s";gap:6px 12px}
+.lc-bname{grid-area:n}.lc-cont{grid-area:c}.lc-sk{display:none}.lc-str{grid-area:s}}
 </style>"""
 
 
@@ -327,6 +340,190 @@ def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None, view="estimat
             + says + _near_words(grid, caveat)
             + 'RBN has far fewer skimmers than WSPR has receivers, especially outside North America and Europe: a ring is proof you were heard that far, but no ring says nothing. '
               'These lines say what was seen in the data, not what you should have done.</p></div></div>')
+
+
+def openings_html(cells, grid=None, tz_name=None, view="estimate"):
+    """How you used the openings, as the answer first: a one-sentence headline and a box for each band and time bin, read for the destination
+    `cells` (log_openings.opening_cells) was made for, with a short key. The shading is WSPR path evidence to that destination (receivers there that
+    decoded WSPR near you in the 'observed' view, that looked strong enough for you in the 'estimate' view); a dashed box has too little WSPR behind it
+    to say, a striped one has stations that decoded WSPR but none strong enough, and a blank one has no reports from there. On top: a diamond when you
+    were active on the band in that box, a star when you logged a contact with the destination, and a ring when a skimmer there spotted you (RBN, only
+    where it applies). The statement for each box is in its tooltip. How to read it, and what it rests on, is openings_explain_html."""
+    from log_openings import openings_headline, rbn_sentence, where_forms
+    where = cells.attrs.get("where") or where_forms("sector", None)
+    observed = view == "observed"
+    first = cells.drop_duplicates("band")
+    flags = dict(zip(first["band"], first["worked"]))
+    all_bands = [b for b in first["band"] if flags[b]] + [b for b in first["band"] if not flags[b]]
+    panels = []
+    for panel, d in cells.groupby("panel"):
+        slots = sorted(d["slot"].unique())
+        by = {(r.band, r.slot): r for r in d.itertuples()}
+        head = "<div></div>" + "".join(f'<div class="th"><b>{pd.Timestamp(s):%H:%M}</b>'
+                                       + (f"<span>{_local_time(s, tz_name)} local</span>" if _local_time(s, tz_name) else "") + "</div>" for s in slots)
+        out, in_group = [], False
+        for b in all_bands:
+            if not flags[b] and not in_group:
+                out.append('<div class="grp">Bands you did not work</div>')
+                in_group = True
+            out.append(f'<div class="bl">{escape(b)}</div>')
+            for s in slots:
+                r = by[(b, s)]
+                kind = {"evidence": "s3" if r.n >= 3 else "s1", "below threshold": "few", "insufficient coverage": "sparse"}.get(r.state, "none")
+                glyph = str(r.n) if r.state == "evidence" else "?" if r.state == "insufficient coverage" else "&ndash;"
+                marks = ((f'<em><i></i>{r.active}</em>' if r.active else "")
+                         + ('<em class="st" title="a contact with the destination">&#9733;</em>' if r.with_dest else "")
+                         + ('<em title="a skimmer there spotted you"><u></u></em>' if r.rbn_state == "evidence" else ""))
+                tip = f"{b} {pd.Timestamp(s):%H:%M}Z, {r.state}. {r.text} {rbn_sentence(r.rbn_state, r.rbn_n, where, r.rbn_why)}"
+                out.append(f'<div class="cell {kind}" title="{escape(tip)}"><span class="p">{glyph}</span><span class="m">{marks}</span></div>')
+        title = f'<p class="sub" style="margin:14px 0 0"><b>{pd.Timestamp(slots[0]):%a %d %b}</b> (UTC)</p>' if cells["panel"].nunique() > 1 else ""
+        dense = " dense" if len(slots) > 10 else ""
+        panels.append(title + f'<div class="lc-cgw"><div class="lc-cg lc-dx{dense}" style="--k:{len(slots)}">{head}{"".join(out)}</div></div>')
+    headline = openings_headline(cells)
+    key = ('<div class="lc-key"><span class="sw"><b style="background:rgba(32,178,170,.88)"></b>3 or more stations</span>'
+           '<span class="sw"><b style="background:rgba(32,178,170,.40)"></b>1 or 2</span>'
+           + ('' if observed else '<span class="sw"><b style="background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(128,128,128,.4) 5px 6px)"></b>decoded WSPR, none strong enough</span>')
+           + '<span class="sw"><b style="border-style:dashed;background:repeating-linear-gradient(45deg,transparent 0 3px,rgba(128,128,128,.25) 3px 4px)"></b>too little WSPR to say</span>'
+             '<span class="sw"><b></b>no reports from there</span>'
+             '<span class="sw"><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> you were active</span>'
+             f'<span class="sw"><span style="color:var(--a);font-weight:700">&#9733;</span> a contact with {escape(where["with"])}</span>'
+             f'<span class="sw"><span style="display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6"></span> an RBN skimmer {escape(where["skimmers"])} spotted you</span></div>')
+    return ('<div class="lc"><div class="lc-card"><h4>How you used the openings</h4>'
+            + (f'<p style="margin:0 0 6px;font-size:15px"><b>{escape(headline)}</b></p>' if headline else "")
+            + "".join(panels) + key + '</div></div>')
+
+
+CONTINENT_COLOURS = {"EU": "#2a78d6", "AF": "#eb6834", "AS": "#1baf7a", "OC": "#6250d6", "SA": "#e87ba4"}
+
+
+def _hour_ticks(first, last, step_min):
+    """Where to put time labels under a card: on the hour (or every 2 or 4 hours for a long stretch), as minutes from `first`."""
+    total = (last - first).total_seconds() / 60
+    every = 60 if total <= 480 else 120 if total <= 960 else 240
+    t = first.ceil(f"{every}min")
+    out = []
+    while t <= last:
+        out.append(t)
+        t += pd.Timedelta(minutes=every)
+    return out
+
+
+def band_cards_html(tl, tz_name=None):
+    """The band-by-band timeline (log_openings.band_timeline): one card for each band you worked, highest band first, on a time axis in UTC. In a card:
+    a row for each distant continent with a bar for each time bin in which receivers there decoded WSPR near you (solid for two or more receiving
+    stations, pale for one: one receiving station is limited evidence, not a weak signal), a small ring where an RBN skimmer there spotted you (only
+    where RBN applies), your contacts as ticks and, for a distant continent, a dot, shading for your logged activity (first to last contact, split at
+    pauses), a mark for any bin with too little WSPR to say anything, and one finding in words. There is no callsign on the chart, so nothing overlaps:
+    each dot carries its call, time and continent in its tooltip, and the calls are listed under the card."""
+    from log_openings import ACTIVITY_GAP_MIN, LANES
+    names, observed = lf.CONTINENT_NAMES, tl["metric"] == "heard"
+    power_w, mode = tl.get("power_w") or 0, tl.get("mode", "CW")
+    legend_swatches = "".join(f'<span style="--c:{CONTINENT_COLOURS[c]};margin-right:12px"><span class="bc-lab" style="display:inline"><i></i>{names[c]}</span></span>' for c in LANES)
+    meaning = ("Bars: receiving stations in that continent that decoded WSPR transmitters near you. Nothing is assumed about your station." if observed else
+               f"Bars: receiving stations in that continent that decoded WSPR transmitters near you and, restated to {power_w:g} W in {escape(mode)}, looked strong enough to hear you.")
+    legend = (f'<p class="sub" style="margin:0 0 4px">{legend_swatches}</p>'
+              f'<p class="sub">{meaning} <b>Solid bar:</b> two or more receiving stations. <b>Pale bar:</b> one receiving station, which is limited evidence, not a weak signal. '
+              '<b>Dot:</b> a contact with that continent. <b>Small tick:</b> any other contact. <b>Ring:</b> an RBN skimmer there spotted you. '
+              f'<b>Shading:</b> logged activity on the band, from the first to the last contact, split where there was a pause of more than {ACTIVITY_GAP_MIN} minutes; '
+              'it is when contacts were logged, not when you were listening or calling.</p>'
+              + (f'<p class="sub">{escape(tl["rbn_line"])}</p>' if tl.get("rbn_line") and not tl["rbn_line"].startswith("RBN skimmers") else ""))
+    out = []
+    many = len(tl["panels"]) > 1
+    for panel in tl["panels"]:
+        slots, step = panel["slots"], pd.Timedelta(minutes=panel["bin_min"])
+        n, start, end = len(slots), slots[0], slots[-1] + step
+        total = (end - start).total_seconds() / 60
+        pct = lambda t: (pd.Timestamp(t) - start).total_seconds() / 60 / total * 100
+        if many:
+            out.append(f'<p class="sub" style="margin:14px 0 0"><b>{start:%a %d %b}</b> (UTC)</p>')
+        for card in panel["cards"]:
+            acts = "".join(f'<i style="left:{pct(a) - 0.6:.2f}%;width:{max(pct(b) - pct(a), 0) + 1.2:.2f}%" title="Logged activity on {card["band"]}: {a:%H:%M} to {b:%H:%M} UTC, {k} contact{"s" if k != 1 else ""}"></i>'
+                           for a, b, k in card["spans"])
+            ticks, dots = "", ""
+            for c in card["contacts"]:
+                x = pct(c["time"])
+                if c["cont"]:
+                    dots += f'<i class="bc-dot" style="--c:{CONTINENT_COLOURS[c["cont"]]};left:{x:.2f}%" title="{escape(c["call"])}, {pd.Timestamp(c["time"]):%H:%M} UTC, {names[c["cont"]]}"></i>'
+                else:
+                    ticks += f'<i class="bc-tick" style="left:{x:.2f}%"></i>'
+            rows = f'<div class="bc-row"><div class="bc-lab">Your contacts</div><div class="bc-trk" style="--n:{n}">{ticks}{dots}</div></div>'
+            for c, cells_ in card["lanes"].items():
+                bars = rings = ""
+                for i, x in enumerate(cells_):
+                    left, width = i / n * 100 + 0.35, 100 / n - 0.7
+                    if x["n"] >= 1:
+                        what = (f"{x['n']} receiving station{'s' if x['n'] != 1 else ''} in {names[c]} decoded WSPR near you" if observed else
+                                f"{x['n']} receiving station{'s' if x['n'] != 1 else ''} in {names[c]} looked strong enough to hear {power_w:g} W ({x['heard']} decoded WSPR near you)")
+                        bars += f'<i class="bc-bar{"" if x["n"] >= 2 else " p"}" style="left:{left:.2f}%;width:{width:.2f}%" title="{x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC: {what}"></i>'
+                    if x["rbn"]:
+                        rings += (f'<i class="bc-ring" style="left:{(i + 0.5) / n * 100:.2f}%" title="RBN: {escape(", ".join(x["rbn"][:6]))} in {names[c]} spotted you, '
+                                  f'{x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC"></i>')
+                empty = "" if bars or rings else '<span class="bc-none">no reports from there</span>'
+                rows += f'<div class="bc-row" style="--c:{CONTINENT_COLOURS[c]}"><div class="bc-lab"><i></i>{names[c]}</div><div class="bc-trk" style="--n:{n}">{bars}{rings}{empty}</div></div>'
+            if not card["lanes"]:
+                rows += '<div class="bc-row"><div class="bc-lab"></div><div class="bc-none">No distant-continent paths in the nearby WSPR</div></div>'
+            if card["thin"]:
+                thin = "".join(f'<i class="bc-thin" style="left:{pct(s) + 0.35:.2f}%;width:{100 / n - 0.7:.2f}%" title="{s:%H:%M}\u2013{s + step:%H:%M} UTC: too little WSPR near you to say anything"></i>' for s in card["thin"])
+                rows += f'<div class="bc-row"><div class="bc-lab">Too little WSPR</div><div class="bc-trk" style="--n:{n}">{thin}</div></div>'
+            ax = "".join(f'<span style="left:{pct(t):.2f}%">{t:%H:%M}</span>' for t in _hour_ticks(start, end, panel["bin_min"]))
+            rows += f'<div class="bc-row"><div class="bc-lab">UTC</div><div class="bc-ax">{ax}</div></div>'
+            calls = ("<p class=\"sub\">Contacts there: " + ", ".join(f"{escape(call)} ({names[cont]})" for call, cont in card["worked"]) + ".</p>") if card["worked"] else ""
+            out.append(f'<div class="bc"><h5>{card["band"]}<small>{len(card["contacts"])} contact{"s" if len(card["contacts"]) != 1 else ""}</small></h5>'
+                       f'<div class="bc-body"><div class="bc-act">{acts}</div>{rows}</div><p>{escape(card["finding"])}</p>{calls}</div>')
+    notes = []
+    kinds = {"path": [], "none": [], "thin": []}
+    for band, kind in tl["idle"]:
+        kinds[kind].append(band)
+    from log_openings import _join
+    if kinds["path"]:
+        notes.append(f"{_join(kinds['path'])}: you logged no contact; nearby WSPR showed a path to a distant continent.")
+    if kinds["none"]:
+        notes.append(f"{_join(kinds['none'])}: you logged no contact; nearby WSPR showed no path to a distant continent.")
+    if kinds["thin"]:
+        notes.append(f"{_join(kinds['thin'])}: too little WSPR near you to say anything.")
+    foot = ('<p class="sub">' + " ".join(escape(x) for x in notes) + "</p>") if notes else ""
+    note = (f'<p class="sub">Time bins are {tl["bin_min"]} minutes, each judged on the hour of WSPR up to its end, so a bar shows roughly when a path was there, '
+            'not the exact moment it opened or closed.</p>')
+    head = f'<p style="margin:0 0 8px;font-size:15px"><b>{escape(tl["headline"])}</b></p>' if tl.get("headline") else ""
+    return '<div class="lc"><div class="lc-card"><h4>How you used the openings, band by band</h4>' + head + legend + "".join(out) + foot + note + '</div></div>'
+
+
+def band_cards_explain_html(tl, grid=None):
+    """The folded explanation for the band timeline: what it counts, what it does not claim, and the evidence line behind it."""
+    from log_openings import where_forms
+    min_km = tl.get("min_km") or 0
+    far = f"at least {min_km * 0.621371:,.0f} miles ({min_km:,.0f} km) from you" if min_km else "at any distance"
+    observed = tl["metric"] == "heard"
+    what = ("decoded WSPR transmitters near you" if observed else f"decoded WSPR transmitters near you and looked strong enough to hear {tl.get('power_w') or 0:g} W "
+            "(their reports restated to your power, with 3 dB to spare)")
+    intro = (f'<p class="sub">Each card is a band you logged contacts on. A bar counts the WSPR receiving stations in one continent, {far}, that {what}, in the hour up to the end of '
+             'each time bin. It counts different stations, not reports. It is evidence about paths near you, not a score for your operating, and it does not say what you should have done.</p>')
+    limits = ('<p class="sub">The shading and the dots come from your log alone: it holds the contacts you made, not the time you spent listening, calling without an answer or resting. '
+              'WSPR only covers stations near you as transmitters, so a bin with few of them is marked as having too little WSPR, not drawn as empty. '
+              'RBN carries CW and RTTY only and spots you only while you call CQ, so a ring is proof you were heard there, and no ring says little. '
+              'Click through to the evidence under the cards for the stations, distances, times, spots and contacts behind any bar.</p>')
+    return '<div class="lc">' + intro + limits + (_evidence_line(grid) if grid is not None else "") + '</div>'
+
+
+def openings_explain_html(cells, grid=None, view="estimate"):
+    """How to read the openings grid, and what it rests on: what the shading and the marks are, the distance and destination in words, the evidence line
+    (the WSPR reports, transmitters and stations behind it) and the limits. It is the folded piece under the grid."""
+    from log_openings import where_forms
+    where, observed = cells.attrs.get("where") or where_forms("sector", None), view == "observed"
+    power_w = cells.attrs.get("power_w") or 0
+    min_km = cells.attrs.get("min_km") or 0
+    far = f"at least {min_km * 0.621371:,.0f} miles ({min_km:,.0f} km) from you" if min_km else "at any distance"
+    scope = f"in {where['to']} and {far}" if cells.attrs.get("dest") else far
+    what = ("decoded WSPR transmitters near you" if observed else f"decoded WSPR transmitters near you and looked strong enough to hear {power_w:g} W "
+            "(their reports restated to your power, with 3 dB to spare)")
+    intro = (f'<p class="sub">Each box is a band in one time bin (UTC). The shading counts the WSPR stations {escape(scope)} that {what}, in the hour up to the end '
+             'of the box. It counts different stations, not reports. It is evidence about the path, not a score for your operating, and it does not say what you should have done.</p>')
+    reading = ('<p class="sub"><b>How to read it:</b> the shading is the path, the marks are you. A diamond means you were active on the band in that box, a star that you '
+               f'logged a contact with {escape(where["with"])}, and a ring that an RBN skimmer {escape(where["skimmers"])} spotted you. Read across a row to follow a band over time. '
+               'Hover over a box for its statement.</p>')
+    caveat = ('<p class="sub">WSPR only covers stations near you as transmitters, and a box with few of them says nothing, which is why it is dashed and not blank. '
+              'RBN carries CW and RTTY only and spots you only while you call CQ, so a ring is proof you were heard there, and no ring says little: RBN has far fewer skimmers than WSPR has receivers.</p>')
+    return '<div class="lc">' + intro + reading + (_evidence_line(grid) if grid is not None else "") + caveat + '</div>'
 
 
 def dx_regions_html(grid, view="estimate"):
@@ -560,23 +757,14 @@ def pota_html(card):
 
 
 def band_table_html(bands, min_contacts=3):
-    """One row per band: contacts, skimmers, the page's chance against the share spotted, and strength against a typical station. A band
-    with fewer than `min_contacts` contacts is left out of the rows and named underneath, because one contact says nothing."""
+    """One row per band: contacts, skimmers, and strength against a typical station. A band with fewer than `min_contacts` contacts is left
+    out of the rows and named underneath, because one contact says nothing."""
     few = bands[bands["contacts"] < min_contacts]
     bands = bands[bands["contacts"] >= min_contacts]
     top = max(int(bands["contacts"].max()), 1) if len(bands) else 1
     rows = []
     for r in bands.itertuples():
         zero = 15 / 35 * 100
-        if np.isnan(r.page) or np.isnan(r.spotted):
-            why = "no WSPR picture" if r.no_picture else "too few regions with WSPR"
-            dumb = f'<div class="lc-dumb none">{why}</div>'
-        else:
-            lo, hi = sorted((r.page * 100, r.spotted * 100))
-            dumb = (f'<div class="lc-dumb" title="Page said {pct(r.page)}, skimmers that spotted you {pct(r.spotted)} '
-                    f'(of {r.listening} on the band)"><em class="g50"></em><em class="gap" style="left:{lo:.1f}%;width:{hi - lo:.1f}%"></em>'
-                    f'<u class="pg" style="left:{r.page * 100:.1f}%"></u><u class="ac" style="left:{r.spotted * 100:.1f}%"></u>'
-                    f'<span class="cap">page <s>{pct(r.page)}</s> &rarr; spotted <strong>{pct(r.spotted)}</strong></span></div>')
         if np.isnan(r.stronger_db):
             strength = f'<div class="lc-str none">{"too few matches" if r.matches else "no matches"}</div>'
         else:
@@ -590,17 +778,13 @@ def band_table_html(bands, min_contacts=3):
                   if not np.isnan(r.report) else "")
         extra = getattr(r, "other", 0)
         other = f'<small title="Contacts in other modes are in the log but RBN cannot hear them, so they are not compared">+{extra} other mode{"s" if extra != 1 else ""}</small>' if extra else ""
-        note = f'<div class="lc-note {r.tone}">{escape(r.note)}</div>' if r.note else "<div></div>"
         rows.append(f'<div class="lc-brow"><div class="lc-bname">{r.band}</div>'
                     f'<div class="lc-cont"><div class="bar"><i style="width:{r.contacts / top * 100:.1f}%"></i></div><b>{r.contacts}</b><span>CW contacts</span>{other}</div>'
-                    f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span>{report}</div>{dumb}{strength}'
-                    f'{note}</div>')
+                    f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span>{report}</div>{strength}</div>')
     return ('<div class="lc"><div class="lc-card"><h4>Band by band</h4>'
-            '<p class="sub">What you worked, who heard you, what the Band conditions page predicted, and how strong you were.</p>'
-            '<div class="lc-legend"><span><i class="pg"></i>what the page said (chance)</span>'
-            '<span><i class="ac"></i>share of skimmers on the band that spotted you</span>'
-            '<span>bar: stronger (blue) or weaker (amber) than a typical station at your power; striped means few matches</span></div>'
-            '<div class="lc-bh"><div>Band</div><div>Contacts</div><div>Skimmers</div><div>Page vs spotted</div><div>Strength vs typical</div><div></div></div>'
+            '<p class="sub">What you worked, who heard you, and how strong you were against a typical WSPR station near you.</p>'
+            '<div class="lc-legend"><span>bar: stronger (blue) or weaker (amber) than a typical station at your power; striped means few matches</span></div>'
+            '<div class="lc-bh"><div>Band</div><div>Contacts</div><div>Skimmers</div><div>Strength vs typical</div></div>'
             + "".join(rows)
             + (f'<p class="sub" style="margin-top:10px">Not shown, with fewer than {min_contacts} CW contacts: '
                + ", ".join(f"{r.band} ({r.contacts} CW" + (f", {r.other} other" if getattr(r, "other", 0) else "") + ")" for r in few.itertuples()) + ".</p>" if len(few) else "")

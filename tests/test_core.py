@@ -1237,7 +1237,8 @@ class LogCheckPictures(unittest.TestCase):
                                "report": float("nan")}])
         html = lh.band_table_html(bands)
         self.assertNotIn("nan", html.lower())
-        self.assertIn("no WSPR picture", html)
+        self.assertIn("no matches", html)                                                   # the strength has nothing to show
+        self.assertNotIn("Page vs spotted", html)                                           # the page's percentage is no longer set against the share spotted
 
     def test_a_band_with_one_contact_is_named_under_the_table_not_given_a_row(self):
         row = {"skimmers": 3, "page": 0.8, "spotted": 0.4, "listening": 10, "stronger_db": 2.0, "matches": 9, "thin": False, "note": "",
@@ -2104,7 +2105,7 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertTrue(text.endswith("Made with FarField Lab (farfieldlab.streamlit.app)"))
         png = sc.share_png(facts)
         self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
-        self.assertEqual((int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")), (1200, 630))
+        self.assertEqual((int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")), (2400, 1260))      # sharp: twice 1200 by 630
         plain = sc.share_facts(log, lc.summary(log), lc.worked_summary(log), "", None, None)               # no park, no callsign, no followers
         self.assertEqual(plain["title"], "9 contacts on 2 bands")
         self.assertNotIn("POTA", sc.share_text(plain))

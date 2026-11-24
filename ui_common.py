@@ -207,7 +207,7 @@ GUIDES = {
                "What you worked: DXCC entities, continents, US states, provinces and CQ zones.",
                "A session chart with a lane for each band, your sending speed as the skimmers measured it, and two maps side by side: the stations you worked, and the skimmers that spotted you.",
                "For a POTA or SOTA log, how your activation compares with the others listed for that park or summit, and a picture to share.",
-               "How the bands were doing for DX while you were on, from WSPR, and the space weather during the session."],
+               "How you used the openings: for a direction or continent you choose, where WSPR showed a path, beside when you were active and who you worked there (a click on a box shows what is behind it), and the space weather during the session."],
         limits="A log holds only what you wrote down. The skimmer and WSPR comparisons are estimates, and a band with no reports can just mean "
                "nobody was listening. Skimmers only hear CW, so the spotter map covers your CW contacts. The log is used for this visit only; "
                "your callsign is sent to public services (RBN, WSPR and callsign lookups) to get the data."),

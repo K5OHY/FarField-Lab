@@ -9,6 +9,7 @@ import streamlit as st
 import log_check as lc
 import log_check_html as lh
 import log_foundations as lf
+import log_openings as lo
 import share_card as sc
 import space_weather as sw
 from compare_stats import locate as skimmer_location
@@ -102,14 +103,16 @@ def _where(grid, call, skimmers):
     return found[0], found[1], f"{found[2] or 'near ' + call} (where {call} is registered)"
 
 
-def _what_was_read(log, name):
-    """How many contacts were read from the file, and how many records were left out and why."""
+def _what_was_read(log, name, call="", where=""):
+    """One line under the uploader: how many contacts were read, from which file, which callsign and place they are for, and, when records were left
+    out, how many and why."""
     n, seen = len(log), log.attrs.get("records", len(log))
+    who = (f" for {call}" if call else "") + (f", at {where}" if where else "")
     if seen == n:
-        st.caption(f"Read {n} contacts from {name}.")
+        st.caption(f"Read {n} contacts from {name}{who}.")
         return
     why = [f"{k} without a usable {what}" for k, what in ((log.attrs.get("no_time", 0), "date or time"), (log.attrs.get("no_band", 0), "band")) if k]
-    st.caption(f"Read {n} of the {seen} records in {name}. {seen - n} left out: {', '.join(why)}.")
+    st.caption(f"Read {n} of the {seen} records in {name}{who}. {seen - n} left out: {', '.join(why)}.")
 
 
 def _mixed_log_warning(log):
@@ -189,7 +192,7 @@ def _conditions(log, home, power, label, digest, radius_km=lf.DEFAULT_RADIUS_KM)
     return grid
 
 
-def _foundations_section(grid, log, home):
+def _foundations_section(grid, log, home, places):
     """The rules behind the picture, with their numbers: the clock-aligned bins, the exact WSPR window behind each box and how much of it the
     box before shared, how many stations stand behind each box and what it can say, and where your contacts were seen from your station."""
     bin_min = grid.attrs.get("bin_min", lc.CONDITIONS_SLOT_MIN)
@@ -209,9 +212,8 @@ def _foundations_section(grid, log, home):
         for name in (lf.EVIDENCE, lf.NO_REPORTS, lf.SPARSE, lf.BELOW, lf.UNAVAILABLE, lf.NOT_APPLICABLE):
             st.markdown(f"**{name}**: {lf.STATE_NOTES[name]}")
     st.markdown("**Where your contacts were**")
-    pick = st.radio("Group contacts by", list(lf.REGION_VIEWS.values()), horizontal=True, key="log_region_view")
+    pick = st.radio("Group contacts by", list(lf.REGION_VIEWS.values()), horizontal=True, key="log_contacts_view")
     view = next(k for k, v in lf.REGION_VIEWS.items() if v == pick)
-    places = lc.contact_places(log, home)
     by_region = lc.contact_direction_table(places, view)
     if by_region.empty:
         st.caption("No contact could be placed.")
@@ -219,30 +221,163 @@ def _foundations_section(grid, log, home):
         st.dataframe(by_region, hide_index=True, width="stretch")
     n = by_region.attrs
     if view == "sector":
-        st.caption(f"A contact is placed by its own grid square when the log gives one: {n['counted']} of {n['total']} here. "
-                   f"{n['approximate']} could only be placed at the centre of their state or country, which can be hundreds of km from the station, "
-                   "so they are listed apart and left out of the directions. "
+        st.caption(f"{n['counted']} of the {n['total']} contacts can be placed in one direction: {n['counted'] - n['by_state']} by their own grid square and "
+                   f"{n['by_state']} by their state, because the whole state lies in that direction from you. {n['between']} are between directions: "
+                   "their state spreads over more than one, or they are placed only at the centre of their country, which can be hundreds of km from the station. "
                    + (f"{n['unplaced']} could not be placed at all." if n["unplaced"] else ""))
     else:
         st.caption("The continent comes from the log, or else from the callsign, so every contact counts here even when its place is not known exactly.")
+
+
+def _clock(df, columns):
+    """`df` with the time columns shown as clock times, for a table."""
+    return df.assign(**{c: pd.to_datetime(df[c]).dt.strftime("%H:%M:%S") for c in columns if c in df})
+
+
+def _box_evidence(cells, grid, log, places, spots, locs, home, band, slot, view, dest, min_km, rbn_ok, radius_km):
+    """Everything behind one box: what it says, the WSPR window and what stands behind it, and the tables of transmitters, receivers, RBN spots and
+    contacts."""
+    row = cells[(cells["band"] == band) & (cells["slot"] == pd.Timestamp(slot))]
+    if row.empty:
+        st.caption("Pick a band and a box above.")
+        return
+    row = row.iloc[0]
+    where = cells.attrs["where"]
+    ev = lo.cell_evidence(grid, log, places, spots, locs, lambda a, b: load_nearby(home[0], home[1], radius_km, a, b), home, band, pd.Timestamp(slot), view,
+                          dest, cells.attrs["min_km"], rbn_ok)
+    start, end = ev["window"]
+    b0, b1 = ev["bin"]
+    cov = ev["coverage"]
+    st.markdown(f"**{band}, {b0:%H:%M}\u2013{b1:%H:%M} UTC.** {row['text']} {lo.rbn_sentence(row['rbn_state'], int(row['rbn_n']), where, row['rbn_why'])}")
+    st.caption(f"WSPR window: after {start:%d %b %H:%M} and up to {end:%H:%M} UTC, from transmitters within {lf.radius_text(radius_km)} of you. It shares "
+               f"{row['shared_min']:.0f} of its minutes with the box before. Behind it: {cov['reports']} reports from {cov['transmitters']} transmitters, decoded by "
+               f"{cov['receivers']} receivers at {cov['sites']} sites. The path in this box is {row['state']}: {lf.STATE_NOTES[row['state']]}")
+    tx, rx, rbn, qso = ev["transmitters"], ev["receivers"], ev["rbn"], ev["qsos"]
+    t1, t2, t3, t4 = st.tabs([f"WSPR transmitters near you ({len(tx)})", f"Receivers there ({len(rx)})", f"Your RBN spots ({len(rbn)})", f"Your contacts ({len(qso)})"])
+    with t1:
+        st.dataframe(_clock(tx, ["First report", "Last report"]).round({"Km from you": 0}), hide_index=True, width="stretch")
+    with t2:
+        st.caption("The WSPR stations in the destination, at the distance chosen, that decoded those transmitters in this window." if len(rx)
+                   else "No WSPR station in the destination decoded them in this window.")
+        st.dataframe(_clock(rx, ["First decode", "Last decode"]), hide_index=True, width="stretch")
+    with t3:
+        near = int((rbn["In the destination"] == "yes").sum()) if len(rbn) else 0
+        st.caption((f"All the spots of you on this band in this box: {len(rbn)}, of which {near} from skimmers in the destination. Most spots are from skimmers near you, which "
+                    "is why the shading and rings count only the distant ones.") if len(rbn)
+                   else "RBN has no spot of you on this band in this box." if rbn_ok else lo.rbn_sentence(row["rbn_state"], int(row["rbn_n"]), where, row["rbn_why"]))
+        st.dataframe(_clock(rbn, ["Time"]), hide_index=True, width="stretch")
+    with t4:
+        st.dataframe(_clock(qso, ["Time"]), hide_index=True, width="stretch")
+
+
+def _destination_choices():
+    """One list for the destination: all of them, a continent, or a compass direction, as [(key, label)]. A key is 'all', 'continent:EU' or 'sector:NE'."""
+    return ([("all", "All destinations")] + [(f"continent:{k}", f"Continent: {v}") for k, v in lf.CONTINENT_NAMES.items() if k != "AN"]
+            + [(f"sector:{s}", f"Direction: {lf.sector_label(s)}") for s in lf.SECTORS])
+
+
+def _busiest_dx_continent(places):
+    """The destination to open on: the continent outside North America with the most of your contacts, else all of them."""
+    far = places[(places["continent"] != "") & (places["continent"] != "NA")].groupby("continent").size()
+    return f"continent:{far.idxmax()}" if len(far) else "all"
+
+
+LAYOUTS = {"cards": "Band by band", "grid": "Grid"}
+
+
+def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, digest):
+    """How you used the openings, in two views of the same evidence. *Band by band* (the default) is a card for each band you worked, on a time axis, with
+    a lane for each distant continent. *Grid* is the earlier view: a box for each band and time bin, read for one destination. Both can be read as what WSPR
+    showed or as an estimate for your station, and both are followed by 'look at one box', which shows the evidence behind any bar or box. Returns
+    draw(spots, rbn_ok), which draws it all again: it is called once without RBN and again when the spots have been read."""
+    places = lc.contact_places(log, home)
+    show = st.radio("The DX picture", list(lh.DX_VIEWS.values()), horizontal=True, key="log_dx_view", label_visibility="collapsed",
+                    help="What WSPR showed: the stations that decoded WSPR transmitters near you, with nothing assumed about your station. "
+                         "Estimate for my station: the ones whose reports, restated to your power, look strong enough to hear you.")
+    metric_view = next(k for k, v in lh.DX_VIEWS.items() if v == show)
+    layout = st.radio("View", list(LAYOUTS.values()), horizontal=True, key="log_openings_layout",
+                      help="Band by band: a card for each band you worked, with the distant continents WSPR showed a path to, and your contacts, on one time axis. "
+                           "Grid: the earlier view, a box for each band and time bin for one destination.")
+    cards = layout == LAYOUTS["cards"]
+    c1, c2 = st.columns([3, 1.4])
+    if cards:
+        options = [("all", "All continents")] + [(k, v) for k, v in lf.CONTINENT_NAMES.items() if k not in ("AN", "NA")]
+        choice = c1.selectbox("Show", [k for k, _ in options], format_func=dict(options).get, key="log_card_dest",
+                              help="Every distant continent, or just one. North America is not a distant destination.")
+        view, dest = "continent", (None if choice == "all" else choice)
+    else:
+        options = _destination_choices()
+        default = _busiest_dx_continent(places)
+        choice = c1.selectbox("Destination", [k for k, _ in options], index=[k for k, _ in options].index(default), format_func=dict(options).get,
+                              key=f"log_dest_{digest[:8]}", help="Where to look: a continent, or a compass direction from you (eight sectors of 45 degrees). "
+                                                                  "It opens on the continent where you made the most DX contacts.")
+        kind, _, code = choice.partition(":")
+        view, dest = ("continent" if kind == "continent" else "sector"), (code or None)
+    with c2.expander("More options"):
+        distance = st.selectbox("At least this far away", list(lf.DISTANCE_CHOICES), index=list(lf.DISTANCE_CHOICES).index(lf.DEFAULT_DISTANCE),
+                                format_func=lambda k: lf.DISTANCE_CHOICES[k][0], key="log_distance",
+                                help="A station nearer than this is not counted as a destination, for the WSPR evidence, your contacts and the RBN skimmers alike.")
+    min_km = lf.DISTANCE_CHOICES[distance][1]
+    grid_slot, table_slot = st.empty(), st.empty()
+    with st.expander("How to read this, and what it rests on"):
+        explain_slot, words_slot = st.empty(), st.empty()
+    bands = list(dict.fromkeys(grid["band"]))
+    slots = sorted(grid["slot"].unique())
+    with st.expander("Details for one band and time: the stations, spots and contacts behind it"):
+        cols = st.columns(3 if cards else 2)
+        band = cols[0].selectbox("Band", bands, key="log_box_band")
+        slot = cols[1].selectbox("Box (UTC)", slots, format_func=lambda t: f"{pd.Timestamp(t):%d %b %H:%M}Z", key="log_box_slot")
+        if cards:
+            ev_choice = cols[2].selectbox("Continent", ["all"] + [k for k in lo.LANES], format_func=lambda k: "All continents" if k == "all" else lf.CONTINENT_NAMES[k],
+                                          key="log_box_cont")
+            ev_view, ev_dest = "continent", (None if ev_choice == "all" else ev_choice)
+        else:
+            ev_view, ev_dest = view, dest
+        box_slot = st.empty()
+
+    def draw(spots, rbn_ok):
+        metric = lo.METRIC[metric_view]
+        if cards:
+            timeline = lo.band_timeline(grid, log, places, spots, skimmers, home, min_km, metric, rbn_ok, dest)
+            grid_slot.html(lh.CSS + lh.band_cards_html(timeline, zone))
+            table_slot.empty()
+            explain_slot.html(lh.CSS + lh.band_cards_explain_html(timeline, grid))
+            words_slot.empty()
+        else:
+            cells = lo.opening_cells(grid, log, places, spots, skimmers, home, view, dest, min_km, metric, rbn_ok)
+            grid_slot.html(lh.CSS + lh.openings_html(cells, grid, zone, metric_view))
+            with table_slot.container():
+                table = lo.openings_table(cells)
+                if len(table):
+                    st.dataframe(table, hide_index=True, width="stretch", height=min(300, 38 + 35 * len(table)))
+                rbn = lo.rbn_line(cells)
+                if rbn:
+                    st.caption(rbn)
+            explain_slot.html(lh.CSS + lh.openings_explain_html(cells, grid, metric_view))
+            lines = lo.openings_summary(cells)
+            words_slot.markdown("**In words**\n\n" + "\n".join(f"- {line}" for line in lines) if lines else "")
+        evidence = lo.opening_cells(grid, log, places, spots, skimmers, home, ev_view, ev_dest, min_km, metric, rbn_ok)
+        with box_slot.container():
+            _box_evidence(evidence, grid, log, places, spots, skimmers, home, band, slot, ev_view, ev_dest, min_km, rbn_ok, radius_km)
+
+    draw(None, False)
+    with st.expander("Another view: the percent of stations that could have heard you"):
+        st.html(lh.CSS + lh.conditions_html(grid, lc.conditions_notes(grid), power, mode, zone))
+    with st.expander("What each box rests on: the time bins, the WSPR behind them and where your contacts were"):
+        _foundations_section(grid, log, home, places)
+    return draw
+
+
+def _busiest_dx_band(log, bands):
+    """The band with the most contacts outside North America, else the first."""
+    dx = log[lc.dx_contacts_mask(log)].groupby("band").size()
+    return int(bands.index(dx.idxmax())) if len(dx) and dx.idxmax() in bands else 0
 
 
 def _default_band(bands, regions):
     """The index of the band to open on: the one with the most DX contacts, else the first."""
     dx = regions[~regions["region"].isin(lh.NEAR_REGIONS)].groupby("band")["contacts"].sum()
     return int(bands.index(dx.idxmax())) if len(dx) and dx.max() > 0 and dx.idxmax() in bands else 0
-
-
-def _regions_section(result):
-    """A band by region: pick a band, see each region's contacts, skimmers and the page's figure. It opens on the band with the most DX."""
-    shown = result["bands"][result["bands"]["contacts"] >= 3]      # the bands that have a row in the table above
-    bands, regions = list(shown["band"]), result["regions"]
-    if not bands or regions.empty:
-        return
-    st.markdown("#### A band by region")
-    pick = st.radio("Band", bands, index=_default_band(bands, regions), horizontal=True, key="log_region_band_" + "_".join(bands),
-                    label_visibility="collapsed")
-    st.html(lh.CSS + lh.regions_html(regions, pick))
 
 
 def _places_for(rows, digest, skimmers, grids=None):
@@ -300,12 +435,17 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     band with the most DX; placing that band's stations takes a few seconds the first time, and each band is only looked up once."""
     st.markdown(f"#### {MAPS_HEADING}")
     st.caption("Skimmers only hear CW, so the maps start with your CW contacts. Where your contacts were is looked up in the background, so each band should be ready when you click it.")
-    shown = set(result["bands"]["band"])
-    bands = [b for b in lc.bands_top_down(log) if b in shown] or lc.bands_top_down(log)
-    first = _default_band(bands, result["regions"])
+    if result is not None:
+        shown = set(result["bands"]["band"])
+        bands = [b for b in lc.bands_top_down(log) if b in shown] or lc.bands_top_down(log)
+        first = _default_band(bands, result["regions"])
+    else:                       # no RBN to compare with: the stations you worked are still mapped, for every band of the log
+        bands = lc.bands_top_down(log)
+        first = _busiest_dx_band(log, bands)
+    has_cw = bool((log["mode"] == "CW").any())
     c1, c2 = st.columns([3, 2])
     pick = c1.radio("Band", bands, index=first, horizontal=True, key="log_map_band_" + "_".join(bands), label_visibility="collapsed")
-    cw_only = c2.checkbox("CW contacts only", value=True, key="log_map_cw",
+    cw_only = c2.checkbox("CW contacts only", value=has_cw and result is not None, key="log_map_cw",
                           help="Skimmers only hear CW, so the CW contacts are the ones to hold against the left map. Untick to see every contact.")
     mine = log[log["band"] == pick]
     shown_log = mine[mine["mode"] == "CW"] if cw_only else mine
@@ -313,8 +453,8 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     places = _places_for(rows, digest, locs, _log_grids(log))
     worked = lc.where_worked(shown_log, places)
     worked = worked.assign(bands_worked=worked["call"].map(log.groupby("call")["band"].nunique()))
-    lo, hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
-    heard = spots[(spots["band"] == pick) & (spots["time"] >= lo) & (spots["time"] <= hi)]
+    t_lo, t_hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
+    heard = spots[(spots["band"] == pick) & (spots["time"] >= t_lo) & (spots["time"] <= t_hi)]
     view = _view_points(home, heard, worked, locs)
     left, right = st.columns(2)      # a one line title above each map and the notes below them, so the two maps start level
     left.markdown(f"**{HEARD_TITLE.format(band=pick)}**")
@@ -325,8 +465,9 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
                            contacts=worked if len(worked) else None, show_spots=False, contact_paths=False, view=view, show_legend=False)
                  .get_root().render(), height=520)
     missing = shown_log["call"].nunique() - worked["call"].nunique()
-    left.caption(f"{heard['spotter'].nunique()} skimmers between {lo:%H:%M}Z and {hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
-                 if len(heard) else f"No RBN spots on {pick} while you were working it.")
+    left.caption(f"{heard['spotter'].nunique()} skimmers between {t_lo:%H:%M}Z and {t_hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
+                 if len(heard) else (f"No RBN spots on {pick} while you were working it." if result is not None
+                                     else "The RBN spots are not available, so there is no skimmer map. The stations you worked are on the right."))
     right.caption(f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
                   + ". Colour is the report they gave you, from weak (green) to strong (red), grey where the log has none. "
                     "A black ring marks a station that worked you on more than one band. Click one for the contacts. "
@@ -339,23 +480,19 @@ def log_page():
         st.image(str(BANNER), width="stretch")
     else:
         st.title("FarField Lab")
-    st.markdown('<p class="subtitle">Upload the log of a session and see it beside the skimmers that heard you and the WSPR stations '
-                'around you. The callsign, the place and the days come from the log.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Upload the log of a session and see it beside the skimmers that heard you and the WSPR stations around you.</p>',
+                unsafe_allow_html=True)
     guide = st.container()
     skimmers, _ = skimmer_data()
-    # The power comes first: the work starts the moment a log is uploaded, so it has to be known by then. A log does not say it.
-    power_box, radius_box, _ = st.columns([1, 1, 2])
+    # The power sits beside the uploader and is set first: the work starts the moment a log is uploaded, so it has to be known by then. A log does not say it.
+    power_box, file_box = st.columns([1, 3])
     power = power_box.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
                                    help="This page does not read the power from the log, so enter what you ran. Set it before you upload: the calculations start as soon as a log is "
                                         "loaded, and they use it to restate the WSPR stations' signals to your power. Changing it later works, but starts them again.")
-    radius_km = radius_box.selectbox("Nearby WSPR stations", lf.RADIUS_CHOICES_KM, index=lf.RADIUS_CHOICES_KM.index(lf.DEFAULT_RADIUS_KM),
-                                     key="log_radius_km", format_func=lf.radius_text,
-                                     help="How far from you a WSPR transmitter counts as near you. The band conditions are worked out from the stations this close, so a smaller "
-                                          "circle is more local and has fewer stations behind it. Changing it later works, but starts the calculations again.")
     # No file-type filter on purpose: iPhones and iPads do not know .adi, so a filter greys out every log in the picker. A file that is not a log is caught below.
-    file = st.file_uploader("Your log (ADIF file, .adi or .adif)", key="log_file",
-                            help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
-                                 "which is many thousands of contacts. The log is used for this visit only and is not saved or shared.")
+    file = file_box.file_uploader("Your log (ADIF file, .adi or .adif)", key="log_file",
+                                  help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
+                                       "which is many thousands of contacts. The log is used for this visit only and is not saved or shared.")
     if file is not None:
         st.session_state["log_saved"] = (file.name, file.getvalue())
     saved = st.session_state.get("log_saved")
@@ -378,18 +515,22 @@ def log_page():
         st.error(str(exc) + ("" if name.lower().endswith((".adi", ".adif")) else f" {name} does not look like an ADIF log (those end in .adi or .adif). Pick the exported log file."))
         return
     digest = hashlib.sha1(raw).hexdigest()
-    _what_was_read(log, name)
-    st.caption(":material/info: Your contacts, the spots that heard you and the estimated conditions are different things. A band with no reports can just mean nobody was listening.")
+    read_slot = st.container()
     cw = log[log["mode"] == "CW"]
     summary, rep = lc.summary(log), lc.repeat_stations(log)
     call0, grid0 = lc.log_origin(log)
 
     _mixed_log_warning(log)
-    c1, c2 = st.columns(2)
-    call = c1.text_input("Your callsign", value=call0, key=f"log_call_{digest[:10]}",
-                         help="Taken from the log. RBN spots are looked up under this callsign, exactly as it was sent (K5OHY/P is not K5OHY).").strip().upper()
-    grid = c2.text_input("Where you operated (grid square)", value=grid0, key=f"log_grid_{digest[:10]}",
-                         help="Taken from the log. Leave it empty to use where your callsign is registered.").strip()
+    with st.expander("Change the callsign, the place or the nearby radius", expanded=not call0):
+        c1, c2, c3 = st.columns(3)
+        call = c1.text_input("Your callsign", value=call0, key=f"log_call_{digest[:10]}",
+                             help="Taken from the log. RBN spots are looked up under this callsign, exactly as it was sent (K5OHY/P is not K5OHY).").strip().upper()
+        grid = c2.text_input("Where you operated (grid square)", value=grid0, key=f"log_grid_{digest[:10]}",
+                             help="Taken from the log. Leave it empty to use where your callsign is registered.").strip()
+        radius_km = c3.selectbox("Nearby WSPR stations", lf.RADIUS_CHOICES_KM, index=lf.RADIUS_CHOICES_KM.index(lf.DEFAULT_RADIUS_KM),
+                                 key="log_radius_km", format_func=lf.radius_text,
+                                 help="How far from you a WSPR transmitter counts as near you. The band conditions are worked out from the stations this close, so a smaller "
+                                      "circle is more local and has fewer stations behind it. Changing it later works, but starts the calculations again.")
     if not call:
         st.warning("The log does not say which callsign it is for. Type yours above.")
         return
@@ -398,6 +539,8 @@ def log_page():
     except RuntimeError as exc:
         st.error(str(exc))
         return
+    with read_slot:
+        _what_was_read(log, name, call, label)
     home = (lat, lon)
     units, tiles = st.session_state.get("units_in", "mi"), "Street"
     _prefetch_places(log, skimmers, digest)
@@ -440,33 +583,24 @@ def log_page():
         park_cards = _pota_cards(log, call)
     with share_slot:
         with st.expander("Share this session: a picture and a short summary to post"):
-            facts = sc.share_facts(log, summary, worked, call, park_cards, rep)
-            picture = sc.share_png(facts)
+            made = st.session_state.get("log_share")
+            share_key = (digest, call, round(home[0], 3), round(home[1], 3), bool(park_cards))
+            if not made or made["key"] != share_key:       # the picture and the text are made once for a log, not at every redraw
+                facts = sc.share_facts(log, summary, worked, call, park_cards, rep, lc.contact_places(log, home), home)
+                made = {"key": share_key, "facts": facts, "png": sc.share_png(facts)}
+                st.session_state["log_share"] = made
+            facts, picture = made["facts"], made["png"]
             st.image(picture, width="stretch")
             st.download_button("Download the picture (PNG)", picture, file_name=f"{call or 'log'}-session.png".replace("/", "-"), mime="image/png")
             st.caption("The summary, ready to copy (the copy button is at the top right of the box):")
             st.code(sc.share_text(facts), language=None)
             st.caption("Nothing here is saved or sent anywhere. The picture and the text are made on this page from your log.")
     mode, zone = lc.condition_mode(log), _visitor_timezone()
+    draw_openings = None
     with conditions_slot:
         grid_of_conditions = _conditions(log, home, power, label, digest, radius_km) if len(days) <= MAX_DAYS else None
-        has_picture = grid_of_conditions is not None and len(grid_of_conditions) > 0
-        view = "estimate"
-        if has_picture:
-            chosen = st.radio("The DX picture", list(lh.DX_VIEWS.values()), horizontal=True, key="log_dx_view", label_visibility="collapsed",
-                              help="What WSPR showed: the stations over 3,000 miles away that decoded WSPR transmitters near you, with nothing assumed about your station. "
-                                   "Estimate for my station: the ones whose reports, restated to your power, look strong enough to hear you.")
-            view = next(k for k, v in lh.DX_VIEWS.items() if v == chosen)
-        dx_slot = st.empty()
-        if has_picture:
-            dx_slot.html(lh.CSS + lh.dx_windows_html(grid_of_conditions, lc.dx_notes(grid_of_conditions, power, view=view), power, mode, zone, view))
-            regions_html = lh.dx_regions_html(grid_of_conditions, view)
-            if regions_html:
-                st.html(lh.CSS + regions_html)
-            with st.expander("Another view: the percent of stations that could have heard you"):
-                st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, mode, zone))
-            with st.expander("What each box rests on: the time bins, the WSPR behind them and where your contacts were"):
-                _foundations_section(grid_of_conditions, log, home)
+        if grid_of_conditions is not None and len(grid_of_conditions) > 0:
+            draw_openings = _openings_section(grid_of_conditions, log, home, power, mode, zone, radius_km, skimmers, digest)
     with reports_slot:      # who hears whom comes from the log alone, so it is drawn at once
         balance = lh.balance_html(lc.reports_balance(log))
         if balance:
@@ -495,9 +629,8 @@ def log_page():
         speed = lh.speed_line(log, spots)
         if speed:
             speed_hold.markdown(f":material/speed: {speed}")
-        if has_picture:     # the skimmers far away that spotted you are added to the DX picture
-            with_rbn = lc.add_rbn_far(grid_of_conditions, spots, skimmers, home)
-            dx_slot.html(lh.CSS + lh.dx_windows_html(with_rbn, lc.dx_notes(with_rbn, power, view=view), power, mode, zone, view))
+    if draw_openings is not None:   # the skimmers that spotted you are added to the openings, now the spots have been read (or are known to be missing)
+        draw_openings(spots, not cw.empty and len(missing) < len(days))
     result = None
     with work:
         if not cw.empty:
@@ -520,29 +653,22 @@ def log_page():
                     result = _run(loaded, spots, skimmers, home, power, label, radius_km)
                     if result is not None:
                         st.session_state["log_result"] = {"signature": signature, "result": result}
-    if result is None:
-        maps_hold.empty()
-        return
     with maps_hold.container():
         _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
+    if result is None:
+        return
     with compare_slot:
-        st.markdown("#### The comparison with RBN and the band conditions page")
+        st.markdown("#### The comparison with RBN")
         st.html(lh.CSS + lh.band_table_html(result["bands"]))
         o = result["overall"]
-        notes = [f"Page and skimmers: in regions with at least {lc.cond.THIN} WSPR receivers, the page's chance averaged {lh.pct(o['page'])} "
-                 f"and {lh.pct(o['spotted'])} of the {o['listening']} skimmers on the band spotted you." if o["listening"] else None,
-                 f"Regions with too few WSPR receivers (greyed on the Band conditions page): {o['thin_spotted']} of {o['thin_listening']} "
-                 "skimmers on the band spotted you." if o["thin_listening"] else None,
-                 f"Estimated strength against a typical WSPR station near you: {o['stronger_db']:+.0f} dB, from {o['matches']} matched receivers "
+        notes = [f"Estimated strength against a typical WSPR station near you: {o['stronger_db']:+.0f} dB, from {o['matches']} matched receivers "
                  "(explained below)." if pd.notna(o["stronger_db"]) else None,
                  f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
         st.caption(" ".join(n for n in notes if n))
-        _regions_section(result)
         st.caption(f"\"Stronger than a typical WSPR station\" sets the skimmers' reports against the WSPR stations near you, restated to your power. "
                    f"Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {lc.TYPICAL_OFFSET_DB:.0f} dB higher "
                    "on RBN than on the Band conditions page (found from two checks of stations whose power is known), and that is taken off. "
-                   f"With fewer than {lc.MIN_MATCHES} matched receivers a bar is striped, and it is a hint, not a score. The percentages "
-                   "compare the page's chance for each region with the share of skimmers on the band that spotted you, which is lower, because "
-                   "a skimmer has to be tuned to you and decode you. A log shows who worked you; RBN only shows who a skimmer decoded. "
+                   f"With fewer than {lc.MIN_MATCHES} matched receivers a bar is striped, and it is a hint, not a score. "
+                   "A log shows who worked you; RBN only shows who a skimmer decoded. "
                    "The S in each band row is the average report they gave you; many operators send a 9 out of habit, so it is a rough picture "
                    "of your station, not a measurement.")

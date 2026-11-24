@@ -15,6 +15,7 @@ import math
 
 import numpy as np
 import pandas as pd
+from geographiclib.geodesic import Geodesic
 
 from rbn_data import GRID_RE, maidenhead_to_latlon
 
@@ -117,6 +118,65 @@ def region_of_point(bearing, continent, view="sector"):
     return sector_of(bearing)
 
 
+# The continent each of the page's receiver regions (session_report.region_of) lies in.
+REGION_CONTINENT = {"Europe": "EU", "Africa": "AF", "Asia": "AS", "Oceania": "OC", "South America": "SA", "Mexico, Caribbean & Central America": "NA",
+                    "US East": "NA", "US Central": "NA", "US West": "NA", "Canada": "NA", "Other": ""}
+
+
+def continent_of_region(region):
+    """The continent code (NA, EU, ...) of one of the page's region names, or '' when it is not one."""
+    return REGION_CONTINENT.get(region, "")
+
+
+def destination_options(view):
+    """The destinations a view offers, as [(key, label)], with the first being 'all of them': a compass sector's code and label, or a continent's
+    code and name."""
+    if view == "continent":
+        return [(None, "All continents")] + [(k, v) for k, v in CONTINENT_NAMES.items() if k != "AN"]
+    return [(None, "All directions")] + [(s, sector_label(s)) for s in SECTORS]
+
+
+# How far away a station must be to count as a destination: the DX distance the page has always used, a middle choice, or any distance.
+DISTANCE_CHOICES = {"dx": ("DX: 3,000 miles or more", 3000 * KM_PER_MILE), "far": ("1,000 km or more", 1000.0), "any": ("Any distance", 0.0)}
+DEFAULT_DISTANCE = "dx"
+
+# The box (south, north, west, east, in degrees) round each US state and Canadian province, to about half a degree. It is used for one question
+# only: does the whole state lie inside one compass sector as seen from your station? If so a contact placed only by its state is counted in
+# that sector; if not, it is between sectors and is listed apart.
+STATE_BOXES = {
+    "AL": (30.2, 35.0, -88.5, -84.9), "AK": (54.6, 71.4, -168.1, -130.0), "AZ": (31.3, 37.0, -114.8, -109.0), "AR": (33.0, 36.5, -94.6, -89.6),
+    "CA": (32.5, 42.0, -124.4, -114.1), "CO": (37.0, 41.0, -109.05, -102.05), "CT": (41.0, 42.05, -73.7, -71.8), "DE": (38.45, 39.84, -75.8, -75.0),
+    "DC": (38.8, 39.0, -77.1, -76.9), "FL": (24.5, 31.0, -87.6, -80.0), "GA": (30.35, 35.0, -85.6, -80.8), "HI": (18.9, 22.2, -160.3, -154.8),
+    "ID": (42.0, 49.0, -117.2, -111.0), "IL": (36.97, 42.5, -91.5, -87.5), "IN": (37.8, 41.76, -88.1, -84.8), "IA": (40.4, 43.5, -96.6, -90.1),
+    "KS": (37.0, 40.0, -102.05, -94.6), "KY": (36.5, 39.15, -89.6, -81.96), "LA": (28.9, 33.0, -94.04, -88.8), "ME": (43.06, 47.46, -71.1, -66.95),
+    "MD": (37.9, 39.72, -79.5, -75.05), "MA": (41.2, 42.9, -73.5, -69.9), "MI": (41.7, 47.5, -90.4, -82.4), "MN": (43.5, 49.4, -97.2, -89.5),
+    "MS": (30.2, 35.0, -91.65, -88.1), "MO": (36.0, 40.6, -95.8, -89.1), "MT": (44.4, 49.0, -116.05, -104.04), "NE": (40.0, 43.0, -104.05, -95.3),
+    "NV": (35.0, 42.0, -120.0, -114.04), "NH": (42.7, 45.3, -72.56, -70.7), "NJ": (38.9, 41.36, -75.56, -73.9), "NM": (31.33, 37.0, -109.05, -103.0),
+    "NY": (40.5, 45.0, -79.76, -71.86), "NC": (33.84, 36.59, -84.3, -75.46), "ND": (45.9, 49.0, -104.05, -96.55), "OH": (38.4, 41.98, -84.82, -80.52),
+    "OK": (33.6, 37.0, -103.0, -94.43), "OR": (42.0, 46.3, -124.6, -116.46), "PA": (39.72, 42.27, -80.52, -74.69), "RI": (41.1, 42.02, -71.9, -71.1),
+    "SC": (32.03, 35.2, -83.35, -78.5), "SD": (42.48, 45.94, -104.06, -96.44), "TN": (34.98, 36.68, -90.3, -81.65), "TX": (25.84, 36.5, -106.65, -93.51),
+    "UT": (37.0, 42.0, -114.05, -109.04), "VT": (42.73, 45.02, -73.44, -71.46), "VA": (36.54, 39.47, -83.68, -75.24), "WA": (45.54, 49.0, -124.8, -116.92),
+    "WV": (37.2, 40.64, -82.64, -77.72), "WI": (42.5, 47.1, -92.9, -86.8), "WY": (41.0, 45.0, -111.05, -104.05), "PR": (17.9, 18.5, -67.3, -65.2),
+    "ON": (41.7, 56.9, -95.2, -74.3), "QC": (45.0, 62.6, -79.8, -57.1), "BC": (48.3, 60.0, -139.1, -114.0), "AB": (49.0, 60.0, -120.0, -110.0),
+    "SK": (49.0, 60.0, -110.0, -101.4), "MB": (49.0, 60.0, -102.0, -88.9), "NS": (43.4, 47.0, -66.4, -59.7), "NB": (44.6, 48.1, -69.1, -63.8),
+    "NL": (46.6, 60.4, -67.8, -52.6), "PE": (45.9, 47.1, -64.4, -62.0), "YT": (60.0, 69.6, -141.0, -124.0), "NT": (60.0, 78.0, -136.5, -102.0),
+    "NU": (51.0, 83.0, -120.0, -61.0)}
+
+
+def state_sector(state, home):
+    """The one compass sector a whole state or province lies in, seen from `home`: the corners, edge middles and centre of its box all fall in
+    the same sector. None when it spreads over more than one, when `home` is inside it, or when the state is not known."""
+    box = STATE_BOXES.get(str(state or "").upper())
+    if box is None:
+        return None
+    south, north, west, east = box
+    if south <= home[0] <= north and west <= home[1] <= east:
+        return None
+    sectors = {sector_of(Geodesic.WGS84.Inverse(home[0], home[1], la, lo)["azi1"] % 360)
+               for la in (south, (south + north) / 2, north) for lo in (west, (west + east) / 2, east)}
+    return sectors.pop() if len(sectors) == 1 else None
+
+
 # ------------------------------------------------------------------------------------------------- locating a station by its grid
 
 def grid_point(text):
@@ -212,6 +272,7 @@ def cell_state(applicable=True, available=True, reports=0, transmitters=0, recei
 
 
 RBN_MODES = ("CW", "RTTY")
+RUNNING_KINDS = ("CQ", "DX")      # the kind of an RBN spot that says you were calling (CQ, or CQ DX), as opposed to answering or sending a beacon
 
 
 def rbn_applicability(mode, running=None):
