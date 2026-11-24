@@ -89,7 +89,7 @@ WSPR differs from RBN in a few ways: SNR is mostly negative (about -30 to +5 dB)
 - **Download report (PDF)** next to it: key numbers, the session report, direction chart and the stations that heard you.
 - A **Log analysis** page in the menu: upload a contact log from your logging program and see it beside your RBN spots and the WSPR stations around you. See below.
 
-Your location comes from the grid you typed, else the RBN skimmer list, else the FCC ([callook.info](https://callook.info)), else [HamDB](https://hamdb.org), else the centre of your country (the app warns you). Enter the grid square where you operate to place the pin there.
+Your location comes from the grid you typed, else (for WSPR) the grid square your own spots report, else the RBN skimmer list, else the FCC ([callook.info](https://callook.info)), else [HamDB](https://hamdb.org), else the centre of your country (the app warns you, because a country's centre can be hundreds of km from you). A WSPR station is always placed by the grid in its spots, 6 characters when there is one, so a station outside the US lands where it really is. Enter the grid square where you operate to place the pin somewhere else.
 
 ## Log analysis
 

@@ -181,7 +181,7 @@ def spots_page():
     if ss.raw is None:
         task_chooser("spots")
         st.info(icon=":material/arrow_back:", body="Enter your callsign and click **Load spots**. "
-                "The map is centered on your callsign's registered location unless you enter a grid square. "
+                "The map is centered on the grid square your WSPR spots report, else on your callsign's registered location, unless you enter a grid square. "
                 "Just looking around? Click **Try an example** to see real spots.")
         st.button("Try an example", key="hero_map", type="primary", on_click=inputs.start_example, args=("map",),
                   help="Loads real RBN spots, so you can see what the map and reports look like.")

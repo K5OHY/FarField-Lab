@@ -9,6 +9,7 @@ import streamlit as st
 import example_data
 import live_rbn
 from data_sources import download_rbn_day, load_wspr, parse_pasted_data, resolve_home
+from wspr_data import grid_from_spots
 from ui_common import (
     BAND_COLORS,
     MAX_DAYS,
@@ -315,8 +316,8 @@ def where_inputs(ss, cfg, second_call=False):
         on_change=lambda: ss.update(callsign_in=ss.callsign_in.strip().upper())).strip().upper()
     grid_override = st.text_input(
         "Grid square (optional)", key="grid_in", placeholder="Looked up from your callsign",
-        help="Leave blank to use your callsign's registered address. "
-             "Enter a grid if you were portable or operating from elsewhere, or if the lookup fails.")
+        help="Leave blank and the pin goes where your WSPR spots say your station is (their grid square), or else at your callsign's "
+             "registered address. Enter a grid if you were portable or operating from elsewhere, or if the lookup fails.")
 
     source = _source_choice(ss)
     wspr_start, wspr_end = None, None
@@ -455,7 +456,8 @@ def load_spots(ss, skimmers, where):
             raise RuntimeError("Enter a callsign first.")
         if len(where.days) > MAX_DAYS:
             raise RuntimeError(f"Please pick {MAX_DAYS} days or fewer.")
-        ss.home = resolve_home(where.callsign, where.grid, skimmers)
+        if where.source != WSPR_SOURCE:                              # a WSPR pin waits for the spots: they say where the station is
+            ss.home = resolve_home(where.callsign, where.grid, skimmers)
         locs, tx_call, tx_call_b = None, None, None
         ss.notice = None
         notice = None
@@ -469,6 +471,7 @@ def load_spots(ss, skimmers, where):
                 raise RuntimeError("The second callsign is the same as the first. Leave it empty to compare one callsign's transmissions.")
             with st.spinner(f"Looking up {tx_call}'s WSPR spots…"):
                 df, truncated = load_wspr(tx_call, where.wspr_start, where.wspr_end)
+            ss.home = resolve_home(where.callsign, where.grid, skimmers, spot_grid=grid_from_spots(df, tx_call))
             if tx_call_b:
                 with st.spinner(f"Looking up {tx_call_b}'s WSPR spots…"):
                     df_b, truncated_b = load_wspr(tx_call_b, where.wspr_start, where.wspr_end)

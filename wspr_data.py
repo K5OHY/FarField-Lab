@@ -9,6 +9,7 @@ Run `python wspr_data.py K5SWA` to print the last few hours of spots for a calls
 """
 import re
 import sys
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -145,6 +146,53 @@ def fetch_listening(band, start, end, timeout=120):
     raw = pd.DataFrame(rows, columns=names)
     return (pd.DataFrame({"time": pd.to_datetime(raw["time"]), "spotter": raw["rx_sign"].str.upper()}),
             len(rows) >= MAX_LISTEN_ROWS)
+
+
+GRID_OK = re.compile(r"^[A-R]{2}\d{2}([A-X]{2})?$", re.IGNORECASE)     # what a WSPR spot can carry: 4 or 6 characters
+
+
+def choose_grid(values):
+    """The grid square a transmitter reports in its spots: the 6-character grid when any spot has one, else the 4-character one, and the
+    one reported most often when they differ (a portable station moving about). Anything that is not a valid grid is ignored. None when
+    no spot gives a usable grid, which is the only time a caller should fall back on a guess from the callsign."""
+    grids = []
+    for value in values:
+        text = value.strip() if isinstance(value, str) else ""
+        if GRID_OK.match(text):
+            grids.append(f"{text[:2].upper()}{text[2:4]}{text[4:6].lower()}")
+    if not grids:
+        return None
+    longest = [g for g in grids if len(g) == 6]
+    return Counter(longest or grids).most_common(1)[0][0]
+
+
+def grid_from_spots(spots, call=None):
+    """The transmitter's grid square as the loaded spots themselves report it (see choose_grid), or None. `call` limits it to one
+    transmitter's spots when a table holds two."""
+    if spots is None or len(spots) == 0 or "tx_loc" not in spots:
+        return None
+    rows = spots if call is None or "dx" not in spots else spots[spots["dx"] == call]
+    return choose_grid(rows["tx_loc"])
+
+
+def latest_tx_grid(call, days=7, timeout=30):
+    """The grid square a callsign's recent WSPR spots report, or None when it has sent none lately. One small question to wspr.live,
+    for pages that need to know where a station is before they have its spots."""
+    call = clean_callsign(call)
+    end = datetime.now(timezone.utc).replace(tzinfo=None)
+    start = end - timedelta(days=days)
+    query = (f"SELECT tx_loc FROM wspr.rx WHERE tx_sign = '{call}' AND time BETWEEN '{start:%Y-%m-%d %H:%M:%S}' "
+             f"AND '{end:%Y-%m-%d %H:%M:%S}' ORDER BY time DESC LIMIT 200 FORMAT JSONCompact")
+    try:
+        resp = requests.get(WSPR_URL, params={"query": query}, headers=HEADERS, timeout=timeout)
+    except requests.RequestException as exc:
+        raise WsprError(f"Couldn't reach wspr.live ({exc.__class__.__name__}).") from exc
+    if resp.status_code != 200:
+        raise WsprError(f"wspr.live returned HTTP {resp.status_code}.")
+    try:
+        return choose_grid(row[0] for row in resp.json()["data"])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise WsprError("wspr.live sent an unexpected reply.") from exc
 
 
 def receiver_locations(spots):

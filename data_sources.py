@@ -15,7 +15,7 @@ from conditions import fetch_nearby
 from log_check import _NORTH_AMERICA, finish_place, listening_from_zip
 from wspr_data import HEADERS
 from rbn_data import country_location, get_band, load_skimmers, lookup_callsign_location, maidenhead_to_latlon, refresh_skimmer_cache
-from wspr_data import clean_callsign, fetch_listening, fetch_wspr_spots
+from wspr_data import clean_callsign, fetch_listening, fetch_wspr_spots, grid_from_spots, latest_tx_grid
 
 
 # ----------------------------------------------------------------- data loading
@@ -97,12 +97,16 @@ def skimmer_data():
     return load_skimmers(), msg
 
 
-def resolve_home(callsign, grid_override, skimmers):
-    """Return (lat, lon, label) for the map pin: manual grid wins, otherwise look the callsign up."""
+def resolve_home(callsign, grid_override, skimmers, spot_grid=None):
+    """Return (lat, lon, label) for the map pin. In order: the grid typed in, the grid the station's own WSPR spots report (`spot_grid`),
+    then a lookup of the callsign. The lookup ends at the centre of the country, which can be hundreds of km off, so it is the last resort."""
     if grid_override.strip():
         grid = grid_override.strip()
         lat, lon = maidenhead_to_latlon(grid)
         return lat, lon, f"{grid[:2].upper()}{grid[2:]} (manual)"
+    if spot_grid:
+        lat, lon = maidenhead_to_latlon(spot_grid)
+        return lat, lon, f"{spot_grid} from your WSPR spots"
     found = lookup_callsign_location(callsign, skimmers)
     if not found:
         raise RuntimeError(

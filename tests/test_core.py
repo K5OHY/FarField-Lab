@@ -29,6 +29,7 @@ import ionosphere as iono  # noqa: E402
 import space_weather as sw  # noqa: E402
 import pdfs  # noqa: E402
 import world_map as wm  # noqa: E402
+import wspr_data as wd  # noqa: E402
 
 HOME = (31.0, -102.0)
 
@@ -2382,3 +2383,61 @@ class CwSpeed(unittest.TestCase):
         self.assertEqual(df["speed"].iloc[0], 25.0)
         self.assertTrue(pd.isna(df["speed"].iloc[1]))
         self.assertEqual((df["tx_mode"].iloc[0], df["mode"].iloc[0]), ("CW", "CQ"))
+
+
+class SpotGridComesFirst(unittest.TestCase):
+    """Where a WSPR station is: the grid square its spots report ranks above any guess from the callsign, and the centre of the country is
+    used only when no spot gives a valid grid."""
+
+    def test_a_six_character_grid_beats_a_four_character_one(self):
+        self.assertEqual(wd.choose_grid(["KM28", "km28cm", "KM28"]), "KM28cm")
+        self.assertEqual(wd.choose_grid(["KM28", "KM28"]), "KM28")
+
+    def test_the_grid_reported_most_often_wins_when_a_station_moves(self):
+        self.assertEqual(wd.choose_grid(["EN34ab", "EN34ab", "EN35cd"]), "EN34ab")
+
+    def test_nothing_usable_gives_none(self):
+        self.assertIsNone(wd.choose_grid([]))
+        self.assertIsNone(wd.choose_grid(["", None, float("nan"), "ZZ99", "RR73x", "12", "KM2"]))
+        self.assertEqual(wd.choose_grid(["", "bad", "JO31"]), "JO31")           # one valid spot is enough
+
+    def test_a_table_of_spots_gives_the_grid_of_the_transmitter_asked_for(self):
+        spots = pd.DataFrame({"dx": ["SV8ANW", "SV8ANW", "K5OHY"], "tx_loc": ["KM28cm", "KM28cm", "EM12kp"]})
+        self.assertEqual(wd.grid_from_spots(spots, "K5OHY"), "EM12kp")
+        self.assertEqual(wd.grid_from_spots(spots, "SV8ANW"), "KM28cm")
+        self.assertIsNone(wd.grid_from_spots(spots, "W1AW"))
+        self.assertIsNone(wd.grid_from_spots(spots.iloc[0:0], "K5OHY"))
+        self.assertIsNone(wd.grid_from_spots(pd.DataFrame({"dx": ["K5OHY"]}), "K5OHY"))        # RBN spots carry no grid
+
+    def test_the_spot_grid_is_used_and_the_callsign_is_never_looked_up(self):
+        lookup = mock.Mock(side_effect=AssertionError("the callsign should not be looked up when a spot gives the grid"))
+        with mock.patch.object(ds, "lookup_callsign_location", lookup):
+            lat, lon, label = ds.resolve_home("SV8ANW", "", None, spot_grid="KM28cm")
+        self.assertEqual((lat, lon), (38.52083, 24.20833))
+        self.assertIn("KM28cm", label)
+        self.assertIn("WSPR spots", label)
+
+    def test_a_grid_you_type_still_beats_the_spots(self):
+        lookup = mock.Mock(side_effect=AssertionError("not needed"))
+        with mock.patch.object(ds, "lookup_callsign_location", lookup):
+            lat, lon, label = ds.resolve_home("SV8ANW", "JN58", None, spot_grid="KM28cm")
+        self.assertEqual((lat, lon), (48.5, 11.0))
+        self.assertIn("manual", label)
+
+    def test_the_country_centre_is_the_last_resort_for_a_missing_or_invalid_grid(self):
+        centre = (39.78, 21.78, None, "center of Greece (approximate - enter a grid for accuracy)")
+        for missing in (None, wd.choose_grid(["", "nonsense"]), wd.grid_from_spots(pd.DataFrame({"dx": ["SV8ANW"], "tx_loc": ["??"]}), "SV8ANW")):
+            with mock.patch.object(ds, "lookup_callsign_location", return_value=centre) as lookup, mock.patch.object(ds.st, "warning") as warn:
+                lat, lon, label = ds.resolve_home("SV8ANW", "", None, spot_grid=missing)
+            self.assertEqual((lat, lon), (39.78, 21.78))
+            lookup.assert_called_once()
+            warn.assert_called_once()                                            # the approximate pin is still flagged to the user
+
+    def test_a_foreign_station_is_placed_by_its_spots_not_by_the_country(self):
+        """The case that was wrong: SV8ANW is in KM28cm, which is about 250 km from the centre of Greece."""
+        spots = pd.DataFrame({"dx": ["SV8ANW"] * 3, "tx_loc": ["KM28cm"] * 3})
+        centre = (39.78, 21.78, None, "center of Greece (approximate - enter a grid for accuracy)")
+        with mock.patch.object(ds, "lookup_callsign_location", return_value=centre):
+            lat, lon, _ = ds.resolve_home("SV8ANW", "", None, spot_grid=wd.grid_from_spots(spots, "SV8ANW"))
+        self.assertAlmostEqual(lat, 38.52083, places=3)
+        self.assertGreater(abs(lon - 21.78), 2.0)                                  # nowhere near the centre it used to land on

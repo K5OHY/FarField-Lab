@@ -12,7 +12,7 @@ import space_weather as sw
 from data_sources import resolve_home, skimmer_data
 from ui_common import KM_PER_MILE, _views, brand_strip, load_settings, page_guide, preview
 from world_map import MAX_KM, azimuth_map_figure, fit_radius_km
-from wspr_data import WsprError
+from wspr_data import WsprError, latest_tx_grid
 
 
 # ------------------------------------------------------------------------------------------- band conditions
@@ -82,6 +82,16 @@ def _nearby_spots(lat, lon, radius_km, end_iso, minutes):
     """Spots from the WSPR stations near a point, cached for five minutes so a change of mode or power costs nothing."""
     end = pd.Timestamp(end_iso).to_pydatetime()
     return cond.fetch_nearby(lat, lon, radius_km, end - timedelta(minutes=minutes), end)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _reported_grid(call):
+    """The grid square this callsign's recent WSPR spots report, or None (nothing sent lately, an odd callsign, or wspr.live unreachable).
+    Remembered for 15 minutes, because the page redraws often and wspr.live allows only a few questions a minute."""
+    try:
+        return latest_tx_grid(call)
+    except (WsprError, ValueError):
+        return None
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -378,8 +388,9 @@ def conditions_page():
         if where == "Callsign or grid":
             callsign = st.text_input("Callsign", key="cond_call").strip().upper()
             grid = st.text_input("Grid square (optional)", key="cond_grid",
-                                 placeholder="Looked up from your callsign",
-                                 help="Enter the grid you are activating from, such as a park, to see conditions there.")
+                                 placeholder="Taken from your WSPR spots, else your callsign",
+                                 help="Leave blank and your place is the grid square your recent WSPR spots report, or else your callsign's registered "
+                                      "location. Enter the grid you are activating from, such as a park, to see conditions there.")
         else:
             fix = _LOCATE(key="cond_locate", data={"ticket": ss.get("_locate_ticket", 0)}, on_position_change=lambda: None, on_error_change=lambda: None)
             if fix.position:
@@ -478,7 +489,7 @@ def conditions_page():
             preview("conditions", "What you get: a tile for each band, the sun and the MUF, and which regions would hear you, from the WSPR stations near you.")
             return
         else:
-            lat, lon, label = resolve_home(callsign, grid, skimmers)
+            lat, lon, label = resolve_home(callsign, grid, skimmers, spot_grid=None if grid.strip() else _reported_grid(callsign))
     except (RuntimeError, ValueError) as exc:
         st.error(str(exc))
         return
