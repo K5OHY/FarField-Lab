@@ -587,11 +587,24 @@ def log_page():
             share_key = (digest, call, round(home[0], 3), round(home[1], 3), bool(park_cards))
             if not made or made["key"] != share_key:       # the picture and the text are made once for a log, not at every redraw
                 facts = sc.share_facts(log, summary, worked, call, park_cards, rep, lc.contact_places(log, home), home)
-                made = {"key": share_key, "facts": facts, "png": sc.share_png(facts)}
+                made = {"key": share_key, "facts": facts, "png": {}}
                 st.session_state["log_share"] = made
-            facts, picture = made["facts"], made["png"]
-            st.image(picture, width="stretch")
-            st.download_button("Download the picture (PNG)", picture, file_name=f"{call or 'log'}-session.png".replace("/", "-"), mime="image/png")
+            facts = made["facts"]
+            shape = st.segmented_control("Shape", list(sc.FORMATS), default=sc.DEFAULT_FORMAT, key="log_share_format",
+                                         format_func=lambda k: sc.FORMATS[k]["label"],
+                                         help="Each shape is drawn for where you will post it, not cropped from another: landscape for X, Facebook and LinkedIn; square or "
+                                              "portrait (4:5) for an Instagram or Facebook post; story (9:16) for an Instagram or TikTok story, with the text kept clear of "
+                                              "the top and bottom where those apps put their buttons.") or sc.DEFAULT_FORMAT
+            spec = sc.FORMATS[shape]
+            picture = made["png"].setdefault(shape, sc.share_png(facts, shape))        # each shape is drawn once, the first time it is asked for
+            st.image(picture, width="stretch" if shape == sc.DEFAULT_FORMAT else 480)
+            pixels = f"{round(spec['size'][0] * sc.DPI)} \u00d7 {round(spec['size'][1] * sc.DPI)}"
+            st.caption(f"{spec['label']}, {pixels}: for {spec['where']}.")
+            stem = f"{call or 'log'}-session-{shape}".replace("/", "-")
+            c1, c2 = st.columns(2)
+            c1.download_button("Download PNG", picture, file_name=f"{stem}.png", mime="image/png", icon=":material/download:")
+            c2.download_button("Download JPG (smaller)", lambda: sc.share_jpg(facts, shape), file_name=f"{stem}.jpg", mime="image/jpeg", icon=":material/download:",
+                               help="The same picture as a JPEG: a smaller file, and what Instagram keeps whichever it is given. Made when you click.")
             st.caption("The summary, ready to copy (the copy button is at the top right of the box):")
             st.code(sc.share_text(facts), language=None)
             st.caption("Nothing here is saved or sent anywhere. The picture and the text are made on this page from your log.")

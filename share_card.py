@@ -25,6 +25,15 @@ SITE = "farfieldlab.streamlit.app"
 BG, PANEL, FG, MUTED, TEAL, AMBER, BLUE, GREEN = "#0e1117", "#161b24", "#e8ecf3", "#9aa5b8", "#20b2aa", "#e6a117", "#6f8cff", "#4caf50"
 SIZE = (12.0, 6.3)       # inches: with DPI, a 2400 by 1260 picture, the shape social sites show best, sharp on a large or high-density screen
 DPI = 200
+# The shapes social sites want, each drawn for its own shape and not cropped from another. Sizes are in inches at DPI, so twice the usual pixel size: a square
+# is 2160 by 2160 and shows at 1080 by 1080. A story keeps its text clear of the top and bottom (inches), where the apps cover the picture with their own buttons.
+FORMATS = {
+    "landscape": {"label": "Landscape", "where": "X, Facebook, LinkedIn", "size": SIZE},
+    "square": {"label": "Square", "where": "Instagram, Facebook", "size": (10.8, 10.8)},
+    "portrait": {"label": "Portrait", "where": "Instagram feed (4:5)", "size": (10.8, 13.5)},
+    "story": {"label": "Story", "where": "Instagram, TikTok, Reels (9:16)", "size": (10.8, 19.2), "safe_top": 2.6, "safe_bottom": 3.3},
+}
+DEFAULT_FORMAT = "landscape"
 MIN_LON_SPAN, MIN_LAT_SPAN = 40.0, 25.0     # the map never zooms in closer than this, so a local session still looks like a map
 
 
@@ -159,26 +168,27 @@ def _paths(m):
     return lines, ends, (min(lons), max(lons), min(lats), max(lats))
 
 
-def _extent(bounds, box):
-    """The map's edges (west, east, south, north) so that the paths and places fill `box` (x0, x1, y0, y1, as fractions of the picture) at one scale
-    in both directions, whatever the shape of the data, and the rest of the picture is more map."""
+def _extent(bounds, box, size=SIZE):
+    """The map's edges (west, east, south, north) so that the paths and places fill `box` (x0, x1, y0, y1, as fractions of the frame, `size` inches across)
+    at one scale in both directions, whatever the shape of the data, and the rest of the frame is more map."""
     w, e, s, n = bounds
     lon_span, lat_span = max(e - w, MIN_LON_SPAN), max(n - s, MIN_LAT_SPAN)
     fx0, fx1, fy0, fy1 = box
-    per_inch = max(lon_span / ((fx1 - fx0) * SIZE[0]), lat_span / ((fy1 - fy0) * SIZE[1]))
-    sx, sy = per_inch * SIZE[0], per_inch * SIZE[1]                       # degrees across the whole picture, each way
+    per_inch = max(lon_span / ((fx1 - fx0) * size[0]), lat_span / ((fy1 - fy0) * size[1]))
+    sx, sy = per_inch * size[0], per_inch * size[1]                       # degrees across the whole frame, each way
     cx, cy = (w + e) / 2, (s + n) / 2
     x0, y0 = cx - (fx0 + fx1) / 2 * sx, cy - (fy0 + fy1) / 2 * sy
     y0 = min(max(y0, -90), 90 - sy)
     return x0, x0 + sx, y0, y0 + sy
 
 
-def _draw_world(fig, m):
-    """The map filling the picture: the dark world, a faint grid, a path to each place in its band's colour, a diamond at each place coloured by the best
-    report they gave you (a ring when a station was worked on more than one band), the names of the farthest countries, and your station."""
-    lines, ends, bounds = _paths(m)
-    x0, x1, y0, y1 = _extent(bounds, (0.31, 0.97, 0.10, 0.90))
-    ax = fig.add_axes([0, 0, 1, 1])
+def _draw_world(fig, m, rect=(0, 0, 1, 1), size=SIZE, box=(0.31, 0.97, 0.10, 0.90)):
+    """The map filling `rect` (x, y, width, height as fractions of the picture; `size` inches across): the dark world, a faint grid, a path to each place in
+    its band's colour, a diamond at each place in the band's colour, the names of the farthest countries, and your station. With no `m` it is the world and
+    nothing on it."""
+    lines, ends, bounds = _paths(m) if m else ([], {}, (-165.0, 165.0, -55.0, 78.0))
+    x0, x1, y0, y1 = _extent(bounds, box, size)
+    ax = fig.add_axes(list(rect))
     ax.set_facecolor(BG)
     ax.axis("off")
     image = _world_image()
@@ -194,7 +204,7 @@ def _draw_world(fig, m):
         ax.plot(xs, ys, color=colour, linewidth=3.6, alpha=0.10, solid_capstyle="round", zorder=2)
         ax.plot(xs, ys, color=colour, linewidth=1.1, alpha=0.8, solid_capstyle="round", zorder=3)
     ring = 0.0045 * (x1 - x0)                                             # a place worked on several bands: a diamond for each, round the place
-    for p in sorted(m["points"], key=lambda q: -len(q["bands"])):
+    for p in sorted(m["points"] if m else [], key=lambda q: -len(q["bands"])):
         k = len(p["bands"])
         for i, band in enumerate(p["bands"]):
             ey, ex = ends[(p["lat"], p["lon"], band)]                       # a path's end is (latitude, longitude)
@@ -203,7 +213,7 @@ def _draw_world(fig, m):
                 ex, ey = ex + ring * math.cos(angle), ey + ring * math.sin(angle)
             ax.scatter([ex], [ey], marker="D", s=40 + 14 * math.sqrt(p["band_n"][band]), color=BAND_COLORS.get(band, "#3388ff"),
                        edgecolors="#ffffff", linewidths=0.9, zorder=6)
-    far = sorted([p for p in m["points"] if p["km"] >= lc.DX_KM and p["country"]], key=lambda q: -q["km"])
+    far = sorted([p for p in (m["points"] if m else []) if p["km"] >= lc.DX_KM and p["country"]], key=lambda q: -q["km"])
     seen = set()
     for p in far:
         if p["country"] in seen or len(seen) >= 5:
@@ -214,9 +224,10 @@ def _draw_world(fig, m):
         text = ax.annotate(p["country"], (ex, ey), xytext=(-9 if left_of else 9, 7), textcoords="offset points", ha="right" if left_of else "left",
                            color=FG, fontsize=8.5, fontweight="bold", zorder=8)
         text.set_path_effects([patheffects.withStroke(linewidth=2.6, foreground=BG)])
-    hx, hy = m["home"][1], m["home"][0]
-    ax.scatter([hx], [hy], marker="o", s=520, color=TEAL, alpha=0.18, zorder=7)
-    ax.scatter([hx], [hy], marker="*", s=330, color="#ffffff", edgecolors=TEAL, linewidths=1.2, zorder=9)
+    if m:
+        hx, hy = m["home"][1], m["home"][0]
+        ax.scatter([hx], [hy], marker="o", s=520, color=TEAL, alpha=0.18, zorder=7)
+        ax.scatter([hx], [hy], marker="*", s=330, color="#ffffff", edgecolors=TEAL, linewidths=1.2, zorder=9)
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
     return ax
@@ -332,21 +343,127 @@ def _map_card(fig, facts, m):
             fig.add_artist(Rectangle((x + 0.054, top - 0.008), 0.044 * n / peak, 0.009, transform=fig.transFigure, facecolor=BAND_COLORS.get(band, "#3388ff"),
                                      edgecolor="none", alpha=0.9, zorder=21))
             fig.text(x + 0.119, top - 0.003, f"{n:,}", color=FG, fontsize=8.5, va="center", ha="right", **t)
-    fig.text(0.03, 0.090, "Colour is the band. A place worked on several bands has a diamond for each.", color=MUTED, fontsize=6.5, va="center", **t)
-    fig.text(0.03, 0.072, f"Each place is the centre of the contact's grid, state or country. {m['placed']} of {m['total']} contacts placed.", color=MUTED, fontsize=6.3, va="center", **t)
     fig.text(0.03, 0.052, SITE, color=TEAL, fontsize=8.5, fontweight="bold", va="center", **t)
 
 
-def share_png(facts):
-    """The summary as a 2400 by 1260 picture, as PNG bytes: a map of where the contacts were with a panel of numbers down the left when the facts carry a
-    map, else the numbers across the middle."""
-    fig = Figure(figsize=SIZE, dpi=DPI)
+def _tall_card(fig, facts, m, size, safe_top=0.0, safe_bottom=0.0):
+    """The picture for a square, portrait or story shape: the contact map on top and a panel underneath with the callsign and date, the title, the four
+    numbers, the top hunter, the farthest contact and the contacts on each band. Everything is placed in inches, so one layout serves every height.
+    A world map is about half as tall as it is wide, so the map is only as tall as the data needs (never more than the world's shape allows); any room
+    that is left over is clear background below the panel. In a story nothing is drawn within `safe_top` inches of the top or `safe_bottom` inches of the
+    bottom except the map's own sea and land, because the apps put their buttons there."""
+    W, H = size
+    content_h = 6.0                                                    # the panel: header, title, numbers, top hunter and band counts
+    bounds = _paths(m)[2] if m else (-165.0, 165.0, -55.0, 78.0)
+    per_inch = max(bounds[1] - bounds[0], MIN_LON_SPAN) / (0.9 * W)    # degrees of longitude an inch of map has to cover
+    map_h = max(min(H - safe_top - safe_bottom - content_h, 165.0 / per_inch), 3.0)
+    panel_top = safe_top + map_h                                       # inches down from the top of the picture
+    X = lambda v: v / W
+    Y = lambda v: 1 - v / H
+    t = dict(zorder=21)
+    _draw_world(fig, m, rect=(0, Y(panel_top), 1, map_h / H), size=(W, map_h), box=(0.05, 0.95, 0.07, 0.93))
+    if safe_top > 0:                                                    # the map fades in from the clear top of a story, with no hard edge
+        steps = 24
+        for i in range(steps):
+            fig.add_artist(Rectangle((0, Y(safe_top + (i + 1) * 0.05)), 1, 0.05 / H, transform=fig.transFigure, facecolor=BG, edgecolor="none",
+                                     alpha=1 - i / steps, zorder=19))
+    fig.add_artist(Rectangle((0, 0), 1, Y(panel_top), transform=fig.transFigure, facecolor="#0b1119", edgecolor="#2a3140", linewidth=1.2, zorder=20))
+    pad = 0.45
+    fig.text(X(pad), Y(panel_top + 0.4), "FARFIELD LAB · LOG ANALYSIS", color=TEAL, fontsize=11, fontweight="bold", va="center", **t)
+    who = " · ".join(x for x in (facts["call"], facts["dates"]) if x)
+    fig.text(X(W - pad), Y(panel_top + 0.4), who, color=FG, fontsize=16, fontweight="bold", va="center", ha="right", **t)
+    y = panel_top + 0.85
+    title = _wrap(facts["title"], 40, 2)
+    fig.text(X(pad), Y(y), chr(10).join(title), color=FG, fontsize=24, fontweight="bold", va="top", linespacing=1.15, **t)
+    y += 0.40 * len(title) + 0.08
+    sub = _wrap(facts["subtitle"], 92, 2) if facts["subtitle"] else []
+    if sub:
+        fig.text(X(pad), Y(y), chr(10).join(sub), color=MUTED, fontsize=12, va="top", linespacing=1.3, **t)
+        y += 0.22 * len(sub) + 0.2
+    gap = 0.14
+    tw, th = (W - 2 * pad - 3 * gap) / 4, 0.95
+    for i, (value, label, colour) in enumerate(facts["numbers"]):
+        x = pad + i * (tw + gap)
+        fig.add_artist(Rectangle((X(x), Y(y + th)), tw / W, th / H, transform=fig.transFigure, facecolor=PANEL, edgecolor="#2a3140", linewidth=0.9, zorder=21))
+        fig.text(X(x + 0.16), Y(y + 0.36), value, color=colour, fontsize=26, fontweight="bold", va="center", **t)
+        fig.text(X(x + 0.16), Y(y + 0.75), label, color=MUTED, fontsize=10.5, va="center", **t)
+    y += th + 0.22
+    half = (W - 2 * pad - 0.25) / 2
+    hun = facts.get("hunters")
+    bottom = min(y + 2.1, H - safe_bottom - 0.8)                         # the row of the top hunter, the lines and the band counts ends here, above the address
+    ly = y
+    if hun:
+        fig.add_artist(Rectangle((X(pad), Y(y + 1.0)), half / W, 1.0 / H, transform=fig.transFigure, facecolor=PANEL, edgecolor="#2a3140", linewidth=0.9, zorder=21))
+        fig.text(X(pad + 0.18), Y(y + 0.38), f"{hun['n']:,}", color=AMBER, fontsize=26, fontweight="bold", va="center", **t)
+        fig.text(X(pad + 0.18), Y(y + 0.78), chr(10).join(("stations worked on", "2 or more bands")), color=MUTED, fontsize=9, va="center", linespacing=1.2, **t)
+        fig.add_artist(Rectangle((X(pad + 1.95), Y(y + 0.9)), 0.012 / W, 0.8 / H, transform=fig.transFigure, facecolor="#2a3140", edgecolor="none", zorder=21))
+        fig.text(X(pad + 2.15), Y(y + 0.18), "TOP HUNTER", color=MUTED, fontsize=8.5, fontweight="bold", va="center", **t)
+        fig.text(X(pad + 2.15), Y(y + 0.43), hun["top"], color=FG, fontsize=16, fontweight="bold", va="center", **t)
+        fig.text(X(pad + 2.15), Y(y + 0.65), f"worked on {hun['k']} bands", color=MUTED, fontsize=9, va="center", **t)
+        room = half - 2.15 - 0.15
+        chip = min(0.5, (room - 0.04 * (len(hun["bands"]) - 1)) / len(hun["bands"]))
+        for i, band in enumerate(hun["bands"]):
+            x = pad + 2.15 + i * (chip + 0.04)
+            fig.add_artist(Rectangle((X(x), Y(y + 0.93)), chip / W, 0.2 / H, transform=fig.transFigure, facecolor=BAND_COLORS.get(band, "#3388ff"),
+                                     edgecolor="#ffffff", linewidth=0.4, zorder=21))
+            if chip >= 0.34:
+                fig.text(X(x + chip / 2), Y(y + 0.83), band, color="#ffffff", fontsize=7.5, fontweight="bold", va="center", ha="center",
+                         path_effects=[patheffects.withStroke(linewidth=1.6, foreground="#000000")], **t)
+        ly = y + 1.2
+    lines = [x for x in facts["lines"] if not (hun and "worked on 2 or more bands" in x)]
+    if m:
+        far = m["farthest"]
+        if far["km"] >= lc.DX_KM or not lines:                          # the farthest contact comes first, so it is the last line to be dropped
+            place = f", {far['country']}" if far["country"] else ""
+            lines.insert(0, f"Farthest: {far['call']}{place}, {_fmt_km(far['km'])} on {far['band']}.")
+    for line in lines:
+        wrapped = _wrap(line, 46, 2)
+        height = 0.2 * len(wrapped)
+        if ly + height > bottom:
+            break
+        fig.text(X(pad), Y(ly), chr(10).join(wrapped), color=FG, fontsize=11, va="top", linespacing=1.25, **t)
+        ly += height + 0.1
+    bands = facts.get("bands") or []
+    if bands:
+        bx = pad + half + 0.25
+        fig.text(X(bx), Y(y + 0.1), "CONTACTS BY BAND", color=MUTED, fontsize=9, fontweight="bold", va="center", **t)
+        per_col = max(math.ceil(len(bands) / 2), 6) if len(bands) > 6 else len(bands)
+        cols = math.ceil(len(bands) / per_col)
+        col_w = half / cols
+        peak = max(n for _, n in bands)
+        for i, (band, n) in enumerate(bands):
+            col, row = divmod(i, per_col)
+            x, top = bx + col * col_w, y + 0.42 + row * 0.27
+            fig.add_artist(Rectangle((X(x), Y(top + 0.17)), 0.17 / W, 0.17 / H, transform=fig.transFigure, facecolor=BAND_COLORS.get(band, "#3388ff"), edgecolor="none", zorder=21))
+            fig.text(X(x + 0.25), Y(top + 0.085), band, color=FG, fontsize=11, fontweight="bold", va="center", **t)
+            bar = (col_w - 1.45) * n / peak
+            fig.add_artist(Rectangle((X(x + 0.95), Y(top + 0.12)), bar / W, 0.08 / H, transform=fig.transFigure, facecolor=BAND_COLORS.get(band, "#3388ff"),
+                                     edgecolor="none", alpha=0.9, zorder=21))
+            fig.text(X(x + col_w - 0.1), Y(top + 0.085), f"{n:,}", color=FG, fontsize=11, va="center", ha="right", **t)
+    fig.text(X(pad), Y(H - safe_bottom - 0.45), SITE, color=TEAL, fontsize=13, fontweight="bold", va="center", **t)
+
+
+def _render(facts, fmt, image_format):
+    """The picture for one format, as bytes of `image_format` ('png' or 'jpeg')."""
+    spec = FORMATS[fmt]
+    fig = Figure(figsize=spec["size"], dpi=DPI)
     fig.patch.set_facecolor(BG)
     m = facts.get("map")
-    if m:
-        _map_card(fig, facts, m)
+    if fmt == "landscape":
+        _map_card(fig, facts, m) if m else _flat_card(fig, facts)
     else:
-        _flat_card(fig, facts)
+        _tall_card(fig, facts, m, spec["size"], spec.get("safe_top", 0.0), spec.get("safe_bottom", 0.0))
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", facecolor=BG, dpi=DPI)
+    fig.savefig(buf, format=image_format, facecolor=BG, dpi=DPI, **({"pil_kwargs": {"quality": 92}} if image_format == "jpeg" else {}))
     return buf.getvalue()
+
+
+def share_png(facts, fmt=DEFAULT_FORMAT):
+    """The summary as a PNG for a social site: `fmt` is one of FORMATS (landscape 2400 by 1260, square 2160 by 2160, portrait 2160 by 2700, story 2160 by 3840).
+    With a map the contact map is the picture and the numbers sit beside or under it; with none, the landscape picture is the numbers alone."""
+    return _render(facts, fmt, "png")
+
+
+def share_jpg(facts, fmt=DEFAULT_FORMAT):
+    """The same picture as a JPEG, which is smaller and what Instagram stores whichever it is given."""
+    return _render(facts, fmt, "jpeg")

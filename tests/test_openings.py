@@ -714,6 +714,93 @@ class TheShareCardMap(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+class TheShareCardShapes(unittest.TestCase):
+    """The picture for each place it is posted: landscape, square, portrait and story."""
+
+    def facts(self, with_map=True):
+        import share_card as sc
+        log = log_of(rec("W1HUNT", "2010", band="20m", gridsquare="FN31"), rec("W1HUNT", "2011", band="15m", gridsquare="FN31"),
+                     rec("DL1AAA", "2012", band="17m", gridsquare="JN58"), rec("JA1ZZZ", "2013", band="10m", gridsquare="PM95"))
+        places = lc.contact_places(log, HOME) if with_map else None
+        return sc.share_facts(log, lc.summary(log), lc.worked_summary(log), "K5OHY", None, lc.repeat_stations(log), places, HOME if with_map else None)
+
+    def size_of(self, data):
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+    def test_there_is_a_shape_for_each_place_it_is_posted(self):
+        import share_card as sc
+        self.assertEqual(list(sc.FORMATS), ["landscape", "square", "portrait", "story"])
+        self.assertEqual(sc.DEFAULT_FORMAT, "landscape")
+        for spec in sc.FORMATS.values():
+            self.assertTrue(spec["label"] and spec["where"])
+
+    def test_each_shape_is_the_size_and_ratio_the_sites_want_at_twice_the_pixels(self):
+        import share_card as sc
+        facts = self.facts()
+        expect = {"landscape": (2400, 1260), "square": (2160, 2160), "portrait": (2160, 2700), "story": (2160, 3840)}
+        for fmt, size in expect.items():
+            data = sc.share_png(facts, fmt)
+            self.assertTrue(data.startswith(b"\x89PNG"))
+            self.assertEqual(self.size_of(data), size, fmt)
+        w, h = expect["portrait"]
+        self.assertEqual(w / h, 4 / 5)                                                                 # Instagram's portrait post
+        w, h = expect["story"]
+        self.assertAlmostEqual(w / h, 9 / 16, places=6)                                                # a story
+
+    def test_the_default_is_the_landscape_picture_as_before(self):
+        import share_card as sc
+        facts = self.facts()
+        self.assertEqual(sc.share_png(facts), sc.share_png(facts, "landscape"))
+
+    def test_a_jpeg_is_the_same_size_and_smaller(self):
+        import io
+        from PIL import Image
+        import share_card as sc
+        facts = self.facts()
+        for fmt in sc.FORMATS:
+            jpg, png = sc.share_jpg(facts, fmt), sc.share_png(facts, fmt)
+            self.assertTrue(jpg.startswith(b"\xff\xd8"))
+            self.assertEqual(Image.open(io.BytesIO(jpg)).size, Image.open(io.BytesIO(png)).size)
+            self.assertLess(len(jpg), len(png) * 1.3)
+
+    def test_a_story_keeps_the_top_and_the_bottom_clear_for_the_apps_buttons(self):
+        import io
+        from PIL import Image
+        import share_card as sc
+        spec = sc.FORMATS["story"]
+        img = Image.open(io.BytesIO(sc.share_png(self.facts(), "story"))).convert("RGB")
+        w, h = img.size
+        top, bottom = round(spec["safe_top"] * sc.DPI), round(spec["safe_bottom"] * sc.DPI)
+        self.assertEqual(img.crop((20, 0, w - 20, top - 4)).getcolors(), [((w - 40) * (top - 4), (14, 17, 23))])        # one flat colour: nothing drawn
+        self.assertEqual(img.crop((20, h - bottom + 4, w - 20, h - 20)).getcolors(), [((w - 40) * (bottom - 24), (11, 17, 25))])
+
+    def test_the_other_shapes_have_content_to_their_edges(self):
+        import io
+        from PIL import Image
+        import share_card as sc
+        img = Image.open(io.BytesIO(sc.share_png(self.facts(), "portrait"))).convert("RGB")
+        self.assertGreater(len(img.crop((0, 0, img.size[0], 300)).getcolors(maxcolors=100000)), 5)                    # the map reaches the top of a post
+
+    def test_every_shape_draws_without_a_map_with_long_text_and_with_many_bands(self):
+        import share_card as sc
+        for fmt in sc.FORMATS:
+            self.assertTrue(sc.share_png(self.facts(with_map=False), fmt).startswith(b"\x89PNG"), fmt)
+            full = self.facts()
+            long = dict(full, title="A very long park name " * 8, subtitle="and a very long line " * 20, lines=["x" * 400, "y" * 400, "z" * 400])
+            self.assertTrue(sc.share_png(long, fmt).startswith(b"\x89PNG"), fmt)
+            many = dict(full, bands=[(f"{n}m", 5) for n in (160, 80, 60, 40, 30, 20, 17, 15, 12, 10, 6)],
+                        hunters=dict(full["hunters"], k=11, bands=[f"{n}m" for n in (160, 80, 60, 40, 30, 20, 17, 15, 12, 10, 6)]))
+            self.assertTrue(sc.share_png(many, fmt).startswith(b"\x89PNG"), fmt)
+
+    def test_a_world_map_is_never_stretched_taller_than_the_world(self):
+        import share_card as sc
+        m = self.facts()["map"]
+        bounds = sc._paths(m)[2]
+        W = sc.FORMATS["story"]["size"][0]
+        per_inch = max(bounds[1] - bounds[0], sc.MIN_LON_SPAN) / (0.9 * W)
+        self.assertLessEqual(165.0 / per_inch, 8)                                                      # a wide spread of contacts gives a short map, not a tall one
+
+
 class ContactMapsWithoutRbn(unittest.TestCase):
     def test_the_placing_of_contacts_does_not_need_any_rbn_data(self):
         places = lc.contact_places(log_of(rec("DL1AAA", "2010", gridsquare="JN58"), rec("W1AAA", "2040", state="NY", country="United States")), HOME)
