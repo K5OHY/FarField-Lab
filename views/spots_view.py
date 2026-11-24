@@ -2,6 +2,7 @@
 import pandas as pd
 import streamlit as st
 
+import cw_speed
 import session_report as sr
 from charts import _scorecard_display, bearing_chart
 from compare_stats import locate as skimmer_location, placed_by_base
@@ -89,6 +90,17 @@ def _session_report_view(spots, locs, home, units, noun, band_choice):
     st.caption("Minutes with spots counts the 10-minute blocks that had at least one spot, so it is time you were heard, not "
                "time on the air."
                + (f" ⚠️ {', '.join(thin)} had fewer than {sr.THIN} spots, so treat its numbers as a hint." if thin else ""))
+
+    speeds = cw_speed.table(spots, sr.BAND_ORDER)
+    if not speeds.empty:
+        st.subheader("Heard by speed")
+        if len(speeds) == 1:
+            st.caption(f"Every CW spot that has a speed was in one group ({speeds['Speed'].iloc[0]}), so there is nothing to compare.")
+        else:
+            st.dataframe(speeds, hide_index=True, width="stretch", column_config={"Median signal (dB)": st.column_config.NumberColumn(format="%.0f dB")})
+        st.caption("The speed is what each skimmer measured for your sending, not what you set, and only CW spots have one. A speed group that was "
+                   "used on one band or at one time of day can't be compared fairly with another, because the band and the hour change too. "
+                   f"Groups with fewer than {sr.THIN} spots are only a hint.")
 
     st.subheader("Where each band reached")
     regions = sr.region_table(spots, locs, home)
@@ -212,12 +224,17 @@ def spots_page():
         placed = sorted((s, b) for s in spots["spotter"].unique() if (b := placed_by_base(s, locs)))  # shown at the base callsign's place
 
         k = KM_PER_MILE if units == "mi" else 1
-        c = st.columns(5)
+        speed = cw_speed.summary(spots)           # RBN's CW spots carry the speed the skimmer measured; WSPR spots do not
+        c = st.columns(6 if speed else 5)
         c[0].metric("Spots", f"{stats['spots']:,}")
         c[1].metric(f"{noun.capitalize()}s", f"{stats['skimmers']:,}")
         c[2].metric(f"Farthest ({units})", f"{stats['max_km'] / k:,.0f}", help=stats["farthest"])
         c[3].metric("Best SNR", f"{stats['max_snr']:.0f} dB")
         c[4].metric("Average SNR", f"{stats['avg_snr']:.1f} dB")
+        if speed:
+            c[5].metric("Typical speed", f"{speed['median']:.0f} wpm",
+                        help=f"The CW speed the skimmers measured for your sending, from {speed['n']:,} spots. Most were between "
+                             f"{speed['low']:.0f} and {speed['high']:.0f} wpm. It is the skimmers' measurement, not what you set.")
         st.caption(f":material/location_on: {who} · {label}"
                    + (f" · ⚠️ No location for {', '.join(sorted(missing)[:5])}"
                       f"{f' and {len(missing) - 5} more' if len(missing) > 5 else ''}"

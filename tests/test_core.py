@@ -2307,3 +2307,55 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual(plain.count("0 0 0 2.5px #111"), 0)                                # no ring when the log does not say
         self.assertIn("#8b0000", ringed)                                                    # the colour is still the report (S9 is dark red)
         self.assertIn("worked on 3 bands", ringed)
+
+
+class CwSpeed(unittest.TestCase):
+    """The CW speed the skimmers measured: a typical speed, a label for a popup, and a table by speed group."""
+
+    def spots(self):
+        return pd.DataFrame({
+            "spotter": ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"], "band": ["20m", "20m", "20m", "15m", "15m", "40m", "20m", "20m"],
+            "snr": [10, 12, 14, 20, 22, 5, 9, 9], "speed": [18, 22, 22, 26, 26, 31, 200, np.nan], "tx_mode": ["CW", "CW", "CW", "CW", "CW", "CW", "CW", "CW"]})
+
+    def test_a_misread_and_a_missing_speed_are_left_out(self):
+        import cw_speed
+        got = cw_speed.cw_speeds(self.spots())
+        self.assertEqual(sorted(got["speed"].tolist()), [18, 22, 22, 26, 26, 31])      # 200 wpm is a misread; NaN has no speed
+
+    def test_rtty_and_wspr_have_no_cw_speed(self):
+        import cw_speed
+        rtty = self.spots().assign(tx_mode="RTTY")
+        self.assertTrue(cw_speed.cw_speeds(rtty).empty)
+        self.assertIsNone(cw_speed.summary(rtty))
+        self.assertTrue(cw_speed.cw_speeds(self.spots().drop(columns=["speed", "tx_mode"])).empty)   # a WSPR table has no speed at all
+        self.assertEqual(cw_speed.label(rtty), "")
+
+    def test_the_typical_speed_and_the_range_most_spots_fall_in(self):
+        import cw_speed
+        s = cw_speed.summary(self.spots())
+        self.assertEqual((s["n"], s["median"]), (6, 24.0))
+        self.assertTrue(s["low"] <= s["median"] <= s["high"])
+        self.assertIsNone(cw_speed.summary(self.spots().head(2)))                     # too few spots to call anything typical
+
+    def test_a_popup_label_is_one_speed_or_a_range(self):
+        import cw_speed
+        self.assertEqual(cw_speed.label(self.spots().iloc[[1, 2]]), "22 wpm")
+        self.assertEqual(cw_speed.label(self.spots().iloc[[0, 1]]), "18 to 22 wpm")
+
+    def test_the_table_groups_by_speed_and_names_the_bands(self):
+        import cw_speed
+        t = cw_speed.table(self.spots(), ["40m", "20m", "15m"])
+        self.assertEqual(t["Speed"].tolist(), ["Under 20 wpm", "20 to 24 wpm", "25 to 29 wpm", "30 wpm or more"])
+        self.assertEqual(t["Spots"].tolist(), [1, 2, 2, 1])
+        self.assertEqual(t.loc[t["Speed"] == "25 to 29 wpm", "Bands"].iloc[0], "15m")
+        self.assertEqual(t.loc[t["Speed"] == "20 to 24 wpm", "Median signal (dB)"].iloc[0], 13.0)
+        self.assertTrue(cw_speed.table(self.spots().drop(columns=["speed"]), []).empty)
+
+    def test_a_pasted_row_carries_its_speed_and_a_row_without_one_still_reads(self):
+        text = ("K1RA-4  K5OHY  DM81wx  1443 mi  14073.0  CW  CQ  7 dB  25 wpm  1908z 26 Sep  94 seconds ago\n"
+                "W3LPL  K5OHY  FM19  1200 mi  14073.0  CW  CQ  12 dB  1909z 26 Sep")
+        df = ds.parse_pasted_data(text)
+        self.assertEqual(df["spotter"].tolist(), ["K1RA-4", "W3LPL"])
+        self.assertEqual(df["speed"].iloc[0], 25.0)
+        self.assertTrue(pd.isna(df["speed"].iloc[1]))
+        self.assertEqual((df["tx_mode"].iloc[0], df["mode"].iloc[0]), ("CW", "CQ"))

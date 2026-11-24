@@ -455,6 +455,13 @@ class ComparePage(unittest.TestCase):
         self.assertIn("Markus (DL1MKS)", text)
         self.assertIn("https://www.wspradar.org/", (__import__("pathlib").Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8"))
 
+    def test_the_example_shows_a_typical_speed_and_how_you_were_heard_at_each_speed(self):
+        spots = page_after_example("spots_page", "map").run()
+        self.assertEqual(errors(spots), [])
+        tile = [m for m in spots.metric if m.label == "Typical speed"]
+        self.assertEqual([m.value for m in tile], ["23 wpm"])
+        self.assertIn("Heard by speed", [h.value for h in spots.subheader])
+
     def test_the_maps_say_how_to_zoom_with_the_wheel(self):
         import maps
         spots = page_after_example("spots_page", "map").run()

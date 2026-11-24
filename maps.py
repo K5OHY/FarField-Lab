@@ -8,6 +8,7 @@ from functools import lru_cache
 
 from geographiclib.geodesic import Geodesic
 
+import cw_speed
 from compare_stats import locate as skimmer_location, receiver_table
 from ui_common import BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, TILE_STYLES, _ESRI_ATTR, esc, snr_color, snr_radius
 
@@ -142,7 +143,8 @@ def _single_spot_html(row, scale=RBN_SNR_SCALE):
     return (f'<div style="display:flex;align-items:center;gap:9px;margin:4px 0 2px 0">'
             f'<span style="display:inline-block;width:15px;height:15px;border-radius:50%;flex:none;'
             f'background:{color};box-shadow:0 0 0 4px {color}2a"></span>'
-            f'<span><b>{row["snr"]:.0f} dB</b> &middot; {row["time"]:%d %b %H:%M} UTC</span></div>')
+            f'<span><b>{row["snr"]:.0f} dB</b> &middot; {row["time"]:%d %b %H:%M} UTC'
+            + (f' &middot; {wpm}' if (wpm := cw_speed.label(row.to_frame().T)) else '') + '</span></div>')
 
 
 MAX_DAY_TABS = 12  # beyond this, a row of date pills stops being useful; fall back to the compressed view
@@ -185,7 +187,9 @@ def _band_panel_html(spotter, band, g, gid_seed, scale=RBN_SNR_SCALE):
     best = g.loc[g["snr"].idxmax()]
     freq_label = (f"{best['freq']:.1f} kHz" if g["freq"].nunique() == 1
                   else f"{g['freq'].min():.1f}&ndash;{g['freq'].max():.1f} kHz")
-    sub = f'<div style="opacity:.7;font-size:12px;margin:2px 0 6px 0">{esc(band)} &middot; {freq_label}</div>'
+    wpm = cw_speed.label(g)
+    sub = (f'<div style="opacity:.7;font-size:12px;margin:2px 0 6px 0">{esc(band)} &middot; {freq_label}'
+           + (f' &middot; {wpm}' if wpm else '') + '</div>')
     return sub + _history_block(g, f"{gid_seed}{band}", scale)
 
 

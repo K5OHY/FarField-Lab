@@ -169,7 +169,8 @@ GUIDES = {
         shows=["A map with a line to every station that heard you, coloured by band, with the farthest one circled.",
                "Tiles for the number of spots and stations, the farthest distance, and the best and average signal.",
                "A chart of which directions you were heard in, and a world view from your station.",
-               "A **Session report** of when you were heard, band by hour, and by region. You can also download the map or a PDF report."],
+               "A **Session report** of when you were heard, band by hour, and by region. You can also download the map or a PDF report.",
+               "For CW, the speed the skimmers measured for you: a tile, the speed in each skimmer's popup, and a table of how you were heard at each speed."],
         limits="It shows where you were reported, not everywhere you could have been heard. Only stations running a skimmer or a WSPR receiver "
                "can report you, so a quiet part of the map can mean no one was listening there, not that the path was closed."),
     "compare": dict(

@@ -59,8 +59,8 @@ def download_rbn_day(date, callsign):
 #   K1RA-4  K5OHY  DM81wx  1443 mi  14073.0  CW  CQ  7 dB  25 wpm  1908z 26 Sep  94 seconds ago
 PASTE_ROW_RE = re.compile(
     r"^\W*(?P<spotter>[A-Z0-9/-]+)\s+(?P<dx>[A-Z0-9/-]+)\s+(?:[A-R]{2}\d{2}\w*\s+)?"
-    r"(?:[\d,.]+\s*(?:mi|km)\s+)?(?P<freq>\d+\.\d+)\s+\S+\s+\S+\s+(?P<snr>-?\d+)\s*dB\b"
-    r".*?(?P<time>\d{4})z\s+(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]{3})",
+    r"(?:[\d,.]+\s*(?:mi|km)\s+)?(?P<freq>\d+\.\d+)\s+(?P<tx>\S+)\s+(?P<kind>\S+)\s+(?P<snr>-?\d+)\s*dB\b"
+    r"(?:.*?\b(?P<speed>\d+)\s*wpm\b)?.*?(?P<time>\d{4})z\s+(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]{3})",
     re.IGNORECASE,
 )
 
@@ -77,13 +77,14 @@ def parse_pasted_data(text):
             continue
         try:
             when = datetime.strptime(f"{year} {m['time']}z {m['day']} {m['month'].title()}", "%Y %H%Mz %d %b")
-            rows.append([m["spotter"].upper(), m["dx"].upper(), float(m["freq"]), float(m["snr"]), when])
+            speed = float(m["speed"]) if m["speed"] else float("nan")
+            rows.append([m["spotter"].upper(), m["dx"].upper(), float(m["freq"]), float(m["snr"]), when, speed, m["tx"].upper(), m["kind"].upper()])
         except ValueError:
             unread.append(line)
     if not rows:
         raise RuntimeError("Couldn't read any spot rows from the pasted text."
                            + (f" The first line I couldn't read was: {unread[0][:120]!r}" if unread else ""))
-    df = pd.DataFrame(rows, columns=["spotter", "dx", "freq", "snr", "time"])
+    df = pd.DataFrame(rows, columns=["spotter", "dx", "freq", "snr", "time", "speed", "tx_mode", "mode"])   # the names the daily file uses
     df["band"] = df["freq"].apply(get_band)
     return df
 
