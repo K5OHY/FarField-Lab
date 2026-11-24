@@ -310,7 +310,8 @@ def log_page():
     power = power_box.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
                                    help="This page does not read the power from the log, so enter what you ran. Set it before you upload: the calculations start as soon as a log is "
                                         "loaded, and they use it to restate the WSPR stations' signals to your power. Changing it later works, but starts them again.")
-    file = st.file_uploader("Your log (ADIF file)", type=["adi", "adif"], key="log_file",
+    # No file-type filter on purpose: iPhones and iPads do not know .adi, so a filter greys out every log in the picker. A file that is not a log is caught below.
+    file = st.file_uploader("Your log (ADIF file, .adi or .adif)", key="log_file",
                             help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
                                  "which is many thousands of contacts. The log is used for this visit only and is not saved or shared.")
     if file is not None:
@@ -332,7 +333,7 @@ def log_page():
     try:
         log = lc.parse_adif(raw.decode("utf-8", errors="replace"))
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(str(exc) + ("" if name.lower().endswith((".adi", ".adif")) else f" {name} does not look like an ADIF log (those end in .adi or .adif). Pick the exported log file."))
         return
     digest = hashlib.sha1(raw).hexdigest()
     _what_was_read(log, name)

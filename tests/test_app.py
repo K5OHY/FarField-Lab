@@ -223,6 +223,21 @@ class MySpotsPage(unittest.TestCase):
         self.assertEqual([n.label for n in at.main.number_input], ["Your power (watts)"])    # the power is asked for before the upload, not after
         self.assertEqual(at.main.number_input[0].value, 100)
 
+    def test_the_uploader_does_not_filter_by_file_type_so_iphones_can_pick_a_log(self):
+        at = page("log_page").run()
+        uploader = at.get("file_uploader")
+        self.assertEqual(len(uploader), 1)
+        self.assertEqual(list(uploader[0].proto.type), [])              # iOS greys out every file when it is told to accept only .adi/.adif
+
+    def test_a_file_that_is_not_a_log_is_turned_down_in_plain_words(self):
+        at = page("log_page")
+        at.session_state["log_saved"] = ("notes.txt", b"just some words")
+        at.run()
+        self.assertEqual(errors(at), [])
+        text = " ".join(e.value for e in at.error)
+        self.assertIn("No contacts", text)
+        self.assertIn(".adi or .adif", text)
+
     @needs_network
     def test_a_shared_link_loads_the_spots(self):
         at = page("spots_page", call="K5OHY", src="wspr", date="2026-10-04", band="20m", go="1").run()
