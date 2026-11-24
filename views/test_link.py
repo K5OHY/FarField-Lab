@@ -40,6 +40,8 @@ def read(ss, q):
         ss["test_start"] = q["ts"]
     if q.get("ord") in ORDERS:
         ss["blk_order" if blocks else "test_order"] = ORDERS[q["ord"]]
+    elif ss.get("_setup_given"):               # an older link left the order out when it was A, B, A, B, which used to be the default
+        ss["blk_order" if blocks else "test_order"] = ORDERS["abab"]
     if blocks:
         length = _int(q.get("bl"), 2, 480)
         if length:
@@ -137,7 +139,7 @@ def params(ss, units):
             items = [f"{row}{'X' if lab is None else lab}" for row, lab in sorted(cells.items())]
             if items:
                 out["ed"] = ",".join(items)
-    if order and order != "abab":
+    if order:
         out["ord"] = order
     reports = ss.get("rx_min_reports_blk" if blocks else "rx_min_reports_pair")
     if reports:

@@ -7,6 +7,8 @@ NOAA) only run when you ask for them:
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from datetime import date
 from unittest import mock
@@ -244,6 +246,106 @@ class LiveToday(unittest.TestCase):
         r = mock.Mock(ok=status < 400, status_code=status)
         r.json.return_value = body
         return r
+
+    # ---- the collector inside the app, when it runs on your own computer
+    def _inside_with_store(self, tmp, connected=True):
+        """A stand-in for the collector inside the app: a real store with one spot of K5OHY's and one session, and a collector that says it is connected."""
+        import types
+        import live_rbn
+        svc = live_rbn._service()
+        store = svc.Store(os.path.join(tmp, "spots.db"))
+        now = svc.utc_now()
+        store.add([(now - 30, "W3LPL", 14030.5, "20m", "K5OHY", "CQ", 24, 22, "CW")])
+        store.beat(store.open_session())
+        collector = types.SimpleNamespace(connected=connected, started=time.time(), is_alive=lambda: True, call="K5OHY")
+        return types.SimpleNamespace(store=store, collector=collector, ensure=lambda call: None)
+
+    def test_inside_the_app_the_collector_is_offered_and_answers_from_its_own_store(self):
+        import live_rbn
+        with tempfile.TemporaryDirectory() as tmp:
+            inside = self._inside_with_store(tmp)
+            inside.ensure = lambda call: inside
+            with mock.patch.dict(os.environ, {"LIVE_RBN_URL": ""}), mock.patch.object(live_rbn, "running_locally", return_value=True), \
+                    mock.patch.object(live_rbn, "_inside", return_value=inside):
+                self.assertTrue(live_rbn.available())
+                df, note = live_rbn.fetch("k5ohy", live_rbn.today())
+                self.assertEqual(list(df.columns), ["spotter", "freq", "band", "dx", "mode", "snr", "time", "speed", "tx_mode"])
+                self.assertEqual((df["spotter"].tolist(), df["snr"].tolist()), (["W3LPL"], [24]))
+                self.assertTrue(note is None or "live collector" in note)          # at most a plain note about when it began listening
+                self.assertIn("Collecting today's RBN spots for K5OHY", live_rbn.status_line())
+                inside.store.db.close()
+
+    def test_the_collector_inside_the_app_is_off_when_switched_off_or_when_another_is_named_or_when_not_on_your_computer(self):
+        import live_rbn
+        cases = ((True, {"LIVE_RBN_URL": "", "LIVE_RBN_LOCAL": "0"}, False), (True, {"LIVE_RBN_URL": "https://example.test", "LIVE_RBN_LOCAL": ""}, False),
+                 (False, {"LIVE_RBN_URL": "", "LIVE_RBN_LOCAL": ""}, False), (True, {"LIVE_RBN_URL": "", "LIVE_RBN_LOCAL": ""}, True))
+        for local, env, expected in cases:
+            with mock.patch.dict(os.environ, env), mock.patch.object(live_rbn, "running_locally", return_value=local):
+                self.assertEqual(live_rbn._local_enabled(), expected, (local, env))
+                if not expected:
+                    self.assertIsNone(live_rbn.status_line())
+
+    def test_the_login_callsign_is_the_named_one_or_the_one_the_person_confirmed_and_never_a_guess(self):
+        """The app never guesses the callsign to log in with: a callsign typed on a page may be someone else's, looked up."""
+        import live_rbn
+        with mock.patch.object(live_rbn.st, "session_state", {"callsign_in": "W1AW"}):
+            with mock.patch.object(live_rbn, "_saved_call", return_value="K5OHY"):
+                with mock.patch.dict(os.environ, {"LIVE_RBN_CALL": "n3hxz"}):
+                    self.assertEqual(live_rbn._local_call(), "N3HXZ")
+                with mock.patch.dict(os.environ, {"LIVE_RBN_CALL": ""}):
+                    self.assertEqual(live_rbn._local_call(), "K5OHY")
+            with mock.patch.object(live_rbn, "_saved_call", return_value=""), mock.patch.dict(os.environ, {"LIVE_RBN_CALL": ""}):
+                self.assertEqual(live_rbn._local_call(), "")          # nothing confirmed: the callsign on the page (W1AW) is not used
+            with mock.patch.object(live_rbn, "_saved_call", return_value="not a callsign!"), mock.patch.dict(os.environ, {"LIVE_RBN_CALL": ""}):
+                self.assertEqual(live_rbn._local_call(), "")
+
+    def test_confirming_a_callsign_keeps_it_on_this_computer_and_a_bad_one_is_refused(self):
+        import live_rbn
+        with tempfile.TemporaryDirectory() as tmp:
+            file = __import__("pathlib").Path(tmp) / "FarFieldLab" / "live_call.txt"
+            with mock.patch.object(live_rbn, "_call_file", return_value=file):
+                with mock.patch.object(live_rbn.st, "session_state", {"live_call_in": " k5ohy "}):
+                    live_rbn._confirm()
+                    self.assertEqual(live_rbn._saved_call(), "K5OHY")
+                bad = {"live_call_in": "hello there"}
+                file.unlink()
+                with mock.patch.object(live_rbn.st, "session_state", bad):
+                    live_rbn._confirm()
+                    self.assertEqual(live_rbn._saved_call(), "")
+                    self.assertIn("does not look like a callsign", bad["live_call_error"])
+
+    def test_a_running_collector_is_left_alone_when_another_callsign_is_looked_up(self):
+        """It logs in once. Looking up a different callsign later must not restart it, which would break the day's record."""
+        import types
+        import live_rbn
+        started = []
+
+        class FakeCollector:
+            def __init__(self, store, call):
+                self.call, self.stop = call, threading.Event()
+                started.append(call)
+
+            def start(self):
+                pass
+
+            def is_alive(self):
+                return True
+
+        fake = types.SimpleNamespace(Store=lambda path: types.SimpleNamespace(prune=lambda: None), Collector=FakeCollector)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(live_rbn, "_service", return_value=fake), \
+                mock.patch.object(live_rbn, "_db_path", return_value=__import__("pathlib").Path(tmp) / "x" / "live.db"):
+            inside = live_rbn._Inside()
+            inside.ensure("K5OHY")
+            inside.ensure("W1AW")
+            self.assertEqual(started, ["K5OHY"])
+            self.assertEqual(inside.call, "K5OHY")
+
+    def test_the_inside_collectors_file_is_kept_out_of_the_project_folder(self):
+        import live_rbn
+        with mock.patch.dict(os.environ, {"LIVE_RBN_DB": "", "LOCALAPPDATA": r"C:\Users\x\AppData\Local"}):
+            path = str(live_rbn._db_path())
+        self.assertIn("FarFieldLab", path)
+        self.assertNotIn(HERE, path)
 
     def test_nothing_changes_when_no_collector_is_set_up(self):
         import live_rbn
@@ -941,6 +1043,18 @@ class ComparePage(unittest.TestCase):
         self.assertTrue(ss["avg_floor"])
         self.assertEqual((ss["avg_near_mi"], ss["avg_weak"]), (50, 20))
 
+    def test_a_link_always_says_the_order_and_an_older_link_without_one_still_means_a_b_a_b(self):
+        """A, B, B, A is the order the page opens on. Links used to leave the order out when it was A, B, A, B (the old default), so a link
+        with no order that carries a test's setup must still open as A, B, A, B, and new links must always say which order was used."""
+        from views import test_link
+        for text, code in (("A, B, B, A \u2026", "abba"), ("A, B, A, B \u2026", "abab")):
+            self.assertEqual(test_link.params({"test_mode": "After every transmission", "test_cycles": 12, "test_order": text}, "mi").get("ord"), code)
+        old = page("compare_page", call="K5OHY", src="wspr", date="2026-10-04", band="20m", n="12", na="Loop", nb="Dipole").run()
+        self.assertEqual(errors(old), [])
+        self.assertEqual(old.session_state["test_order"], "A, B, A, B \u2026")
+        new = page("compare_page", call="K5OHY", src="wspr", date="2026-10-04", band="20m", n="12", ord="abba").run()
+        self.assertEqual(new.session_state["test_order"], "A, B, B, A \u2026")
+
     def test_a_bad_test_link_is_ignored(self):
         at = page("compare_page", sw="sideways", n="999", bl="1", ord="zzz", mr="0", nr="-5", wk="abc", ts="<script>").run()
         self.assertEqual(errors(at), [])
@@ -1224,42 +1338,69 @@ class BandConditionsPage(unittest.TestCase):
 
 
 class HelpPage(unittest.TestCase):
+    def _topic_text(self, topic):
+        """The Help page with one topic picked: its text, and the run itself."""
+        at = page("help_page")
+        at.session_state["help_topic"] = topic
+        at.run()
+        self.assertEqual(errors(at), [], topic)
+        return at, "\n".join(m.value for m in at.markdown)
+
     def test_the_readme_shows_without_error(self):
         at = page("help_page").run()
         self.assertEqual(errors(at), [])
         text = "\n".join(m.value for m in at.markdown)
-        self.assertIn("Quick start", text)
+        self.assertIn("Quick start", text)              # it opens on Start here
         self.assertIn("Open an example", text)
         self.assertIn("DX Commander", text)
-        self.assertIn("/blob/main/docs/METHODOLOGY.md", text)  # the README's relative link, pointed at the repository
-        self.assertNotIn("](docs/METHODOLOGY.md)", text)
-        self.assertNotIn("farfield-banner", text)  # the banner is for GitHub, not the Help page
+        _, about = self._topic_text("About and methodology")
+        self.assertIn("/blob/main/docs/METHODOLOGY.md", about)  # the README's relative link, pointed at the repository
+        self.assertNotIn("](docs/METHODOLOGY.md)", about)
+        for t in (text, about):
+            self.assertNotIn("farfield-banner", t)  # the banner is for GitHub, not the Help page
+        self.assertIn("Dale, N3HXZ", about)           # the credit is kept, on the About topic
 
     def test_the_help_page_shows_the_picture_and_the_test_length_guidance(self):
-        at = page("help_page").run()
-        self.assertEqual(errors(at), [])
-        text = "\n".join(m.value for m in at.markdown)
+        at, text = self._topic_text("Compare antennas")
         for heading in ("What happens to each receiver", "How long should my test be, and what does the slider do?"):
             self.assertIn(heading, text)
         self.assertEqual(len(at.get("image")), 2)  # the brand strip, and the README's picture of one pair of transmissions
         self.assertTrue(os.path.exists(os.path.join(HERE, "images", "two-transmissions.png")))
+        self.assertIn("For your first test", text)  # one recommended test, as a range and not a hard number
+        self.assertIn("16 to 28", text)
 
-    def test_the_help_page_has_a_tab_for_each_part_and_loses_no_section_of_the_readme(self):
-        """The Help page splits the README into tabs. A section added to the README later must still show up, and a link from one part
-        to another (which would go nowhere from inside a tab) must not be left as a dead link."""
+    def test_each_page_topic_opens_with_the_pages_own_guide(self):
+        import ui_common
+        for topic, key in (("My spots", "spots"), ("Compare antennas", "compare"), ("Band conditions", "conditions"), ("Log analysis", "log")):
+            _, text = self._topic_text(topic)
+            self.assertIn(ui_common.GUIDES[key]["purpose"], text, topic)
+            self.assertIn(ui_common.GUIDES[key]["limits"], text, topic)   # the limits are not left in a folded block
+
+    def test_the_help_page_has_a_topic_for_each_part_and_loses_no_section_of_the_readme(self):
+        """The Help page splits the README into topics. A section added to the README later must still show up, and a link from one part
+        to another (which would go nowhere from inside a topic) must not be left as a dead link."""
         import re
-        at = page("help_page").run()
-        self.assertEqual(errors(at), [])
-        self.assertEqual([t.label for t in at.tabs], ["Start here", "My spots", "Compare antennas", "Band conditions", "Log analysis",
-                                                       "Troubleshooting", "Deep dive and code"])
-        text = "\n".join(m.value for m in at.markdown)
+        from views.help_view import TOPICS
+        self.assertEqual(list(TOPICS), ["Start here", "My spots", "Compare antennas", "Band conditions", "Log analysis",
+                                        "Troubleshooting", "About and methodology"])
+        shown = "\n".join(self._topic_text(topic)[1] for topic in TOPICS)
         with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
             readme = f.read()
         for title in re.findall(r"^## (.+)$", readme, re.M):
-            if title not in ("What it looks like", "Quick start"):      # the screenshots are for GitHub; the quick start is drawn by the page
-                self.assertIn(title, text, f"README section {title!r} is missing from the Help page")
-        self.assertNotIn("](#", text)
+            if title not in ("What it looks like", "Quick start", "Log analysis", "Compare two antennas", "Band conditions now"):
+                self.assertIn(title, shown, f"README section {title!r} is missing from the Help page")   # (those three are the topics themselves)
+        self.assertNotIn("](#", shown)
         self.assertIn("[Log analysis](#log-analysis)", readme)          # the README's own jump links cover every page
+
+    def test_the_help_topic_can_be_opened_from_a_link_and_from_a_see_also_button(self):
+        at = page("help_page")
+        at.query_params["topic"] = "troubleshooting"
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["help_topic"], "Troubleshooting")
+        at, _ = self._topic_text("Compare antennas")
+        [b for b in at.button if b.label == "Open troubleshooting"][0].click().run()
+        self.assertEqual(at.session_state["help_topic"], "Troubleshooting")
 
 
 class SetupSurvivesOtherPages(unittest.TestCase):

@@ -308,7 +308,7 @@ def log_page():
     # The power comes first: the work starts the moment a log is uploaded, so it has to be known by then. A log does not say it.
     power_box, _ = st.columns([1, 3])
     power = power_box.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
-                                   help="A log does not say what power you ran. Set it before you upload: the calculations start as soon as a log is "
+                                   help="This page does not read the power from the log, so enter what you ran. Set it before you upload: the calculations start as soon as a log is "
                                         "loaded, and they use it to restate the WSPR stations' signals to your power. Changing it later works, but starts them again.")
     file = st.file_uploader("Your log (ADIF file)", type=["adi", "adif"], key="log_file",
                             help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
@@ -336,6 +336,7 @@ def log_page():
         return
     digest = hashlib.sha1(raw).hexdigest()
     _what_was_read(log, name)
+    st.caption(":material/info: Your contacts, the spots that heard you and the estimated conditions are different things. A band with no reports can just mean nobody was listening.")
     cw = log[log["mode"] == "CW"]
     summary, rep = lc.summary(log), lc.repeat_stations(log)
     call0, grid0 = lc.log_origin(log)

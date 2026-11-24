@@ -115,6 +115,7 @@ def _conditions_body(result, power, mode, margin_db, units, k, lat, lon, who, wi
     st.html(dash.CSS)
     st.html(dash.top_html(setup, f"{result['n_spots']:,} WSPR spots from {result['n_tx']} stations{area}, last {window} minutes",
                           badge, badge_tone, badge_help))
+    st.caption(":material/info: An estimate from the WSPR stations near you, restated for your power and mode. A band with no reports is not necessarily closed.")
     tiles_slot = st.container()  # the tiles and the table are drawn once the band buttons by the map have been read
     st.html(dash.strip_html(sw.readings(data), est))
 

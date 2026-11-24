@@ -3,6 +3,7 @@ import streamlit as st
 
 from data_sources import skimmer_data
 from ui_common import RBN_SNR_SCALE, brand_strip, page_guide, preview, SPLIT_FREQ, SPLIT_LOG, WSPR_SNR_SCALE, WSPR_SOURCE
+import live_rbn
 from views import inputs, test_link
 from views.compare_view import compare_view
 
@@ -44,7 +45,7 @@ def _how_to_test():
         "3. Switch in this order, **always starting with A**:\n"
         "   - **A, B, B, A, A, B, B, A …** is usually best. Each antenna gets the same mix of earlier and later turns, so a steady change in the band cancels out. Each antenna stays on for two turns in a row, so use shorter turns (for example 15 minutes instead of 30).\n"
         "   - **A, B, A, B …** is simpler, but B always goes second.\n"
-        "4. **How long?** A test can be as short as 4 transmissions (about 8 minutes) or run for hours. More data is better: it narrows the uncertainty, and a long test also shows how changing band conditions affect the result.\n"
+        "4. **How long?** At least 8 to 12 transmissions (16 to 24 minutes), though 16 to 28 is better. Shorter tests can be analysed but may be inconclusive. More data narrows the uncertainty, and a long test also shows how changing band conditions affect the result. Repeat on another day before you trust the result.\n"
         "5. Wait about five minutes after the last transmission. Enter your callsign and the date in the sidebar, choose the band, and click **Load spots**.\n"
         "6. Tell the page how you switched. It works out which antenna got out better, by how much, and in which directions.")
     right.markdown(
@@ -103,6 +104,7 @@ def compare_page():
         view = inputs.view_controls(ss, cfg, pick, where.kind, comparing=True)
         link_slot = st.container()  # the link is drawn last, once the test's setup widgets exist
         st.caption(f":material/satellite_alt: {refresh_msg}")
+        live_rbn.sidebar()
     inputs.load_spots(ss, skimmers, where)
     with guide:
         page_guide("compare")
@@ -143,6 +145,7 @@ def _result(ss, skimmers, where, view):
         st.caption(f":material/schedule: Loaded at {ss.loaded_at:%H:%M} UTC. The newest transmission in it is at "
                    f"{ss.raw['time'].max():%H:%M} UTC. Sent something since? Click **Load spots** again.")
     st.caption(f":material/location_on: {ss.callsign}" + (f" (A) and {ss.tx_call_b} (B)" if ss.get("tx_call_b") else "") + f" · {label}")
+    st.caption(":material/info: This describes this test and the paths it sampled, not every direction or every condition.")
     if not wspr:
         st.caption("RBN tells A and B apart by frequency: call CQ on one frequency with the first antenna, then on a nearby "
                    "frequency with the other, back to back (a minute or two apart).")

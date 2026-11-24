@@ -267,10 +267,11 @@ def _separate_by_log(spots):
     if by_call:
         pattern = "CALLS"
     else:
+        st.session_state.setdefault("test_order", list(patterns)[1])        # A, B, B, A is the recommended order, so it is the one it opens on
         order = top[2].radio("Order", list(patterns), key="test_order",
-                             help="The order the antennas were connected, starting with A. A, B, B, A balances which "
-                                  "antenna goes first in each pair. If a test really started on B, change the Antenna "
-                                  "cells below.")
+                             help="The order the antennas were connected, starting with A. A, B, B, A is the usual choice: it balances which "
+                                  "antenna goes first in each pair, so a steady change in the band cancels out. A, B, A, B works too, but B "
+                                  "always goes second. If a test really started on B, change the Antenna cells below.")
         pattern = patterns[order]
     if start_choice == LATEST:
         first = len(all_stamps) - n_cycles
@@ -429,8 +430,9 @@ def _blocks_test(spots, all_stamps):
                                         "use fewer blocks and set First block starts at to a time when antenna A went on "
                                         "(3 hours of 30 minute blocks is 6)."))
     patterns = {"A, B, A, B \u2026": "ABAB", "A, B, B, A \u2026": "ABBA"}
+    st.session_state.setdefault("blk_order", list(patterns)[0])             # long blocks open on A, B, A, B: turns of the same length
     order = c4.radio("Block order", list(patterns), key="blk_order", horizontal=True,
-                     help="Starting with A. A, B, B, A balances which antenna goes first.")
+                     help="Starting with A. A, B, A, B is the usual choice for long blocks. A, B, B, A balances which antenna goes first, but each antenna then stays on for two blocks in a row, so use shorter blocks.")
     st.session_state.setdefault(f"blk_start_{sig}", fmt(all_stamps[0]))
     start_label = c3.selectbox(
         "First block starts at (UTC)", [fmt(t) for t in all_stamps], key=f"blk_start_{sig}", accept_new_options=True,

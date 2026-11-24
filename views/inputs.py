@@ -138,7 +138,7 @@ def start_example(which):
     elif which == "long":
         ss.update(callsign_in="N3HXZ", grid_in="", src_in=WSPR_SOURCE, span_in="Single day", day_in=date(2026, 8, 26),
                   band_choice="20m", cmp_name_a="17 ft whip + 5:1 unun (ground)", cmp_name_b="Performer (tuned, elevated)",
-                  test_mode="In long blocks", rx_min_reports_blk=40, _example="long")
+                  test_mode="In long blocks", blk_order="A, B, A, B …", rx_min_reports_blk=40, _example="long")   # Dale's blocks alternate A, B, A, B
         ss["_blk_pending"] = {"n": 18, "start": "", "paste": ""}  # 18 blocks, 9 hours: the loaded spots run a little past that
     elif which == "rbn":
         ss.update(callsign_in="K5OHY", grid_in="", src_in="Download by date", span_in="Single day", day_in=date(2026, 9, 27),

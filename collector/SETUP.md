@@ -15,11 +15,10 @@ Until the app is given the collector's address it works exactly as it always has
 | --- | --- | --- | --- | --- |
 | **A. Google Cloud** | A free machine in Google's data centre | Yes | **Yes** | About 20 minutes, needs a Google account and a card |
 | **B. Raspberry Pi or other Linux box** | A small computer at home | Yes, if you leave it on | Only the app on your home network | About 10 minutes |
-| **C. Windows** | Your own PC | Only while it is on, awake, and the window is open | Only the app on that PC | A few minutes |
-| **D. Mac or Linux desktop** | Your own computer | Same as Windows | Only the app on that computer | A few minutes |
+| **C. Your own computer, inside the app** | Your own PC, Mac or Linux machine | Only while the app is open | Only that copy of the app | Nothing to set up |
 
 All of them are free. Only A can feed the Streamlit website, because the website runs on someone else's computer and cannot see yours or your home
-network. If you only use the app on your own computer, C or D is the quickest, and B keeps it running while the computer is off. You can run
+network. If you only use the app on your own computer, C is the quickest, and B keeps it running while the computer is off. You can run
 more than one.
 
 ## Option A: on Google Cloud (about 20 minutes, once)
@@ -117,7 +116,7 @@ The last line should show `"connected":true` within a few seconds. `--bind 0.0.0
 `--bind 127.0.0.1` if the app runs on the Pi itself.
 
 Now tell the app where it is. Find the Pi's address with `hostname -I` (say it prints `192.168.1.50`). On the computer that runs the app, set
-`LIVE_RBN_URL` to `http://192.168.1.50:8080` before starting it, as in Option C (Windows) or D (Mac or Linux) below, but with that address. If
+`LIVE_RBN_URL` to `http://192.168.1.50:8080` before starting it, as described under *Pointing your own copy of the app at a collector elsewhere* below, but with that address. If
 the app runs on the Pi itself, use `http://127.0.0.1:8080`.
 
 Looking after it: `sudo journalctl -u rbn-collector -n 50` shows its log, `sudo systemctl restart rbn-collector` restarts it, and
@@ -127,60 +126,41 @@ Two cautions. The collector writes to its database all day, which wears an SD ca
 for years. And it is reachable from your home network only; to let the website reach it you would have to open your router to the internet, which
 this guide does not cover. Use Option A for that.
 
-## Option C: a Windows computer (a few minutes)
+## Option C: on your own computer, inside the app (nothing to set up)
 
-You need the app set up on your computer first (the README's *Run it locally* section). The collector needs nothing more than
-Python, which you already have for that. It uses no extra packages.
+When you run the app on your own computer (see *Run it locally* in the README), it can start a collector inside itself. The first time, the sidebar
+asks for your own callsign to log in to the feed with; type it and click **Start collecting today's spots**. After that it starts by itself each time the
+app does. There is nothing to install: today's spots appear on **My spots** once the app has been running for a little while, and the sidebar says when
+it began collecting.
 
-Use two PowerShell windows, both opened in the `FarField-Lab` folder.
+- **It only collects while the app is open.** Closing the app, or letting the computer sleep or lose the internet, stops it listening. The page says
+  when it began and which stretches are missing, so you are never shown a partial day as if it were complete. The complete list is in RBN's daily file the next day.
+- **Restarting keeps the day.** The spots are kept for 48 hours in a small file in your local app-data folder (`%LOCALAPPDATA%\FarFieldLab` on Windows,
+  `~/.local/share/FarFieldLab` elsewhere), not in the project folder. Open the app again and it carries on; the time it was off shows up as a gap.
+- **The callsign.** It is always your own, and the app never guesses one: nothing connects until you have typed it, and a callsign you look up on a page is
+  never used to log in. It is remembered in a small file beside the spots (outside the project folder), and the login stays the same while the app runs.
+  RBN accepted a second login with the same callsign while another collector was connected. Set `LIVE_RBN_CALL` to give the callsign without being asked.
+- **Switch it off** with `LIVE_RBN_LOCAL=0`. It is also off whenever `LIVE_RBN_URL` is set, because the app then uses that collector.
+- **The website cannot see it.** The Streamlit website is on someone else's computer, so for it you need Option A.
 
-**Window 1: the collector.** Start it and leave the window open:
+### Pointing your own copy of the app at a collector elsewhere
+
+To use a collector on a Raspberry Pi or on Google Cloud (Option A or B) from the app on your own computer, set `LIVE_RBN_URL` (and `LIVE_RBN_KEY`, if the
+collector has one) before starting the app. In Windows PowerShell:
 
 ```
-python collector\rbn_service.py --call K5OHY --db spots.db
-```
-
-(Use your own callsign. If the Google Cloud collector is also running with the same callsign, use a different login here, for example
-`--call K5OHY-2`, so the two logins do not collide. That form connects fine.) After a few seconds it prints `connected to telnet.reversebeacon.net:7000`.
-To check it, open <http://127.0.0.1:8080/health> in a browser: it should say `"connected":true`.
-
-**Window 2: the app.** Tell the app where the collector is, then start it as usual:
-
-```
-$env:LIVE_RBN_URL = "http://127.0.0.1:8080"
+$env:LIVE_RBN_URL = "http://192.168.1.50:8080"
 .venv\Scripts\streamlit run web.py
 ```
 
-No key is needed, because the collector listens only to your own computer. The first line has to be run in the same window as the second, every time
-you open a new window. On **My spots**, with RBN and Download a day, the date can now be today.
-
-Things that differ from Google Cloud:
-
-- **It only collects while it runs.** If you close the window, put the computer to sleep or lose the internet, it stops listening. The page says
-  when it began and which stretches are missing, so you are never shown a partial day as if it were complete. The complete list is in RBN's daily file the next day.
-- **Restarting keeps the day.** The spots are saved in `spots.db` in that folder (48 hours, and git ignores the file). Run the same command
-  again and it carries on; the time it was off shows up as a gap.
-- **Stop it** with Ctrl+C in window 1.
-- **The website cannot see it.** `127.0.0.1` means "this computer". The Streamlit website is on someone else's computer, so for it you need Option A.
-
-## Option D: a Mac or Linux desktop (a few minutes)
-
-The same as Option C, with Mac and Linux commands. Use two terminal windows in the `FarField-Lab` folder.
-
-Window 1, the collector (leave it open):
+On a Mac or Linux:
 
 ```
-python3 collector/rbn_service.py --call K5OHY --db spots.db
-```
-
-Window 2, the app (set up as in the README's *Run it locally* section):
-
-```
-export LIVE_RBN_URL="http://127.0.0.1:8080"
+export LIVE_RBN_URL="http://192.168.1.50:8080"
 .venv/bin/streamlit run web.py
 ```
 
-Everything in the notes under Option C applies: it only collects while it runs, restarting keeps the day, Ctrl+C stops it, and the website cannot see it.
+The first line has to be run in the same window as the second, every time you open a new window.
 
 ## How it behaves
 

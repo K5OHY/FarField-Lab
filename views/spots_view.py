@@ -9,6 +9,7 @@ from data_sources import skimmer_data
 from maps import ZOOM_HINT, _single_points, build_map, compute_stats
 from pdfs import single_report_pdf
 from ui_common import BANNER, BAND_COLORS, KM_PER_MILE, RBN_SNR_SCALE, WSPR_SNR_SCALE, _views, page_guide, preview, task_chooser
+import live_rbn
 from views import inputs
 from world_map import MAX_KM, MIN_CELL, azimuth_map_figure, fit_radius_km
 
@@ -162,6 +163,7 @@ def spots_page():
         st.divider()
         view = inputs.view_controls(ss, cfg, pick, where.kind, band_box=False)
         st.caption(f":material/satellite_alt: {refresh_msg}")
+        live_rbn.sidebar()
     inputs.remember(ss, cfg, where, view)
     inputs.load_spots(ss, skimmers, where)
     if ss.raw is None:
@@ -229,6 +231,7 @@ def spots_page():
         map_html = m.get_root().render()
         st.iframe(map_html, height=720)
         st.caption(ZOOM_HINT)
+        st.caption(":material/info: A quiet part of the map can mean no one was listening there, not that the path was closed.")
 
         # The PDF is built when the button is clicked, outside this script run, where st.session_state is not available,
         # so everything it needs is read here and captured.

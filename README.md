@@ -68,7 +68,7 @@ Free hosting can fall asleep: click the button to wake it. A local copy also rem
 
 In the sidebar, choose **Spots from: RBN or WSPR**. For RBN, choose **Download a day** or **Paste spots**.
 
-**RBN, Download a day.** Pick a day or a range (up to 7 days). Works for anything up to yesterday (UTC), because RBN publishes a day's file after that day ends. Only spots of your callsign are kept. Where a live collector has been set up (see [collector/SETUP.md](collector/SETUP.md)), today works too: its spots come from RBN's live feed, and the page says if the collector began part way through the day or lost its connection, so you know what may be missing.
+**RBN, Download a day.** Pick a day or a range (up to 7 days). Works for anything up to yesterday (UTC), because RBN publishes a day's file after that day ends. Only spots of your callsign are kept. On your own computer today works too, because the app collects it while it is open, and where a live collector has been set up (see [collector/SETUP.md](collector/SETUP.md)) it works on the website: its spots come from RBN's live feed, and the page says if the collector began part way through the day or lost its connection, so you know what may be missing.
 
 **RBN, Paste spots.** For spots from the last few minutes or hours, and for quick tests. Look up your callsign on [reversebeacon.net](https://www.reversebeacon.net/), copy the spot rows, paste them into the box, and click Load spots. The app reads each field by what it looks like, so odd spacing is fine.
 
@@ -88,22 +88,25 @@ WSPR differs from RBN in a few ways: SNR is mostly negative (about -30 to +5 dB)
 - **Download report (PDF)** next to it: key numbers, the session report, direction chart and the stations that heard you.
 - A **Log analysis** page in the menu: upload a contact log from your logging program and see it beside your RBN spots and the WSPR stations around you. See below.
 
-Your location comes from the grid you typed, else the RBN skimmer list, else the FCC ([callook.info](https://callook.info)), else [HamDB](https://hamdb.org), else the centre of your country (the app warns you). Enter a grid for an exact pin.
+Your location comes from the grid you typed, else the RBN skimmer list, else the FCC ([callook.info](https://callook.info)), else [HamDB](https://hamdb.org), else the centre of your country (the app warns you). Enter the grid square where you operate to place the pin there.
 
 ## Log analysis
 
+<!-- help:skip -->
 Upload a log from your logging program and see your session beside who heard you.
 
-1. Set the power you ran in the box above the uploader. A log does not record it, and the page starts working the moment a log loads.
+1. Set the power you ran in the box above the uploader. This page does not read the power from the log, and it starts working the moment a log loads.
 2. Upload an ADIF file (most logging programs can export one). Your callsign, grid square and days come from the log.
 3. Read down the page. Pick a band under the two maps to compare who spotted you with who you worked.
 
 **You get:** the session in numbers, who followed you from band to band, what you worked (DXCC entities, states, zones), a session chart, two maps (the skimmers that spotted you and the stations you worked), how the bands were doing for DX while you were on, space weather, and for a POTA or SOTA log how your activation compares with the others at that park or summit. The log is used for that visit only and is not saved.
 
-<details>
-<summary><b>Deep dive: everything the Log analysis page shows, and how to read it</b></summary>
+<!-- /help:skip -->
 
-Open **Log analysis** in the menu, set the power you ran (the box above the uploader; a log does not say, and the calculations start the moment a log is loaded, so set it first), and upload an ADIF file (most logging programs can export one). Everything else comes from the log: your callsign and grid square are filled in from it (change them if they are wrong), and the days are read from its dates. The page then downloads your RBN spots for those days and fetches the WSPR picture on its own. The log is used for that visit only and is not saved. A log of up to four days is compared. The page leads with the story of the session (who followed you, the session chart, the maps, the band conditions during it, the space weather and who hears whom) and puts the comparison with RBN and the Band conditions page below it. The session chart is drawn from the log at once, and the RBN spots are added to it when they have been read. The strength estimate against a typical WSPR station is in the comparison section, not among the top figures, because it is the most experimental number on the page. RBN makes each UTC day's file at 00:02 UTC the next day, so a log works from then on; before that the page says when it will be ready and shows the facts from the log alone.
+<details>
+<summary><b>What does every part of the Log analysis page show?</b></summary>
+
+Open **Log analysis** in the menu, set the power you ran (the box above the uploader; the page does not read the power from the log, and the calculations start the moment a log is loaded, so set it first), and upload an ADIF file (most logging programs can export one). Everything else comes from the log: your callsign and grid square are filled in from it (change them if they are wrong), and the days are read from its dates. The page then downloads your RBN spots for those days and fetches the WSPR picture on its own. The log is used for that visit only and is not saved. A log of up to four days is compared. The page leads with the story of the session (who followed you, the session chart, the maps, the band conditions during it, the space weather and who hears whom) and puts the comparison with RBN and the Band conditions page below it. The session chart is drawn from the log at once, and the RBN spots are added to it when they have been read. The strength estimate against a typical WSPR station is in the comparison section, not among the top figures, because it is the most experimental number on the page. RBN makes each UTC day's file at 00:02 UTC the next day, so a log works from then on; before that the page says when it will be ready and shows the facts from the log alone.
 
 - **From the log alone:** contacts, stations, states, an estimated active rate in contacts per hour (a pause of more than 30 minutes is not counted, and a log cannot say when you were actually on the air), the bands you worked, your busiest hour, and the stations that came back on another band. *Who followed you* says how many stations worked you on how many bands ("8 stations worked you on three bands; another 25 on two") and shows each as a row of dots, the most bands first and the number of bands beside the callsign; the first 12 are shown and a *Show more* box under it holds the rest. A line under the file says how many records it read and, if any were left out, why. If the log has more than one grid square or callsign the page warns you, because the comparison uses the one with the most contacts.
 - **SOTA logs.** A log made on a summit (the `MY_SOTA_REF` field, or `MY_SIG_INFO` when `MY_SIG` is SOTA) gets the same headline and card, worded for a summit and read from SOTA's public list of the summit and its activations: the summit's points, height, grid square and region, who activated it first, and where your QSOs rank among the activations SOTA lists (by QSOs only, because SOTA does not list modes). Contacts with another summit (the `SOTA_REF` field) are counted in the facts beside *Who followed you*, a reference typed with the letter O for a zero is read as a zero, and only the summit reference is sent to SOTA. The share picture uses the same headline.
@@ -134,24 +137,36 @@ How to read the band rows:
 
 Open **Compare antennas** in the menu. It shows three steps: load your spots, say how you switched, and read the result. What you load on **My spots** is already there, and the other way round. Name your antennas under *Name your antennas* if you like.
 
-**How long a test?** As short as 4 transmissions (about 8 minutes) or as long as you like. More data is better: it narrows the uncertainty, and a long test also shows how changing band conditions affect the result. You can switch antennas after every transmission or after a set time, for example every 10 to 30 minutes. The page tells you how small a difference your number of transmissions can reliably show.
+**For your first test:** use the same transmitter, band and power. Run at least 8 to 12 transmissions, though 16 to 28 is better, switching between transmissions in A, B, B, A order (each antenna gets the same mix of earlier and later turns, so a steady change in the band cancels out). Note the start time, wait about five minutes after the last transmission, then load the spots. Repeat on another day before you trust the result. Shorter tests can be analysed, down to 4 transmissions, but may be inconclusive. More data narrows the uncertainty, and a long test also shows how changing band conditions affect the result. You can also switch after a set time, for example every 10 to 30 minutes (see *How do I run a long-block test?* below). The page tells you how small a difference your number of transmissions can reliably show.
 
-### With WSPR (the best way to test antennas)
+**Reading a result, for example.** In the real example test (a 40m loop against a 20m dipole, 12 transmissions on 20m), the summary says the dipole was stronger by **4.8 dB** (95% range 3.9 to 5.8 dB) at the 158 receivers that heard both antennas, and it won all 6 rounds. Read it like this:
+
+- **How much:** the number and its range. Here the whole range is above zero, so the dipole really was stronger in this test. A range that crosses zero means too close to call.
+- **How many receivers:** 158 gives the number weight. A handful of receivers can mislead.
+- **How consistent:** the dipole won 6 of 6 rounds. An antenna that wins only some rounds points to changing conditions.
+- **What it covers:** this test and the paths it sampled (here toward N, NE, E and NW). It does not mean the dipole is better in every direction or in every condition. Check the direction tab, and repeat the test on another day.
+
+### Recommended WSPR setup
 
 A WSPR transmission lasts about 110 seconds of each 2-minute slot, so there is a short break between transmissions. Flip the antenna switch in that break.
 
-The numbered steps below are for the **After every transmission** option. For **In long blocks**, see *Long tests* under them.
+The numbered steps below are for the **After every transmission** option. For **In long blocks**, see *How do I run a long-block test?* below.
 
 1. Connect the transmitter to an A/B coax switch with one antenna on each output. Use one band, one power and one callsign for the whole test.
 2. Let the transmitter send in every slot. If it can send an extra packet between cycles (for example a 6-character locator option), turn that off.
-3. Wait for the transmission to end, flip the switch, and let the next one start. Go **A, B, A, B** or **A, B, B, A**, always starting on A. Note the time of the first transmission.
-4. Run at least 8 transmissions (4 pairs, about 16 minutes). Eight is a first look at signal strength. It is too few to tell which antenna reached more receivers, because that needs at least 6 pairs where one antenna clearly reached more (pairs that tie don't count), so plan on 12 to 16 transmissions or more for small differences or a reach summary.
+3. Wait for the transmission to end, flip the switch, and let the next one start. Go **A, B, B, A, A, B, B, A …** (recommended: each antenna gets the same mix of earlier and later turns, so a steady change in the band cancels out) or **A, B, A, B …** (simpler, but B always goes second), always starting on A. Note the time of the first transmission.
+4. Run at least 8 to 12 transmissions (4 to 6 pairs, 16 to 24 minutes); 16 to 28 is better. Eight is a first look at signal strength. It is too few to tell which antenna reached more receivers, because that needs at least 6 pairs where one antenna clearly reached more (pairs that tie don't count), so plan on 16 to 28 transmissions, or more, for small differences or a reach summary.
 5. Wait about 5 minutes, pick the date, and click Load spots.
 6. Under **Your test**, set **Transmissions in your test** (every 2-minute cycle on either antenna counts: A then B is 2), and **Starting at** if it was not the latest test. It shows how small a difference that many pairs can reliably show. Check the **Order** and the Antenna column match your notes, and read the result. Fix any row, or clear it to leave it out.
 
 For **After every transmission**, use an even number of transmissions: an odd one has no partner and is left out. (In long blocks nothing is paired, so this does not apply.)
 
+<details>
+<summary><b>How do I run a long-block test?</b></summary>
+
 **Long tests.** For a long, time-averaged test (one antenna for 30 minutes or an hour, then the other, over several hours), choose **In long blocks** under *Your test*, then give the start time, minutes per block and number of blocks. Every transmission in a block counts for that block's antenna, and each receiver's reports on A and on B are compared as a whole. Aim for 20 or more reports per receiver on each antenna. Shorter blocks of 10 or 20 minutes can work as well: what matters is running enough blocks to get at least 20 reports per antenna at each of enough receivers to see the big picture, and propagation decides how long that takes. You can keep clicking **Load spots** while you collect and watch the **Data used** box (the count of receivers with 20 or more reports on each antenna) to see when enough is enough. The start time can be typed (12:30 or 1230), even if nothing was heard at that minute. The From of each block can be edited in the table (each block ends when the next one starts, so that is all you need; untick the box to set the To times yourself), and for uneven blocks you can paste a schedule, one block per line like `16:40-17:12 A`. A test that runs past midnight UTC needs **Date range** under Period, with To set to the next day; the page says so if the blocks run past the spots loaded.
+
+</details>
 
 ### With RBN
 
@@ -163,6 +178,9 @@ Send plenty of CQs on each side, at the same power and speed (or enter the power
 
 FarField Lab compares two antennas one after the other: one transmitter, an A/B switch, and the same receivers hearing both. If you can send both antennas at the same time, on two transmitters in the same WSPR cycle, [WSPRadar](https://www.wspradar.org/) by Markus (DL1MKS) is built for that: synchronized, same-cycle benchmarking, with its own method and documentation. The two go about the same job in different ways, so use whichever suits your equipment.
 
+<details>
+<summary><b>What happens to each receiver, and why are some left out?</b></summary>
+
 ### What happens to each receiver
 
 This section and the picture are for the **After every transmission** option. With **In long blocks** nothing is paired: each receiver's reports on A and on B over all the blocks are compared as a whole. The rules about being on the band, hearing both antennas and the slider's minimum reports still apply.
@@ -170,6 +188,11 @@ This section and the picture are for the **After every transmission** option. Wi
 ![What happens to the receivers in one pair of transmissions (After every transmission option)](images/two-transmissions.png)
 
 The picture follows five receivers through one A transmission and the B transmission after it. A receiver that **heard both** antennas, enough times, is **used for strength**: the difference between its two reports is what the result is built from. A receiver that heard only one side counts for **reach** (which antenna was heard by more receivers) but not for strength. A receiver that was not **on the band** (it decoded nothing on this band in your slots) is not counted at all, because a miss from a receiver that was tuned elsewhere says nothing about your antennas. And a receiver that heard both only once is dropped by the **slider** (below), because one report is too thin to trust. A real test repeats this for every pair of transmissions.
+
+</details>
+
+<details>
+<summary><b>How long should my test be, and what does the slider do?</b></summary>
 
 ### How long should my test be, and what does the slider do?
 
@@ -194,6 +217,11 @@ A long test behaves differently. Because it runs for hours, the band can open or
 
 **Every transmission, or long blocks?** Switching after every transmission shows one stretch of time; long blocks average over changes in the band, so the two can give different numbers on the same station. In another of Dale's tests, shortening the blocks moved the block result toward the every-transmission one. When the band is changing, which one you run, and when, can matter as much as the antennas. A block can be as short as 2 minutes, which is one transmission: that runs the long block averaging on a test that switched after every transmission, so the two methods can be compared on the same data.
 
+</details>
+
+<details>
+<summary><b>What does each results tab show?</b></summary>
+
 ### Reading the result
 
 - **The PDF report.** On the **Result** tab, *Download report (PDF)* starts with a **Test setup** section: the transmitter, date and band, how the antennas were switched, the power, and the block table or the list of transmissions, so someone else can repeat the analysis from the report alone. The averaging settings and filters are stated beside the receiver results. The tables can also be downloaded as CSV.
@@ -205,12 +233,14 @@ A long test behaves differently. Because it runs for hours, the band can open or
 
 Differences are always shown as who is ahead and by how much (for example *B +2.0 dB*), never as a negative number.
 
+</details>
+
 ### How the comparison works
 
 This section is the short version. The [technical methodology](docs/METHODOLOGY.md) lists every rule and number, how the program was checked (including tests where A and B are the same antenna), and what it does not establish.
 
 <details>
-<summary><b>Deep dive: how the comparison works, and the math step by step</b></summary>
+<summary><b>How does the comparison work, step by step?</b></summary>
 
 The idea is simple: ask the same receivers about both antennas, so everything that stays the same for both antennas drops out. A receiver in Germany has its own noise level and its own path to you, and those stable effects are the same for A and B. Conditions that change over time are not the same, which is why the antennas are alternated and why a result is worth repeating on another day. Subtract the receiver's report for A from its report for B and what is left is the difference between the antennas at that receiver. That is the **relative gain** (B minus A, in dB, so A is the reference and B the test; the program works with A minus B internally and shows who is ahead and by how much). Do it for every receiver that heard both and average the results, and you have one number for how much better or worse B is than A, with a 95% range showing how uncertain that number is. WSPR reports move dB for dB with your power as a good approximation, so a difference in transmit power is simply added or subtracted first.
 
@@ -287,6 +317,9 @@ This gives equal weight to each receiver callsign, not to each place. Receivers 
 
 </details>
 
+<details>
+<summary><b>Why do the gain figures differ?</b></summary>
+
 ### Which number is which
 
 One test gives several figures that all answer "how much stronger is B?". They are different ways of averaging the same receivers. Signal advantage, Average gain and Typical gain usually land within a few tenths of a dB of each other, more when a few receivers gain far more than the rest. The Power average can sit a dB or more away, because strong reports count for more in power. The **Numbers at a glance** box on the Result tab shows all of them for your test.
@@ -300,10 +333,12 @@ One test gives several figures that all answer "how much stronger is B?". They a
 
 In a long-blocks test there are no pairs, so the Signal advantage and the Average gain are worked out the same way: each receiver's average power on A against B, as in Dale's method.
 
+</details>
+
 ### How the summary is decided
 
 <details>
-<summary><b>Deep dive: the rules the summary uses</b></summary>
+<summary><b>How is the summary decided?</b></summary>
 
 - **Strength.** Only stations that heard both sides count, so each station is its own control. Each station's difference is averaged, with a 95% range. A side wins if the whole range favours it and the gap is at least 1 dB. A smaller gap is called *no meaningful difference*, meaning either that the range sits inside 1 dB or that a lead is real but too small to matter; it does not prove the antennas are identical.
 - **Reach.** How many different stations heard each side. For WSPR it is judged one pair of transmissions at a time, because fading on your end moves every receiver together. It needs at least 6 decisive pairs, ones where one antenna reached more stations (ties don't count), so a short test often can't call it.
@@ -316,10 +351,12 @@ In a long-blocks test there are no pairs, so the Signal advantage and the Averag
 
 ## Band conditions now
 
+<!-- help:skip -->
 Which bands look open from here right now? Enter your callsign or grid square (or use **My location**), set your power and mode, and read the band tiles. Click a band to look closer. It is an estimate from the WSPR stations near you in the last half hour, restated for your power and mode: a guide good to a few dB, not a promise. A band with no reports is not necessarily closed.
+<!-- /help:skip -->
 
 <details>
-<summary><b>Deep dive: every part of the page, and how far to trust the percentages</b></summary>
+<summary><b>What is every part of the Band conditions page, and how far can I trust it?</b></summary>
 
 The **Band conditions** page (in the sidebar menu) tells you which bands are open and where a signal like yours would be heard, which helps when you are deciding whether to change band at a park. It takes the WSPR stations transmitting near you (your grid square or callsign, within an area you choose) over the last half hour (or the last hour or two, your choice; a shorter look-back follows a band that is opening or fading more closely), and restates each report for **your power and mode**: SNR moves dB for dB with power, and each mode needs a minimum SNR, so the gap is your margin. The page's link remembers your choices, including that you used **My location** (never the position itself), so a browser refresh or a bookmark opens where you left off and asks the browser for your location again; choosing *Allow* in the browser's site settings, not *Allow this time*, stops it asking. The **Refresh** button beside the spots line, and *Refresh now* in the sidebar, ask wspr.live for the latest spots without reloading the page.
 
@@ -353,10 +390,10 @@ It is a guide good to a few dB, not a promise: it only counts receivers that hea
 
 ## Deep dive (for the curious)
 
-The pages explain themselves. This is where the working is.
+This is where the working is.
 
 - **[Technical methodology](docs/METHODOLOGY.md).** Every rule and number, how the program was checked (including tests where A and B are the same antenna), and what it does not establish.
-- **[How the comparison works](#compare-two-antennas) and the math, step by step.** Folded away in the Compare antennas section; open the *Deep dive* blocks.
+- **[How the comparison works](#compare-two-antennas) and the math, step by step.** Folded away in the Compare antennas section, under *How does the comparison work, step by step?*
 - **[Checked against a published study](#checked-against-a-published-study).** How the results compare with published work.
 - **[Dale, N3HXZ](https://www.n3hxz.net/).** The long-test method this app's second mode follows.
 - **[Files](#files) and [Data sources and thanks](#data-sources-and-thanks).** What each file is for, and where the data comes from.
@@ -392,7 +429,7 @@ Then start it from the project folder:
 .venv\Scripts\streamlit run web.py
 ```
 
-Use exactly that command. Plain `streamlit run web.py` fails with "not recognized" because the packages live inside `.venv`. If `python` is not found, try `py -m venv .venv`.
+Use exactly that command. Plain `streamlit run web.py` can fail with "not recognized" unless the virtual environment is activated, because the packages live inside `.venv`. If `python` is not found, try `py -m venv .venv`.
 
 **macOS / Linux.**
 
@@ -405,6 +442,8 @@ python3 -m venv .venv
 ```
 
 Next time, just run the last command again. Open http://localhost:8501 if the browser does not open, and stop the app with Ctrl+C (close the browser tab first if it hangs).
+
+**Today's spots, built in.** While the app is open on your own computer it also listens to RBN's live feed by itself, so My spots can show today. The first time, the sidebar asks for your own callsign to log in with and remembers it (nothing connects until you give it; set `LIVE_RBN_CALL` to give it without being asked), and it only has the spots from when the app started: the page says when it began listening and where it lost its connection, and a restart the same day carries on. The spots are kept for 48 hours in a small file in your local app-data folder (not in the project folder). It is on by default; set `LIVE_RBN_LOCAL=0` to switch it off. To use a collector on another machine instead, set `LIVE_RBN_URL` (see [collector/SETUP.md](collector/SETUP.md)).
 
 The skimmer list refreshes itself every 24 hours. To force it: `.venv\Scripts\python rbn_to_csv.py` (macOS/Linux: `.venv/bin/python rbn_to_csv.py`).
 
@@ -435,7 +474,7 @@ The **Help and README** page in the app opens with the same four tasks as the ho
 | `views/` | One file per page: `spots_view.py` (My spots), `compare_view.py` (comparing antennas), `conditions_view.py` (Band conditions), `compare_page.py`, `inputs.py` (the sidebar choices and loading both spots pages share), `test_link.py` (a whole test in a link), `help_view.py` (Help and README) |
 | `ui_common.py` | Settings, colours, constants and small helpers shared by the pages |
 | `data_sources.py` | Getting spots: the RBN download and pasted rows, WSPR from wspr.live, the skimmer list |
-| `live_rbn.py` | Today's RBN spots from the live collector, when one is set up (the address is `LIVE_RBN_URL` in the settings); does nothing without it |
+| `live_rbn.py` | Today's RBN spots: from a live collector elsewhere (the address is `LIVE_RBN_URL` in the settings), or, when the app runs on your own computer, from a collector it starts inside itself |
 | `collector/` | The live collector: `rbn_service.py` stays connected to RBN's live feed on an always-on machine and answers "the spots of this callsign today"; `setup_vm.sh` and `SETUP.md` put it on a free Google Cloud machine; `rbn_listen.py` is a one-off tool that counts the feed's rate |
 | `simulate_validation.py` | Simulated tests with a known antenna difference, run through the program's own analysis, to check how often the summary is right, wrong and how often the 95% range holds the truth |
 | `docs/METHODOLOGY.md` | The technical methodology: every rule and number behind a summary, how it was checked, and its limits |

@@ -174,7 +174,7 @@ GUIDES = {
                "can report you, so a quiet part of the map can mean no one was listening there, not that the path was closed."),
     "compare": dict(
         purpose="Which of two antennas (or two power levels) gets out better? It compares the reports one station received while switching "
-                "between them. Follow the three steps below: load your spots (WSPR is the careful way, RBN a quick check for CW), say how you "
+                "between them. The page walks you through three steps: load your spots (WSPR is the careful way, RBN a quick check for CW), say how you "
                 "switched, then read the result.",
         steps=[],            # the three steps are the strip drawn just under this box
         shows=["Which antenna was stronger and by how many dB, with a range and a plain statement of how sure the test can be.",
@@ -199,7 +199,7 @@ GUIDES = {
     "log": dict(
         purpose="What happened in this session, and who heard you? Upload your log (a POTA or SOTA activation works too) and see it beside "
                 "the skimmers and WSPR stations that reported you.",
-        steps=["Set your power first. A log does not record it, and the work starts as soon as a log is loaded.",
+        steps=["Set your power first. This page does not read it from the log, and the work starts as soon as a log is loaded.",
                "Upload your ADIF log (most logging programs can export one).",
                "Check the callsign and grid square taken from the log, then read down the page. Pick a band under the maps to compare them."],
         shows=["Your session in numbers: contacts, stations, bands, busiest hour, and who followed you from band to band.",
@@ -213,26 +213,27 @@ GUIDES = {
 }
 
 
+def show_guide(key):
+    """Draw the guide for the page `key`: what it is for, the steps, what you get, and what it cannot tell you. The page's own box and the
+    Help page both use it, so the two always say the same."""
+    g = GUIDES[key]
+    st.markdown(f"**{g['purpose']}**")
+    if g["steps"]:
+        st.markdown("\n".join(f"{n}. {step}" for n, step in enumerate(g["steps"], 1)))
+    st.markdown("**You get:**\n" + "\n".join(f"- {item}" for item in g["shows"]))
+    st.markdown(f"**What it cannot tell you:** {g['limits']}")
+
+
 def page_guide(key):
     """The 'How to use this page' box for the page `key`. Always closed: the page's pictures come first, and the words are one click away."""
-    g = GUIDES[key]
     with st.expander("What this page does and how to use it", icon=":material/info:", expanded=False):
-        st.markdown(f"**{g['purpose']}**")
-        if g["steps"]:
-            st.markdown("\n".join(f"{n}. {step}" for n, step in enumerate(g["steps"], 1)))
-        st.markdown("**You get:**\n" + "\n".join(f"- {item}" for item in g["shows"]))
-        st.markdown(f"**What it cannot tell you:** {g['limits']}")
+        show_guide(key)
 
 
-CHOOSER = [("spots", "See who heard me",
-            "Map the skimmers and WSPR stations that reported you: how far, how strong, in which directions, band by band.", ":material/cell_tower:"),
-           ("compare", "Compare antennas",
-            "Switch between two antennas or powers and see which was stronger, by how many dB, and at what distances and directions.", ":material/balance:"),
-           ("conditions", "Check the bands now",
-            "From the WSPR stations near you, with space weather and MUF: which bands and regions look workable at your power and mode.", ":material/public:"),
-           ("log", "Analyze a log",
-            "Upload an ADIF log, POTA and SOTA included: session stats, a map of who you worked beside a map of who spotted you, "
-            "what you worked, and how the park compares.", ":material/fact_check:")]
+CHOOSER = [("spots", "See who heard me", "Map your RBN or WSPR reports by band, strength, distance and direction.", ":material/cell_tower:", "Open the map"),
+           ("compare", "Compare antennas", "Compare two setups using reports from the same receivers.", ":material/balance:", "Open comparison"),
+           ("conditions", "Check the bands now", "Explore recent WSPR paths near your operating location.", ":material/public:", "Check conditions"),
+           ("log", "Analyze a log", "Discover multiband hunters, session highlights and the conditions around your contacts.", ":material/fact_check:", "Upload a log")]
 
 
 PICTURES = Path(__file__).resolve().parent / "images" / "ui"   # screenshots of the app's own pages (thumb_*.jpg for the cards, big_*.jpg)
@@ -248,10 +249,11 @@ def preview(key, caption):
 
 
 def task_chooser(current):
-    """Four cards, one for each job the app does, each linking to its page (the one you are on is marked)."""
+    """Four cards, one for each job the app does, each linking to its page (the one you are on is marked). The link sits along the bottom."""
     st.markdown("#### What would you like to do?")
-    st.markdown('<style>[class*="st-key-choose_"] { min-height: 21rem; }</style>', unsafe_allow_html=True)   # equal cards
-    for col, (key, title, blurb, icon) in zip(st.columns(4), CHOOSER):
+    st.markdown('<style>[class*="st-key-choose_"] { min-height: 19rem; } [class*="st-key-choose_"] > :last-child { margin-top: auto; }</style>',
+                unsafe_allow_html=True)
+    for col, (key, title, blurb, icon, action) in zip(st.columns(4), CHOOSER):
         with col, st.container(border=True, key=f"choose_{key}"):
             thumb = PICTURES / f"thumb_{key}.jpg"
             if thumb.exists():                  # a real screenshot of what the page produces
@@ -261,7 +263,7 @@ def task_chooser(current):
             if key == current:
                 st.caption(":material/arrow_upward: You are here")
             elif key in PAGES:
-                st.page_link(PAGES[key], label="Open", icon=icon)
+                st.page_link(PAGES[key], label=action, icon=icon)
 
 
 def running_locally():
