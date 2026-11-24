@@ -708,6 +708,28 @@ def _panel_html(part, spots, rep, follow, title, marked, follow_bands=None):
             f'<div class="lc-axis">{axis}</div></div>')
 
 
+def speed_line(log, spots):
+    """One plain sentence on how fast you sent: the typical CW speed the skimmers measured, the range most spots fall in, and, only when it
+    really changed during the session, how. Most operators send at one speed, so this is a number and not a chart. Empty when the spots carry
+    no CW speed (RTTY, WSPR, or spots pasted without one) or too few to say."""
+    import cw_speed
+    overall = cw_speed.summary(spots) if spots is not None and len(spots) else None
+    if overall is None:
+        return ""
+    low, high = round(overall["low"]), round(overall["high"])
+    text = (f"**Sending speed: {overall['median']:.0f} wpm.** "
+            + (f"The skimmers measured about {low} wpm for most spots." if low == high else f"The skimmers measured {low} to {high} wpm for most spots.")
+            + " That is their measurement, not what you set.")
+    s = cw_speed.cw_speeds(spots)
+    stretches = s.assign(slot=s["time"].dt.floor("15min")).groupby("slot").agg(v=("speed", "median"), n=("speed", "size"))
+    firm = stretches[stretches["n"] >= 3]
+    if len(firm) >= 2 and firm["v"].max() - firm["v"].min() >= 3:
+        fast, slow = firm["v"].idxmax(), firm["v"].idxmin()
+        text += (f" It changed during the session: about {firm.at[slow, 'v']:.0f} wpm around {slow:%H:%M}Z and up to "
+                 f"{firm.at[fast, 'v']:.0f} wpm around {fast:%H:%M}Z.")
+    return text
+
+
 def afternoon_html(log, spots):
     """The session as one chart for each stretch of activity (a pause of four hours or more starts another). One lane per band: above
     its line, one block for each contact, stacked in short time slots (amber for a station that came back on another band); below it,

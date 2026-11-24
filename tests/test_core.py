@@ -1202,6 +1202,29 @@ class LogCheckPictures(unittest.TestCase):
         self.assertEqual(len(widths), 2)                            # each chart sizes its slots to its own length
         self.assertIn("2 stretches of activity", html)
 
+    def spots_with_speed(self, speeds):
+        """RBN spots of the setUp log's session (20:00 to 20:22 on 18 Nov), one every two minutes, with the given CW speeds."""
+        t0 = pd.Timestamp("2026-11-18 20:00:00")
+        n = len(speeds)
+        return pd.DataFrame({"spotter": [f"S{i % 5}" for i in range(n)], "band": ["20m"] * n, "snr": [10 + i % 7 for i in range(n)],
+                             "time": [t0 + pd.Timedelta(minutes=2 * i) for i in range(n)], "speed": speeds, "tx_mode": ["CW"] * n})
+
+    def test_the_sending_speed_is_one_line_and_only_mentions_a_change_when_there_was_one(self):
+        steady = lh.speed_line(self.log, self.spots_with_speed([24] * 11))
+        self.assertIn("**Sending speed: 24 wpm.**", steady)
+        self.assertIn("about 24 wpm for most spots", steady)
+        self.assertIn("not what you set", steady)
+        self.assertNotIn("changed during the session", steady)
+        varied = lh.speed_line(self.log, self.spots_with_speed([20, 20, 21, 20, 28, 28, 29, 28, 20, 21, 20]))
+        self.assertIn("It changed during the session", varied)                # 20 and 28 wpm differ by more than 3
+
+    def test_no_sending_speed_is_given_without_cw_speeds(self):
+        none = self.spots_with_speed([20] * 6).drop(columns=["speed", "tx_mode"])
+        self.assertEqual(lh.speed_line(self.log, none), "")                    # WSPR spots, or spots pasted without a speed
+        self.assertEqual(lh.speed_line(self.log, None), "")
+        self.assertEqual(lh.speed_line(self.log, self.spots_with_speed([24, 24])), "")        # two spots say nothing about a typical speed
+        self.assertEqual(lh.speed_line(self.log, self.spots_with_speed([20] * 6).assign(tx_mode="RTTY")), "")
+
     def test_a_block_is_never_narrower_than_a_few_pixels(self):
         self.assertEqual(lh._slot_minutes(120), 2)                  # a short session keeps 2 minute slots
         self.assertGreater(lh._slot_minutes(600), 2)                # a long one uses wider slots so blocks stay readable

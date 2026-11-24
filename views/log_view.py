@@ -392,6 +392,7 @@ def log_page():
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     chart = chart_slot.empty()
     chart.html(lh.CSS + lh.afternoon_html(log, no_spots))
+    speed_hold = chart_slot.empty()        # one line on how fast you sent, under the session chart, once the RBN spots have been read
     with pota_slot:         # a POTA log opens with how its park compares; the card is laid out above the rest and filled once the session chart is drawn
         park_cards = _pota_cards(log, call)
     with share_slot:
@@ -446,6 +447,9 @@ def log_page():
             spots, missing = _rbn_spots(digest, call, days)
     if len(spots):
         chart.html(lh.CSS + lh.afternoon_html(log, spots))
+        speed = lh.speed_line(log, spots)
+        if speed:
+            speed_hold.markdown(f":material/speed: {speed}")
         if has_picture:     # the skimmers far away that spotted you are added to the DX picture
             with_rbn = lc.add_rbn_far(grid_of_conditions, spots, skimmers, home)
             dx_slot.html(lh.CSS + lh.dx_windows_html(with_rbn, lc.dx_notes(with_rbn, power, view=view), power, mode, zone, view))

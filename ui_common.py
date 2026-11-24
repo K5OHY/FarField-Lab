@@ -205,7 +205,7 @@ GUIDES = {
                "Check the callsign and grid square taken from the log, then read down the page. Pick a band under the maps to compare them."],
         shows=["Your session in numbers: contacts, stations, bands, busiest hour, and who followed you from band to band.",
                "What you worked: DXCC entities, continents, US states, provinces and CQ zones.",
-               "A session chart with a lane for each band, and two maps side by side: the stations you worked, and the skimmers that spotted you.",
+               "A session chart with a lane for each band, your sending speed as the skimmers measured it, and two maps side by side: the stations you worked, and the skimmers that spotted you.",
                "For a POTA or SOTA log, how your activation compares with the others listed for that park or summit, and a picture to share.",
                "How the bands were doing for DX while you were on, from WSPR, and the space weather during the session."],
         limits="A log holds only what you wrote down. The skimmer and WSPR comparisons are estimates, and a band with no reports can just mean "
