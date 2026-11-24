@@ -5,6 +5,7 @@ from html import escape
 import numpy as np
 import pandas as pd
 
+import log_foundations as lf
 from log_check import BALANCE_MIN, CONTINENT_NAMES, DX_FIRST, DX_MILES, DXCC_ENTITIES, CQ_ZONES, HABIT_SHARE, NEAR_REGIONS, bands_top_down, pota_notes
 
 BLUE, TEAL, AMBER = "#5B8CFF", "#19B5AE", "#F0A020"
@@ -219,6 +220,18 @@ def _local_time(s, tz_name):
         return ""
 
 
+def _near(grid):
+    """'500 km (311 miles)': the radius the WSPR transmitters were taken from, as the grid carries it (300 miles for a grid made before the radius
+    could be chosen)."""
+    km = (grid.attrs.get("evidence") or {}).get("radius_km") or 300 * lf.KM_PER_MILE
+    return lf.radius_text(km)
+
+
+def _near_words(grid, text):
+    """`text` with its 'within 300 miles of you' made to say the radius that was really used."""
+    return text.replace("within 300 miles of you", f"within {_near(grid)} of you")
+
+
 def _evidence_line(grid):
     """How much WSPR the DX picture rests on, so a thin picture looks thin: the reports, the transmitters near you, the stations that decoded
     them and how far away the farthest was."""
@@ -227,7 +240,7 @@ def _evidence_line(grid):
         return ""
     far = round(ev["farthest_km"] / 1.609344, -2)
     thin = " That is few transmitters, so the picture is thin." if ev["transmitters"] < 5 else ""
-    return (f'<p class="sub"><b>The evidence:</b> {ev["reports"]:,} WSPR reports from {ev["transmitters"]} transmitter{"s" if ev["transmitters"] != 1 else ""} within 300 miles of you, decoded by '
+    return (f'<p class="sub"><b>The evidence:</b> {ev["reports"]:,} WSPR reports from {ev["transmitters"]} transmitter{"s" if ev["transmitters"] != 1 else ""} within {_near(grid)} of you, decoded by '
             f'{ev["receivers"]:,} stations as far away as {far:,.0f} miles.{thin}</p>')
 
 
@@ -311,7 +324,7 @@ def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None, view="estimat
             + '<div class="lc-key"><span class="sw"><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> contacts in that half hour</span>'
               '<span class="sw"><span style="color:var(--a);font-weight:700">&#9733;</span> a contact outside North America</span>'
               f'<span class="sw"><span style="display:inline-block;width:3px;height:3px;border-radius:50%;background:Canvas;border:2px solid #3b82f6"></span> an RBN skimmer over {miles} miles away spotted you</span></div>'
-            + says + caveat
+            + says + _near_words(grid, caveat)
             + 'RBN has far fewer skimmers than WSPR has receivers, especially outside North America and Europe: a ring is proof you were heard that far, but no ring says nothing. '
               'These lines say what was seen in the data, not what you should have done.</p></div></div>')
 
@@ -393,7 +406,7 @@ def conditions_html(grid, notes, power_w, mode="CW", tz_name=None):
             + '<div class="lc-ramp"><span>fewer<b></b>more stations would hear you</span><span>hatched: too few WSPR stations to say</span>'
               '<span><span style="display:inline-block;width:8px;height:8px;background:var(--a);transform:rotate(45deg)"></span> contacts in that half hour</span></div>'
             + says
-            + '<p class="sub" style="margin-top:10px">An estimate from WSPR transmitters within 300 miles of you, restated to your power. Use it to compare a band with itself over time '
+            + '<p class="sub" style="margin-top:10px">An estimate from WSPR transmitters within ' + _near(grid) + ' of you, restated to your power. Use it to compare a band with itself over time '
               'and one hour with another. It is not an exact chance of a contact (the percentages run high), and bands cannot be fairly compared with each other: '
               'a band with many distant stations, such as 20m, tends to show a lower share.</p>'
             '</div></div>')

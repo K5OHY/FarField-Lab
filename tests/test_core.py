@@ -1732,7 +1732,7 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertEqual((ev["transmitters"], ev["receivers"], ev["reports"]), (1, 46, 122))   # N5TX, 30 US and 16 German receivers, 90 + 32 spots
         self.assertGreater(ev["farthest_km"], 7000)
         html = lh.dx_windows_html(grid, [], 100.0, "CW")
-        self.assertIn("122 WSPR reports from 1 transmitter within 300 miles of you, decoded by 46 stations as far away as", html)
+        self.assertIn("122 WSPR reports from 1 transmitter within 483 km (300 miles) of you, decoded by 46 stations as far away as", html)
         self.assertIn("That is few transmitters, so the picture is thin.", html)
         again = lc.add_rbn_far(grid, pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])}), {}, HOME)
         self.assertEqual(again.attrs["evidence"], ev)                                       # kept when the RBN skimmers are added

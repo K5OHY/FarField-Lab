@@ -23,13 +23,14 @@ import conditions as cond
 from compare_stats import locate as locate_skimmer
 from rbn_data import country_continent, country_location, get_band, maidenhead_to_latlon
 from session_report import BAND_ORDER, region_of
+import log_foundations as lf
 
 TYPICAL_OFFSET_DB = 10.0   # an ordinary 100 W station reads about this much above the page's figure on RBN (two known-power checks)
 MIN_MATCHES = 8            # fewer matched receivers than this and the strength is shown as a hint only
 SHOW_MATCHES = 3           # fewer than this and no strength is shown at all
 SESSION_GAP_MIN = 30       # a pause this long on a band starts a new stretch
 WINDOW_PAD_MIN = 5         # spots this long before the first contact and after the last still belong to the stretch
-LOOKBACK_MIN = 60          # the WSPR picture is built from the hour before the middle of the stretch
+LOOKBACK_MIN = lf.WSPR_LOOKBACK_MIN   # the WSPR picture is built from the hour before the middle of the stretch
 GAP_BAD, ACTUAL_LOW = 0.30, 0.30   # "worked but barely spotted": the page's chance is this much above the share spotted, which is low
 NOTE_MIN_CONTACTS = 3       # a band with fewer CW contacts than this gets no note: two contacts say nothing (and it has no row in the table)
 AGREE = 0.10               # the page's chance and the share spotted are within this of each other: close
@@ -749,7 +750,7 @@ def _regions(log, mode, cells, solid, on_sets, spot_sets):
 
 # ------------------------------------------------------------------------------------------------- band conditions while you were on the air
 
-CONDITIONS_SLOT_MIN = 30     # one box of the picture
+CONDITIONS_SLOT_MIN = lf.DEFAULT_BIN_MIN     # one box of the picture (30 minutes unless a page asks for 15)
 CONDITIONS_GAP_H = 4         # a pause this long in the log starts a new picture
 MIN_PICTURE_RECEIVERS = 20   # fewer WSPR receivers than this behind a box and it is shown as too thin to say
 FETCH_CHUNK_H = 5            # WSPR is fetched this many hours at a time, so a long activation stays well under the row limit
@@ -769,9 +770,10 @@ def condition_mode(log):
     return str(counts.index[0]) if len(counts) else "CW"
 
 
-def condition_panels(log):
-    """The first and last half hour of each stretch of activity in the log, as a list of (first, last), cut at pauses of CONDITIONS_GAP_H hours."""
-    slots = pd.Series(sorted(log["time"].dt.floor(f"{CONDITIONS_SLOT_MIN}min").unique()))
+def condition_panels(log, bin_min=CONDITIONS_SLOT_MIN):
+    """The first and last bin (half hour unless `bin_min` says 15) of each stretch of activity in the log, as a list of (first, last), cut at
+    pauses of CONDITIONS_GAP_H hours."""
+    slots = pd.Series(sorted(lf.bin_floor(log["time"], bin_min).unique()))
     new = (slots.diff() > pd.Timedelta(hours=CONDITIONS_GAP_H)).cumsum()
     return [(g.iloc[0], g.iloc[-1]) for _, g in slots.groupby(new)]
 
@@ -782,23 +784,28 @@ def dx_contacts_mask(log):
     return ((cont != "") & (cont != "NA")) | ((cont == "") & (country != "") & ~country.isin(_NORTH_AMERICA))
 
 
-def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
-    """How open each band looked while you were on the air: one row per panel, half hour and band with the number of WSPR receivers heard
-    near you, how many of them a signal like yours would have reached (the conditions page's 'good'), their share (nan when fewer than
-    MIN_PICTURE_RECEIVERS stand behind it) and the contacts you made on that band in that half hour. The DX columns count the receivers
+def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0, bin_min=CONDITIONS_SLOT_MIN, radius_km=None):
+    """How open each band looked while you were on the air: one row per panel, bin (30 minutes, or 15 with `bin_min`) and band with the number of
+    WSPR receivers heard near you, how many of them a signal like yours would have reached (the conditions page's 'good'), their share (nan when
+    fewer than MIN_PICTURE_RECEIVERS stand behind it) and the contacts you made on that band in that bin. The DX columns count the receivers
     DX_MILES or more from you: `dx_heard` heard WSPR near you, `dx_good` of them would also have heard a signal like yours, `dx_regions`
-    says where those are, and `dx_contacts` counts your contacts outside North America. `rbn_far` starts at 0 (see add_rbn_far). Each half
-    hour uses the hour of WSPR spots up to its end, as the conditions page does. `wspr_for(start, end)` gives the WSPR spots between two times."""
+    says where those are, and `dx_contacts` counts your contacts outside North America. `rbn_far` starts at 0 (see add_rbn_far). Each bin
+    uses the hour of WSPR spots up to its end, as the conditions page does, so neighbouring bins share part of that hour: `window_start` and
+    `window_end` are the exact bounds of it and `shared_min` how much of it the bin before used as well. `wspr_tx`, `wspr_sites` and
+    `wspr_reports` count the transmitters, receiving sites and reports in that window, and `state` is what the box can say (see
+    log_foundations.cell_state). `wspr_for(start, end)` gives the WSPR spots between two times; `radius_km` is the radius they were fetched
+    within, kept with the evidence so the page can say it."""
     mode = mode or condition_mode(log)
     worked_bands = bands_top_down(log)
     bands = worked_bands + [b for b in sorted(CONDITION_BANDS, key=_rank, reverse=True) if b not in worked_bands]      # the bands you did not work follow
-    log = log.assign(slot=log["time"].dt.floor(f"{CONDITIONS_SLOT_MIN}min"))
+    step = timedelta(minutes=bin_min)
+    log = log.assign(slot=lf.bin_floor(log["time"], bin_min))
     made = log.groupby(["slot", "band"]).size()
     made_dx = log[dx_contacts_mask(log)].groupby(["slot", "band"]).size()
     rows = []
     seen_tx, seen_rx, n_reports, farthest = set(), set(), 0, 0.0
-    for panel, (first, last) in enumerate(condition_panels(log)):
-        start, end = first - timedelta(minutes=LOOKBACK_MIN), last + timedelta(minutes=CONDITIONS_SLOT_MIN)
+    for panel, (first, last) in enumerate(condition_panels(log, bin_min)):
+        start, end = first - timedelta(minutes=LOOKBACK_MIN), last + step
         frames, t = [], start
         while t < end:
             t2 = min(t + timedelta(hours=FETCH_CHUNK_H), end)
@@ -811,8 +818,14 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
             seen_tx |= set(wspr["tx"])
             seen_rx |= set(wspr["rx"])
             n_reports += len(wspr)
-        for slot in pd.date_range(first, last, freq=f"{CONDITIONS_SLOT_MIN}min"):
-            res = (cond.analyze(wspr, home, power_w, mode, (slot + timedelta(minutes=CONDITIONS_SLOT_MIN)).to_pydatetime(), LOOKBACK_MIN,
+        for slot in pd.date_range(first, last, freq=f"{bin_min}min"):
+            window = lf.wspr_window(slot, bin_min)
+            shared = lf.shared_minutes(lf.wspr_window(slot - step, bin_min), window) if slot > first else 0.0
+            behind = {}
+            if len(wspr):
+                inside = wspr[(wspr["time"] > window[0]) & (wspr["time"] <= window[1])]
+                behind = {band: lf.coverage(g) for band, g in inside.groupby("band")}
+            res = (cond.analyze(wspr, home, power_w, mode, window[1].to_pydatetime(), LOOKBACK_MIN,
                                 antenna_db, 3.0) if len(wspr) else None)
             rec = res["receivers"] if res is not None else pd.DataFrame()
             if len(rec):
@@ -830,24 +843,106 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0):
                     dx_regions = {str(k): int(v) for k, v in strong.groupby("region").size().items()}
                     dx_regions_heard = {str(k): int(v) for k, v in far.groupby("region").size().items()}
                 share = good / receivers if receivers >= MIN_PICTURE_RECEIVERS else float("nan")
+                cov = behind.get(band) or lf.coverage(None)
                 rows.append({"panel": panel, "slot": slot, "band": band, "receivers": receivers, "good": good, "share": share,
                              "contacts": int(made.get((slot, band), 0)), "dx_heard": dx_heard, "dx_good": dx_good, "dx_regions": dx_regions,
                              "dx_contacts": int(made_dx.get((slot, band), 0)), "rbn_far": 0, "dx_regions_heard": dx_regions_heard,
-                             "worked": band in worked_bands})
+                             "worked": band in worked_bands, "wspr_tx": cov["transmitters"], "wspr_sites": cov["sites"],
+                             "wspr_reports": cov["reports"], "window_start": window[0], "window_end": window[1], "shared_min": shared,
+                             "state": lf.cell_state(reports=cov["reports"], transmitters=cov["transmitters"], receivers=cov["receivers"], reaching=good)})
     out = pd.DataFrame(rows, columns=["panel", "slot", "band", "receivers", "good", "share", "contacts", "dx_heard", "dx_good", "dx_regions",
-                                      "dx_contacts", "rbn_far", "dx_regions_heard", "worked"])
+                                      "dx_contacts", "rbn_far", "dx_regions_heard", "worked", "wspr_tx", "wspr_sites", "wspr_reports",
+                                      "window_start", "window_end", "shared_min", "state"])
     if len(out):    # a band you did not work with no WSPR at all has nothing to show
         out = out[out["worked"] | (out.groupby("band")["receivers"].transform("max") > 0)].reset_index(drop=True)
-    out.attrs["evidence"] = {"transmitters": len(seen_tx), "receivers": len(seen_rx), "reports": n_reports, "farthest_km": farthest}
+    out.attrs["evidence"] = {"transmitters": len(seen_tx), "receivers": len(seen_rx), "reports": n_reports, "farthest_km": farthest,
+                             "radius_km": radius_km}
+    out.attrs["bin_min"] = bin_min
+    return out
+
+
+COVERAGE_COLUMNS = ["Band", "Box (UTC)", "WSPR window (UTC)", "Shared with the box before (min)", "Transmitters", "Receivers", "Receiving sites", "Reports",
+                    "What it can say"]
+
+
+def coverage_table(grid):
+    """What each box of the conditions grid rests on, as a table for the page: the box and the exact WSPR window behind it, how much of that
+    window the box before used too, how many transmitters, receivers and receiving sites reported in it, and the state the box is in (see
+    log_foundations.cell_state). Bands you worked come first, highest band first, each in time order."""
+    if grid is None or grid.empty or "state" not in grid.columns:
+        return pd.DataFrame(columns=COVERAGE_COLUMNS)
+    step = pd.Timedelta(minutes=grid.attrs.get("bin_min", CONDITIONS_SLOT_MIN))
+    many = grid["panel"].nunique() > 1
+    when = (lambda t: f"{t:%d %b %H:%M}") if many else (lambda t: f"{t:%H:%M}")
+    d = grid.assign(_not_worked=~grid["worked"].astype(bool), _rank=-grid["band"].map(_rank)).sort_values(["_not_worked", "_rank", "panel", "slot"])
+    dash = "\u2013"
+    return pd.DataFrame({
+        "Band": d["band"].tolist(),
+        "Box (UTC)": [f"{when(t)}{dash}{t + step:%H:%M}" for t in d["slot"]],
+        "WSPR window (UTC)": [f"{when(a)}{dash}{b:%H:%M}" for a, b in zip(d["window_start"], d["window_end"])],
+        "Shared with the box before (min)": d["shared_min"].round().astype(int).tolist(),
+        "Transmitters": d["wspr_tx"].astype(int).tolist(), "Receivers": d["receivers"].astype(int).tolist(),
+        "Receiving sites": d["wspr_sites"].astype(int).tolist(), "Reports": d["wspr_reports"].astype(int).tolist(),
+        "What it can say": d["state"].tolist()}, columns=COVERAGE_COLUMNS)
+
+
+def contact_places(log, home):
+    """Where each contact was, as columns added to the log. The place comes from the contact's own grid square when the log gives a valid one
+    (the 6 character grid when there is one), read for each contact, so a station that moved is placed where it was each time; failing that
+    the centre of its state (North America), then the centre of its country by its callsign. `c_source` says which ('grid', 'state', 'country'
+    or '' when it could not be placed), `c_approx` is True for the last two, `c_km` and `c_bearing` are the distance and the bearing from
+    `home`, `sector` is the compass sector of that bearing and `continent` comes from the log's CONT field, else from the callsign."""
+    keys = list(zip(log["call"], log["state"], log["their_grid"], log["cont"], log["country"]))
+    found = {}
+    for key in set(keys):
+        call, state, grid, cont, country = key
+        point, source = lf.grid_point(grid), "grid"
+        guess = country_location(call)
+        if point is None and state in STATE_CENTRES and country in _NORTH_AMERICA:
+            point, source = STATE_CENTRES[state], "state"
+        if point is None and guess:
+            point, source = (guess[0], guess[1]), "country"
+        continent = cont if cont in lf.CONTINENT_NAMES else (country_continent(guess[2]) if guess else "") or ""
+        if point is None:
+            found[key] = (np.nan, np.nan, "", False, np.nan, np.nan, None, continent)
+            continue
+        inv = Geodesic.WGS84.Inverse(home[0], home[1], float(point[0]), float(point[1]))
+        bearing = inv["azi1"] % 360
+        found[key] = (float(point[0]), float(point[1]), source, source != "grid", inv["s12"] / 1000, bearing, lf.sector_of(bearing), continent)
+    cols = ["c_lat", "c_lon", "c_source", "c_approx", "c_km", "c_bearing", "sector", "continent"]
+    return log.assign(**{c: [found[k][i] for k in keys] for i, c in enumerate(cols)})
+
+
+def contact_direction_table(places, view="sector"):
+    """How many contacts were in each region, from contact_places' output. In the 'sector' view a contact counts only when its place is exact
+    (its own grid): a centre of a state or country can be hundreds of km from the station, so it could fall in the wrong sector, and those are
+    counted in a separate column instead. In the 'continent' view every contact counts, because a continent is known from the callsign
+    even when the place is not. Returns a table of Region, Contacts and (sector view) the contacts placed only approximately."""
+    exact_only = view != "continent"
+    if view == "continent":
+        names = places["continent"].map(lambda c: lf.region_of_point(None, c, "continent"))
+        order = list(lf.CONTINENT_NAMES.values())
+        counted, approx = names.notna(), pd.Series(False, index=places.index)
+    else:
+        names = places["sector"].map(lambda s: lf.sector_label(s) if isinstance(s, str) else None)
+        order = [lf.sector_label(s) for s in lf.SECTORS]
+        counted, approx = names.notna() & (places["c_source"] == "grid"), names.notna() & places["c_approx"]
+    rows = [{"Region": r, "Contacts": int((counted & (names == r)).sum()), "Placed only by state or country": int((approx & (names == r)).sum())}
+            for r in order]
+    out = pd.DataFrame(rows, columns=["Region", "Contacts", "Placed only by state or country"])
+    out = out[(out["Contacts"] > 0) | (out["Placed only by state or country"] > 0)].reset_index(drop=True)
+    if not exact_only:
+        out = out.drop(columns=["Placed only by state or country"])
+    out.attrs.update(counted=int(counted.sum()), approximate=int(approx.sum()), unplaced=int((places["c_source"] == "").sum()), total=len(places))
     return out
 
 
 def add_rbn_far(grid, spots, locs, home):
     """The grid with `rbn_far` filled in: for each half hour and band, how many different skimmers DX_MILES or more from you spotted you.
     `locs` is the skimmer list (callsign to place); a skimmer it does not know is not counted."""
-    evidence = dict(grid.attrs.get("evidence") or {})
+    evidence, bin_min = dict(grid.attrs.get("evidence") or {}), grid.attrs.get("bin_min", CONDITIONS_SLOT_MIN)
     grid = grid.assign(rbn_far=0)
-    grid.attrs["evidence"] = evidence
+    grid.attrs.update(evidence=evidence, bin_min=bin_min)
     if spots is None or spots.empty or grid.empty:
         return grid
     far = {}
@@ -858,10 +953,10 @@ def add_rbn_far(grid, spots, locs, home):
     s = spots[spots["spotter"].isin(far)]
     if s.empty:
         return grid
-    s = s.assign(slot=s["time"].dt.floor(f"{CONDITIONS_SLOT_MIN}min"), who=s["spotter"].map(far))
+    s = s.assign(slot=lf.bin_floor(s["time"], bin_min), who=s["spotter"].map(far))
     counts = s.groupby(["slot", "band"])["who"].nunique()
     out = grid.assign(rbn_far=[int(counts.get((slot, band), 0)) for slot, band in zip(grid["slot"], grid["band"])])
-    out.attrs["evidence"] = evidence
+    out.attrs.update(evidence=evidence, bin_min=bin_min)
     return out
 
 

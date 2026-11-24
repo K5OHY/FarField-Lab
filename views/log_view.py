@@ -8,6 +8,7 @@ import streamlit as st
 
 import log_check as lc
 import log_check_html as lh
+import log_foundations as lf
 import share_card as sc
 import space_weather as sw
 from compare_stats import locate as skimmer_location
@@ -17,16 +18,15 @@ from rbn_data import lookup_callsign_location, maidenhead_to_latlon
 from ui_common import BANNER, KM_PER_MILE, page_guide, preview
 from wspr_data import WsprError
 
-RADIUS_KM = 300 * KM_PER_MILE   # the WSPR stations counted as "near you", as on the Band conditions page
 MAX_LOG_BYTES = 5_000_000
 MAX_DAYS = 4                    # each day is a large file to read, so a log is limited to a few days
 MAPS_HEADING = "Maps for CW: where RBN heard you, and who you worked"
 HEARD_TITLE, WORKED_TITLE = "Where RBN heard you on {band}", "Stations you worked on {band}"
 
 
-def _signature(raw, power, call, grid, spots):
-    """What a finished comparison was made from, so a new file, power, callsign, place or spots start again."""
-    return (hashlib.sha1(raw).hexdigest(), float(power), call, grid, len(spots), str(spots["time"].min()), str(spots["time"].max()))
+def _signature(raw, power, call, grid, spots, radius_km=lf.DEFAULT_RADIUS_KM):
+    """What a finished comparison was made from, so a new file, power, callsign, place, radius or spots start again."""
+    return (hashlib.sha1(raw).hexdigest(), float(power), call, grid, len(spots), str(spots["time"].min()), str(spots["time"].max()), float(radius_km))
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -150,7 +150,7 @@ def _rbn_spots(raw_key, call, days):
     return spots, missing
 
 
-def _run(log, spots, locs, home, power, label):
+def _run(log, spots, locs, home, power, label, radius_km=lf.DEFAULT_RADIUS_KM):
     """Fetches what the comparison needs, with progress shown, and returns lc.compare's tables (or None after saying what went wrong)."""
     cw = log[log["mode"] == "CW"]
     start, end = cw["time"].min() - pd.Timedelta(minutes=lc.LOOKBACK_MIN), cw["time"].max() + pd.Timedelta(minutes=lc.WINDOW_PAD_MIN)
@@ -159,8 +159,8 @@ def _run(log, spots, locs, home, power, label):
         try:
             st.write("Finding the skimmers that were on the band (this reads the day's RBN file; the first time can take a minute)…")
             listening = load_rbn_listening(days, start, end)
-            st.write(f"Fetching the WSPR stations within 300 miles of {label}, one stretch at a time…")
-            result = lc.compare(log, spots, lambda a, b: load_nearby(home[0], home[1], RADIUS_KM, a, b), listening, locs, home, power)
+            st.write(f"Fetching the WSPR stations within {lf.radius_text(radius_km)} of {label}, one stretch at a time…")
+            result = lc.compare(log, spots, lambda a, b: load_nearby(home[0], home[1], radius_km, a, b), listening, locs, home, power)
         except (WsprError, RuntimeError) as exc:
             status.update(label="Could not finish", state="error")
             st.error(str(exc))
@@ -169,17 +169,17 @@ def _run(log, spots, locs, home, power, label):
     return result
 
 
-def _conditions(log, home, power, label, digest):
+def _conditions(log, home, power, label, digest, radius_km=lf.DEFAULT_RADIUS_KM):
     """The grid of how open each band looked while you were on the air, kept for this log, power and place. It needs only WSPR, so it works
     on the day of the activation, before RBN has published its file."""
-    key = (digest, float(power), round(home[0], 3), round(home[1], 3))
+    key = (digest, float(power), round(home[0], 3), round(home[1], 3), float(radius_km))
     held = st.session_state.get("log_conditions")
     if held and held["key"] == key:
         return held["grid"]
     with st.status(f"Looking at how open each band was near {label}…", expanded=True) as status:
         try:
-            st.write("Fetching the WSPR stations within 300 miles of you for the hours of the activation…")
-            grid = lc.conditions_grid(log, lambda a, b: load_nearby(home[0], home[1], RADIUS_KM, a, b), home, power)
+            st.write(f"Fetching the WSPR stations within {lf.radius_text(radius_km)} of you for the hours of the activation…")
+            grid = lc.conditions_grid(log, lambda a, b: load_nearby(home[0], home[1], radius_km, a, b), home, power, radius_km=radius_km)
         except (WsprError, RuntimeError) as exc:
             status.update(label="Could not work out the band conditions", state="error")
             st.error(str(exc))
@@ -187,6 +187,44 @@ def _conditions(log, home, power, label, digest):
         status.update(label="Band conditions worked out", state="complete", expanded=False)
     st.session_state["log_conditions"] = {"key": key, "grid": grid}
     return grid
+
+
+def _foundations_section(grid, log, home):
+    """The rules behind the picture, with their numbers: the clock-aligned bins, the exact WSPR window behind each box and how much of it the
+    box before shared, how many stations stand behind each box and what it can say, and where your contacts were seen from your station."""
+    bin_min = grid.attrs.get("bin_min", lc.CONDITIONS_SLOT_MIN)
+    ev = grid.attrs.get("evidence") or {}
+    near = lf.radius_text(ev["radius_km"]) if ev.get("radius_km") else "300 miles"
+    table = lc.coverage_table(grid)
+    st.markdown("**Time bins and WSPR coverage**")
+    st.caption(f"Your contacts, the RBN spots and the WSPR are all sorted into the same clock-aligned {bin_min}-minute bins, so a box means the same thing for each. "
+               f"A box is judged on the hour of WSPR up to its end, from transmitters within {near} of you, so each box uses part of the same hour as the box before it. "
+               "The table gives the exact window and how many of its minutes the box before used too: reports in the shared minutes speak for both boxes. "
+               "A box with fewer than "
+               f"{lf.SPARSE_MIN_TRANSMITTERS} transmitters or {lf.SPARSE_MIN_RECEIVERS} receivers behind it is marked as having insufficient coverage and says nothing.")
+    states = grid["state"].value_counts()
+    st.caption("Of the " + f"{len(grid)} boxes: " + ", ".join(f"{n} {name}" for name, n in states.items()) + ".")
+    st.dataframe(table, hide_index=True, width="stretch", height=min(420, 38 + 35 * len(table)))
+    with st.popover("What the states mean"):
+        for name in (lf.EVIDENCE, lf.NO_REPORTS, lf.SPARSE, lf.BELOW, lf.UNAVAILABLE, lf.NOT_APPLICABLE):
+            st.markdown(f"**{name}**: {lf.STATE_NOTES[name]}")
+    st.markdown("**Where your contacts were**")
+    pick = st.radio("Group contacts by", list(lf.REGION_VIEWS.values()), horizontal=True, key="log_region_view")
+    view = next(k for k, v in lf.REGION_VIEWS.items() if v == pick)
+    places = lc.contact_places(log, home)
+    by_region = lc.contact_direction_table(places, view)
+    if by_region.empty:
+        st.caption("No contact could be placed.")
+    else:
+        st.dataframe(by_region, hide_index=True, width="stretch")
+    n = by_region.attrs
+    if view == "sector":
+        st.caption(f"A contact is placed by its own grid square when the log gives one: {n['counted']} of {n['total']} here. "
+                   f"{n['approximate']} could only be placed at the centre of their state or country, which can be hundreds of km from the station, "
+                   "so they are listed apart and left out of the directions. "
+                   + (f"{n['unplaced']} could not be placed at all." if n["unplaced"] else ""))
+    else:
+        st.caption("The continent comes from the log, or else from the callsign, so every contact counts here even when its place is not known exactly.")
 
 
 def _default_band(bands, regions):
@@ -306,10 +344,14 @@ def log_page():
     guide = st.container()
     skimmers, _ = skimmer_data()
     # The power comes first: the work starts the moment a log is uploaded, so it has to be known by then. A log does not say it.
-    power_box, _ = st.columns([1, 3])
+    power_box, radius_box, _ = st.columns([1, 1, 2])
     power = power_box.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
                                    help="This page does not read the power from the log, so enter what you ran. Set it before you upload: the calculations start as soon as a log is "
                                         "loaded, and they use it to restate the WSPR stations' signals to your power. Changing it later works, but starts them again.")
+    radius_km = radius_box.selectbox("Nearby WSPR stations", lf.RADIUS_CHOICES_KM, index=lf.RADIUS_CHOICES_KM.index(lf.DEFAULT_RADIUS_KM),
+                                     key="log_radius_km", format_func=lf.radius_text,
+                                     help="How far from you a WSPR transmitter counts as near you. The band conditions are worked out from the stations this close, so a smaller "
+                                          "circle is more local and has fewer stations behind it. Changing it later works, but starts the calculations again.")
     # No file-type filter on purpose: iPhones and iPads do not know .adi, so a filter greys out every log in the picker. A file that is not a log is caught below.
     file = st.file_uploader("Your log (ADIF file, .adi or .adif)", key="log_file",
                             help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
@@ -407,7 +449,7 @@ def log_page():
             st.caption("Nothing here is saved or sent anywhere. The picture and the text are made on this page from your log.")
     mode, zone = lc.condition_mode(log), _visitor_timezone()
     with conditions_slot:
-        grid_of_conditions = _conditions(log, home, power, label, digest) if len(days) <= MAX_DAYS else None
+        grid_of_conditions = _conditions(log, home, power, label, digest, radius_km) if len(days) <= MAX_DAYS else None
         has_picture = grid_of_conditions is not None and len(grid_of_conditions) > 0
         view = "estimate"
         if has_picture:
@@ -423,6 +465,8 @@ def log_page():
                 st.html(lh.CSS + regions_html)
             with st.expander("Another view: the percent of stations that could have heard you"):
                 st.html(lh.CSS + lh.conditions_html(grid_of_conditions, lc.conditions_notes(grid_of_conditions), power, mode, zone))
+            with st.expander("What each box rests on: the time bins, the WSPR behind them and where your contacts were"):
+                _foundations_section(grid_of_conditions, log, home)
     with reports_slot:      # who hears whom comes from the log alone, so it is drawn at once
         balance = lh.balance_html(lc.reports_balance(log))
         if balance:
@@ -469,11 +513,11 @@ def log_page():
                 st.warning(f"RBN has no spots for {call} on {'that day' if len(days) == 1 else 'those days'}. Check the callsign above: it must "
                            "match what you sent (a /P or /M counts). The facts here come from the log alone.")
             else:
-                signature = _signature(raw, power, call, grid, spots)
+                signature = _signature(raw, power, call, grid, spots, radius_km)
                 held = st.session_state.get("log_result")
                 result = held["result"] if held and held["signature"] == signature else None
                 if result is None:
-                    result = _run(loaded, spots, skimmers, home, power, label)
+                    result = _run(loaded, spots, skimmers, home, power, label, radius_km)
                     if result is not None:
                         st.session_state["log_result"] = {"signature": signature, "result": result}
     if result is None:
