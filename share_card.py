@@ -96,6 +96,53 @@ def map_facts(places, home):
             "contacts": [(float(r.plat), float(r.plon), str(r.band)) for r in d.itertuples()]}
 
 
+PURPLE, ORANGE = "#c792ea", "#ff8a65"
+
+
+def _hm(minutes):
+    """A length of time in plain words: '47 min', '2 h', '1 h 52 m'."""
+    minutes = int(round(minutes))
+    if minutes < 60:
+        return f"{minutes} min"
+    h, m = divmod(minutes, 60)
+    return f"{h} h" if m == 0 else f"{h} h {m:02d} m"
+
+
+def _compact(minutes):
+    """A length of time short enough for a big number: '47m', '2h', '1h 52m'."""
+    minutes = int(round(minutes))
+    h, m = divmod(minutes, 60)
+    return f"{m}m" if h == 0 else f"{h}h" if m == 0 else f"{h}h {m:02d}m"
+
+
+def on_air(summary):
+    """The time on the air, from lc.summary: the total of the stretches between contacts, with any pause of more than 30 minutes counted as time off the air
+    (so a break in the middle of a long day is not counted as operating), and how fast the contacts came in that time. `span` says how long it was from the
+    first contact to the last, but only when a long break makes that much longer (15 minutes and 10 percent or more), so a break does not make a long, slow
+    day look like a short, fast one. A log holds contacts, so this is logged time. None when there is no time to count (one contact)."""
+    hours = summary.get("on_air_hours") or 0
+    if hours * 60 < 1:
+        return None
+    minutes = hours * 60
+    rate = summary.get("per_hour")
+    rate = None if rate is None or rate != rate else int(round(rate))
+    elapsed = (summary["last"] - summary["first"]).total_seconds() / 60
+    differs = elapsed - minutes >= 15 and elapsed - minutes >= 0.1 * elapsed
+    return {"text": _hm(minutes), "minutes": minutes, "rate": rate, "elapsed": _hm(elapsed) if differs else ""}
+
+
+def card_numbers(facts):
+    """The numbers on the picture: the four in the text (contacts, DXCC entities, bands, states or continents) and, when there is time to count, the time on the
+    air and the contacts an hour."""
+    out = list(facts["numbers"])
+    oa = facts.get("on_air")
+    if oa:
+        out.append((_compact(oa["minutes"]), f"on air of {oa['elapsed']}" if oa["elapsed"] else "on the air", PURPLE))
+        if oa["rate"] is not None:
+            out.append((f"{oa['rate']}", "contacts / hour", ORANGE))
+    return out
+
+
 def share_facts(log, summary, worked, call, cards=None, rep=None, places=None, home=None):
     """What goes on the picture and into the text: the callsign and dates, a title and subtitle (the park headline for a POTA log), four numbers,
     up to three plain lines (the standing at the park, the DX countries, who followed across bands) and, with `places` (lc.contact_places) and
@@ -128,7 +175,7 @@ def share_facts(log, summary, worked, call, cards=None, rep=None, places=None, h
         top = rep.iloc[0]
         hunters = {"n": int(len(rep)), "top": str(rep.index[0]), "k": int(top["k"]), "bands": sorted(top["bands"], key=lc._rank, reverse=True)}
     return {"call": call or "", "dates": _dates(log), "title": title, "subtitle": subtitle, "numbers": numbers, "lines": lines[:3],
-            "bands": [(b, int(counts[b])) for b in lc.bands_top_down(log)], "hunters": hunters, "map": map_facts(places, home)}
+            "bands": [(b, int(counts[b])) for b in lc.bands_top_down(log)], "hunters": hunters, "on_air": on_air(summary), "map": map_facts(places, home)}
 
 
 def share_text(facts):
@@ -136,6 +183,10 @@ def share_text(facts):
     head = " · ".join(x for x in (facts["call"], facts["dates"]) if x)
     parts = [head, facts["title"]] + ([facts["subtitle"]] if facts["subtitle"] else [])
     parts.append(" · ".join(f"{value} {label}" for value, label, _ in facts["numbers"]))
+    oa = facts.get("on_air")
+    if oa:
+        parts.append(f"{oa['text']} on the air" + (f" · {oa['rate']} contacts an hour" if oa["rate"] is not None else "")
+                     + (f" (out of {oa['elapsed']} between the first and last contact)" if oa["elapsed"] else ""))
     parts += facts["lines"]
     parts.append(f"Made with FarField Lab ({SITE})")
     return "\n".join(parts)
@@ -257,14 +308,16 @@ def _flat_card(fig, facts):
     sub = _wrap(facts["subtitle"], 100, 2) if facts["subtitle"] else []
     if sub:
         fig.text(0.04, 0.63 if len(title) == 1 else 0.60, chr(10).join(sub), color=MUTED, fontsize=14, va="top", linespacing=1.3)
-    n = len(facts["numbers"])
+    numbers = card_numbers(facts)
+    n = len(numbers)
     gap = 0.02
     width = (0.92 - gap * (n - 1)) / n
-    for i, (value, label, colour) in enumerate(facts["numbers"]):
+    big = 34 if n <= 4 else 26
+    for i, (value, label, colour) in enumerate(numbers):
         x = 0.04 + i * (width + gap)
         fig.add_artist(Rectangle((x, 0.29), width, 0.2, transform=fig.transFigure, facecolor=PANEL, edgecolor="#2a3140", linewidth=1))
-        fig.text(x + 0.018, 0.425, value, color=colour, fontsize=34, fontweight="bold", va="center")
-        fig.text(x + 0.018, 0.33, label, color=MUTED, fontsize=12, va="center")
+        fig.text(x + 0.018, 0.425, value, color=colour, fontsize=big, fontweight="bold", va="center")
+        fig.text(x + 0.018, 0.33, label, color=MUTED, fontsize=12 if n <= 4 else 10, va="center")
     for i, line in enumerate(facts["lines"]):
         fig.text(0.04, 0.225 - i * 0.058, _clip(line, 104), color=FG, fontsize=14, va="center")
     fig.text(0.04, 0.04, "Made with FarField Lab", color=MUTED, fontsize=10, va="center")
@@ -289,14 +342,17 @@ def _map_card(fig, facts, m):
         fig.text(0.03, y, chr(10).join(sub), color=MUTED, fontsize=9.5, va="top", linespacing=1.3, **t)
         y -= 0.03 * len(sub)
     y -= 0.025
-    tile_w, tile_h, gap = 0.114, 0.09, 0.008
-    for i, (value, label, colour) in enumerate(facts["numbers"]):
+    numbers = card_numbers(facts)
+    rows = math.ceil(len(numbers) / 2)
+    tile_w, tile_h, gap = 0.114, (0.09 if rows <= 2 else 0.07), 0.008      # three rows of tiles are lower, to leave the same room for the text under them
+    value_pt, label_pt, value_dy, label_dy = (18, 8, 0.034, 0.073) if rows <= 2 else (15, 7.5, 0.027, 0.057)
+    for i, (value, label, colour) in enumerate(numbers):
         x = 0.03 + (i % 2) * (tile_w + gap)
         top = y - (i // 2) * (tile_h + gap)
         fig.add_artist(Rectangle((x, top - tile_h), tile_w, tile_h, transform=fig.transFigure, facecolor=PANEL, edgecolor="#2a3140", linewidth=0.8, zorder=21))
-        fig.text(x + 0.01, top - 0.034, value, color=colour, fontsize=18, fontweight="bold", va="center", **t)
-        fig.text(x + 0.01, top - 0.073, label, color=MUTED, fontsize=8, va="center", **t)
-    y -= 2 * tile_h + gap + 0.014
+        fig.text(x + 0.01, top - value_dy, value, color=colour, fontsize=value_pt, fontweight="bold", va="center", **t)
+        fig.text(x + 0.01, top - label_dy, label, color=MUTED, fontsize=label_pt, va="center", **t)
+    y -= rows * tile_h + (rows - 1) * gap + 0.014
     hun = facts.get("hunters")
     if hun:                                                              # who came back on another band, and the top hunter with the bands they worked
         height = 0.094
@@ -380,13 +436,15 @@ def _tall_card(fig, facts, m, size, safe_top=0.0, safe_bottom=0.0):
     if sub:
         fig.text(X(pad), Y(y), chr(10).join(sub), color=MUTED, fontsize=12, va="top", linespacing=1.3, **t)
         y += 0.22 * len(sub) + 0.2
-    gap = 0.14
-    tw, th = (W - 2 * pad - 3 * gap) / 4, 0.95
-    for i, (value, label, colour) in enumerate(facts["numbers"]):
+    numbers = card_numbers(facts)
+    gap, per_row = (0.14 if len(numbers) <= 4 else 0.11), len(numbers)
+    tw, th = (W - 2 * pad - (per_row - 1) * gap) / per_row, 0.95
+    value_pt, label_pt = (26, 10.5) if len(numbers) <= 4 else (21, 8.5)
+    for i, (value, label, colour) in enumerate(numbers):
         x = pad + i * (tw + gap)
         fig.add_artist(Rectangle((X(x), Y(y + th)), tw / W, th / H, transform=fig.transFigure, facecolor=PANEL, edgecolor="#2a3140", linewidth=0.9, zorder=21))
-        fig.text(X(x + 0.16), Y(y + 0.36), value, color=colour, fontsize=26, fontweight="bold", va="center", **t)
-        fig.text(X(x + 0.16), Y(y + 0.75), label, color=MUTED, fontsize=10.5, va="center", **t)
+        fig.text(X(x + 0.14), Y(y + 0.36), value, color=colour, fontsize=value_pt, fontweight="bold", va="center", **t)
+        fig.text(X(x + 0.14), Y(y + 0.75), label, color=MUTED, fontsize=label_pt, va="center", **t)
     y += th + 0.22
     half = (W - 2 * pad - 0.25) / 2
     hun = facts.get("hunters")

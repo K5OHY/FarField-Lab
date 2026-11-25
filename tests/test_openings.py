@@ -801,6 +801,59 @@ class TheShareCardShapes(unittest.TestCase):
         self.assertLessEqual(165.0 / per_inch, 8)                                                      # a wide spread of contacts gives a short map, not a tall one
 
 
+class TheShareCardOnAirTime(unittest.TestCase):
+    """The time on the air and the contacts an hour on the share picture."""
+
+    def facts_of(self, *records):
+        import share_card as sc
+        log = log_of(*records)
+        return sc.share_facts(log, lc.summary(log), lc.worked_summary(log), "K5OHY", None, lc.repeat_stations(log), lc.contact_places(log, HOME), HOME)
+
+    def test_a_length_of_time_is_written_in_plain_words(self):
+        import share_card as sc
+        self.assertEqual([sc._hm(m) for m in (47, 59, 60, 112, 150)], ["47 min", "59 min", "1 h", "1 h 52 m", "2 h 30 m"])
+        self.assertEqual([sc._compact(m) for m in (47, 60, 112, 150)], ["47m", "1h", "1h 52m", "2h 30m"])
+
+    def test_one_contact_has_no_time_on_the_air(self):
+        import share_card as sc
+        facts = self.facts_of(rec("W1AAA", "2010", gridsquare="FN31"))
+        self.assertIsNone(facts["on_air"])
+        self.assertEqual(len(sc.card_numbers(facts)), len(facts["numbers"]))
+        self.assertNotIn("on the air", sc.share_text(facts))
+
+    def test_a_steady_session_shows_the_time_and_the_rate_without_a_span(self):
+        import share_card as sc
+        facts = self.facts_of(*[rec(f"W{i}AAA", f"20{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 60, 5), 1)])
+        oa = facts["on_air"]
+        self.assertEqual(oa["elapsed"], "")
+        self.assertTrue(oa["text"].endswith(("min", "m")))
+        numbers = sc.card_numbers(facts)
+        self.assertEqual(len(numbers), len(facts["numbers"]) + 2)
+        self.assertEqual(numbers[-2][1], "on the air")
+        self.assertEqual(numbers[-1][1], "contacts / hour")
+        self.assertIn("on the air", sc.share_text(facts))
+        self.assertNotIn("between the first and last", sc.share_text(facts))
+
+    def test_a_long_break_is_not_counted_and_the_span_is_shown(self):
+        import share_card as sc
+        recs = [rec(f"W{i}AAA", f"20{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 30, 5), 1)] + \
+               [rec(f"K{i}AAA", f"23{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 30, 5), 1)]
+        oa = self.facts_of(*recs)["on_air"]
+        self.assertLess(oa["minutes"], 90)                                                  # the three hours off the air are not counted
+        self.assertEqual(oa["elapsed"], "3 h 25 m")
+        facts = self.facts_of(*recs)
+        self.assertEqual(sc.card_numbers(facts)[-2][1], "on air of 3 h 25 m")
+        self.assertIn("between the first and last contact", sc.share_text(facts))
+
+    def test_every_shape_draws_with_and_without_the_two_extra_tiles(self):
+        import share_card as sc
+        facts = self.facts_of(*[rec(f"W{i}AAA", f"20{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 60, 5), 1)])
+        self.assertIsNotNone(facts["on_air"])
+        for fmt in sc.FORMATS:
+            self.assertTrue(sc.share_png(facts, fmt).startswith(b"\x89PNG"), fmt)
+            self.assertTrue(sc.share_png(dict(facts, on_air=None), fmt).startswith(b"\x89PNG"), fmt)
+
+
 class ContactMapsWithoutRbn(unittest.TestCase):
     def test_the_placing_of_contacts_does_not_need_any_rbn_data(self):
         places = lc.contact_places(log_of(rec("DL1AAA", "2010", gridsquare="JN58"), rec("W1AAA", "2040", state="NY", country="United States")), HOME)
