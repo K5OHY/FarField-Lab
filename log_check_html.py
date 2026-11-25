@@ -460,8 +460,7 @@ def band_cards_html(tl, tz_name=None):
                                   f'{x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC"></i>')
                 empty = "" if bars or rings else '<span class="bc-none">no reports from there</span>'
                 rows += f'<div class="bc-row" style="--c:{CONTINENT_COLOURS[c]}"><div class="bc-lab"><i></i>{names[c]}</div><div class="bc-trk" style="--n:{n}">{bars}{rings}{empty}</div></div>'
-            if not card["lanes"]:
-                rows += '<div class="bc-row"><div class="bc-lab"></div><div class="bc-none">No distant-continent paths in the nearby WSPR</div></div>'
+            # a card with no distant-continent lane has no note inside the chart: the sentence under it already says so, in the same words
             if card["thin"]:
                 thin = "".join(f'<i class="bc-thin" style="left:{pct(s) + 0.35:.2f}%;width:{100 / n - 0.7:.2f}%" title="{s:%H:%M}\u2013{s + step:%H:%M} UTC: too little WSPR near you to say anything"></i>' for s in card["thin"])
                 rows += f'<div class="bc-row"><div class="bc-lab">Too little WSPR</div><div class="bc-trk" style="--n:{n}">{thin}</div></div>'
@@ -781,7 +780,7 @@ def band_table_html(bands, min_contacts=3):
         rows.append(f'<div class="lc-brow"><div class="lc-bname">{r.band}</div>'
                     f'<div class="lc-cont"><div class="bar"><i style="width:{r.contacts / top * 100:.1f}%"></i></div><b>{r.contacts}</b><span>CW contacts</span>{other}</div>'
                     f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span>{report}</div>{strength}</div>')
-    return ('<div class="lc"><div class="lc-card"><h4>Band by band</h4>'
+    return ('<div class="lc"><div class="lc-card"><h4>What RBN skimmers heard on each band</h4>'
             '<p class="sub">What you worked, who heard you, and how strong you were against a typical WSPR station near you.</p>'
             '<div class="lc-legend"><span>bar: stronger (blue) or weaker (amber) than a typical station at your power; striped means few matches</span></div>'
             '<div class="lc-bh"><div>Band</div><div>Contacts</div><div>Skimmers</div><div>Strength vs typical</div></div>'

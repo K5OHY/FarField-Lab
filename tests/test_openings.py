@@ -161,6 +161,18 @@ class RbnOnlyWhereItApplies(Session):
         self.assertEqual((self.at(cells, "20:00")["rbn_state"], self.at(cells, "20:00")["rbn_n"]), (lf.EVIDENCE, 1))
         self.assertEqual(self.at(cells, "20:30")["rbn_state"], lf.NOT_APPLICABLE)                 # no CQ spot in that box, so it is not known that you were calling
 
+    def test_skimmers_are_counted_as_the_stations_they_are_never_capped_by_the_contacts(self):
+        spots = pd.DataFrame({"spotter": ["DL1SKM", "DL1SKM", "DL2SKM", "DL3SKM", "JA1SKM"], "band": ["20m"] * 5, "snr": [12.0] * 5,
+                              "time": [T("2026-11-18 20:05"), T("2026-11-18 20:07"), T("2026-11-18 20:08"), T("2026-11-18 20:12"), T("2026-11-18 20:13")],
+                              "mode": ["CQ"] * 5, "tx_mode": ["CW"] * 5})
+        locs = {"DL1SKM": (50.0, 10.0), "DL2SKM": (51.0, 9.0), "DL3SKM": (48.0, 11.0), "JA1SKM": (36.0, 140.0)}
+        cells, _, _ = self.cells("EU", spots=spots, locs=locs)
+        box = self.at(cells, "20:00")
+        self.assertEqual(box["active"], 1)                                                   # one contact in the box ...
+        self.assertEqual(box["rbn_n"], 3)                                                    # ... and still three different skimmers in Europe, the repeat counted once
+        cells_asia, _, _ = self.cells("AS", spots=spots, locs=locs)
+        self.assertEqual(self.at(cells_asia, "20:00")["rbn_n"], 1)                           # the one in Japan is counted only for Asia
+
     def test_a_skimmer_elsewhere_is_not_counted_for_this_destination(self):
         cells, _, _ = self.cells("AS", spots=self.spots(), locs=self.LOCS)
         self.assertEqual(self.at(cells, "20:00")["rbn_n"], 0)
@@ -468,6 +480,21 @@ class TheBandTimeline(Session):
         none = wspr[~wspr["rx"].str.startswith(("DL", "JA"))]
         tl, _ = self.timeline(wspr=none, log=log_of(rec("W1AAA", "2010", gridsquare="FN31"), rec("W1BBB", "2105", gridsquare="FN31")))
         self.assertEqual(self.card(tl)["finding"], "No distant-continent paths in the nearby WSPR.")
+
+    def test_a_card_with_no_distant_path_says_so_once_under_the_chart_not_inside_it(self):
+        wspr = self.wspr()
+        none = wspr[~wspr["rx"].str.startswith(("DL", "JA"))]
+        tl, _ = self.timeline(wspr=none, log=log_of(rec("W1AAA", "2010", gridsquare="FN31"), rec("W1BBB", "2105", gridsquare="FN31")))
+        html = lh.band_cards_html(tl)
+        self.assertEqual(html.count("No distant-continent paths in the nearby WSPR"), 1)          # the sentence under the chart
+        self.assertNotIn('class="bc-none"', html)                                                   # not a second note inside it, spilling out of the shading
+
+    def test_the_rbn_comparison_card_is_not_also_called_band_by_band(self):
+        bands = pd.DataFrame([{"band": "20m", "contacts": 5, "other": 0, "skimmers": 4, "report": 5.0, "page": 0.5, "spotted": 0.5, "listening": 3,
+                               "stronger_db": 2.0, "matches": 9, "thin": False, "note": "", "tone": "", "no_picture": False}])
+        html = lh.band_table_html(bands)
+        self.assertIn("<h4>What RBN skimmers heard on each band</h4>", html)
+        self.assertNotIn("<h4>Band by band</h4>", html)                                             # that name belongs to the openings view
 
     def test_every_finding_passes_the_guard_and_none_scores_or_judges(self):
         for metric in ("good", "heard"):
