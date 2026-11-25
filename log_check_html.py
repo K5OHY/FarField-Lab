@@ -50,6 +50,7 @@ CSS = """<style>
 .lc-sbar{position:relative;height:10px;background:var(--lane);border-radius:9px}.lc-sbar i{position:absolute;top:0;height:100%;border-radius:9px}
 .lc-sbar .pos{background:var(--b)}.lc-sbar .neg{background:var(--a)}
 .lc-sbar .thin{opacity:.6;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px)}
+.lc-steps{margin:4px 0 8px;padding-left:20px}.lc-steps li{margin:6px 0;font-size:13.5px;line-height:1.45}
 .lc-sbar u{position:absolute;top:-2px;height:14px;border:1.5px solid currentColor;border-radius:4px;opacity:.55;text-decoration:none;box-sizing:border-box}
 .lc-sbar .z{position:absolute;top:-3px;width:2px;height:16px;background:currentColor;opacity:.5}.lc-str b{font-size:14px;text-align:right}
 .lc-str.none{font-size:12.5px;opacity:.6}
@@ -117,7 +118,10 @@ CSS = """<style>
 .lc-reg{border-collapse:collapse;width:100%;font-size:13.5px}.lc-reg td,.lc-reg th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
 .lc-reg th{font-weight:600;font-size:12px;opacity:.7}.lc-reg small{opacity:.65}
 .lc-kp{position:absolute;bottom:6px;border-radius:2px 2px 0 0}.lc-storm{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgb(230,120,40);opacity:.8}
-.lc-fl{position:absolute;top:50%;border-radius:50%;border:1px solid Canvas}.lc-kq{position:absolute;bottom:6px;background:var(--a);border-radius:1.5px 1.5px 0 0}
+.lc-fl{position:absolute;top:50%;border-radius:50%;border:1px solid Canvas}.lc-fn{position:absolute;top:2px;transform:translateX(-50%);font-size:10.5px;font-weight:700;opacity:.8;pointer-events:none}
+.lc-fnone{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.55}
+.lc-fl{cursor:help}.lc-fl:focus{outline:2px solid rgb(32,178,170);outline-offset:2px}
+.lc-kq{position:absolute;bottom:6px;background:var(--a);border-radius:1.5px 1.5px 0 0}
 .lc-card a{color:inherit;text-decoration:underline}
 [id^="sec-"]{scroll-margin-top:72px}
 .lc-hl{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:10px}.lc-hl h5{margin:0 0 6px;font-size:14px}
@@ -649,6 +653,26 @@ def balance_html(bal):
 KP_COLOURS = ("rgb(76,175,80)", "rgb(230,161,23)", "rgb(210,80,80)")
 
 
+def flare_title(cls, peak, detail, log):
+    """The hover text of a flare: its class and what that means for HF, when it began, peaked and ended, the active region it came from, and how many of your
+    contacts the log shows between its beginning and its end (a count, nothing more: it says nothing about cause)."""
+    from space_weather import flare_level
+    parts = [f"{cls} flare" + (f": {flare_level(cls)}." if flare_level(cls) else ".")]
+    begin, end = (detail or {}).get("begin"), (detail or {}).get("end")
+    when = f"Peak {peak:%H:%M}Z"
+    if begin is not None:
+        when = f"Began {begin:%H:%M}Z. " + when
+    if end is not None:
+        when += f". Ended {end:%H:%M}Z" + (f" ({int(round((end - begin).total_seconds() / 60))} min in all)" if begin is not None else "")
+    parts.append(when + ".")
+    if (detail or {}).get("region"):
+        parts.append(f"Active region {detail['region']}.")
+    if begin is not None and end is not None and len(log):
+        n = int(((log["time"] >= begin) & (log["time"] <= end)).sum())
+        parts.append(f"Your log has {n} contact{'s' if n != 1 else ''} between its beginning and its end.")
+    return " ".join(parts)
+
+
 def space_weather_html(wx, log, notes):
     """The space weather over the session: Kp in 3 hour steps, the flares at their peak, and your contacts in the same hours, with the lines
     that say it in words. Empty when nothing could be read."""
@@ -668,11 +692,17 @@ def space_weather_html(wx, log, notes):
         kp += (f'<i class="lc-kp" style="left:{left(a):.3f}%;width:calc({left(b) - left(a):.3f}% - 2px);height:{max(3.0, v / 9 * 44):.1f}px;background:{colour}" '
                f'title="Kp {v:.1f}, the three hours from {t:%H:%M}Z"></i>')
     flares = ""
+    details = wx.get("flare_details") or {}
     for t, c in wx.get("flares") or []:
-        size = {"X": 12, "M": 9}.get(c[:1], 5)
+        size = {"X": 18, "M": 15}.get(c[:1], 11)
         colour = {"X": "rgb(210,80,80)", "M": "rgb(230,161,23)"}.get(c[:1], "rgb(140,140,140)")
-        flares += (f'<i class="lc-fl" style="left:{left(t):.3f}%;width:{size}px;height:{size}px;margin:{-size / 2:.1f}px 0 0 {-size / 2:.1f}px;background:{colour}" '
-                   f'title="{c} flare, peak {t:%H:%M}Z"></i>')
+        flares += (f'<i class="lc-fl" tabindex="0" style="left:{left(t):.3f}%;width:{size}px;height:{size}px;margin:{-size / 2:.1f}px 0 0 {-size / 2:.1f}px;background:{colour}" '
+                   f'title="{escape(flare_title(c, t, details.get(t), log))}"></i>')
+        if c[:1] in ("M", "X"):                    # the bigger flares carry their class beside the dot, so they can be read without hovering
+            flares += f'<span class="lc-fn" style="left:{left(t):.3f}%">{escape(c)}</span>'
+    if not flares:
+        note = "No flares were listed for these hours." if wx.get("flares") is not None else "NOAA no longer lists flares for these hours."
+        flares = f'<span class="lc-fnone">{note}</span>' + ""
     slot = log.assign(slot=log["time"].dt.floor("30min")).groupby("slot").size()
     top = max(int(slot.max()), 1) if len(slot) else 1
     bars = "".join(f'<i class="lc-kq" style="left:{left(t):.3f}%;width:calc({30 / minutes * 100:.3f}% - 1px);height:{max(2.0, n / top * 30):.1f}px" '
@@ -685,7 +715,7 @@ def space_weather_html(wx, log, notes):
             '<p class="sub">Kp is the worldwide measure of magnetic disturbance (0 is calm, 5 and above is a storm), shown in three-hour steps; the dots are solar flares at '
             'their peak (grey C, amber M, red X). Your contacts are along the bottom. These are worldwide figures: they say whether something unusual was going on, '
             'not what worked near you. Times are UTC.</p>'
-            '<div class="lc-chart">' + lane("Kp", kp + storm, 56) + lane("Flares", flares, 30) + lane("Contacts", bars, 40)
+            '<div class="lc-chart">' + lane("Kp", kp + storm, 56) + lane("Flares", flares, 40) + lane("Contacts", bars, 40)
             + f'<div class="lc-axis">{axis}</div></div>' + says + '</div></div>')
 
 
@@ -813,16 +843,63 @@ def pota_html(card):
             f'An activation is one UTC day at the {noun}. Ranks are by QSOs, with the most first; a tie shares a rank.</p>' + tiles + says + table_a + table + '</div></div>')
 
 
-def signal_intro_html(offset_db):
+def signal_example(table):
+    """One real match from the table of receiving stations (log_check.match_table) to work the arithmetic through: a station matched once, so that the
+    numbers add up exactly, preferring the band and station with the most reports to work from. None when there is no such row."""
+    from log_check import TYPICAL_OFFSET_DB
+    if table is None or len(table) == 0:
+        return None
+    once = table[table["Matches"] == 1]
+    if len(once) == 0:
+        return None
+    r = once.iloc[0]
+    obs, est = float(r["RBN report (dB)"]), float(r["Estimated from WSPR (dB)"])
+    return {"band": r["Band"], "rx": r["Receiving station"], "obs": obs, "est": est, "diff": obs - est, "after": obs - est - TYPICAL_OFFSET_DB}
+
+
+def signal_math_html(power_w, mode, offset_db, example=None, thresholds=None):
+    """How a bar is worked out, step by step, and what the power and the mode do to it: the power moves every estimate (and so every bar, the other way) dB for dB; the
+    mode does not enter the bars at all, only the 'looked strong enough' test of the openings. `example` is one real match (signal_example)."""
+    import math
+    dbm = 10 * math.log10(max(power_w, 1e-6) * 1000)
+    tx_w, tx_snr = 5, -20.0
+    tx_dbm = 10 * math.log10(tx_w * 1000)
+    restated = tx_snr + (dbm - tx_dbm)
+    real = ""
+    if example:
+        real = (f'<p class="sub"><b>One match from your log:</b> {escape(str(example["rx"]))} on {escape(str(example["band"]))}. The skimmer reported you at {example["obs"]:g} dB. '
+                f'The WSPR estimate for {power_w:g} W at that receiver was {example["est"]:g} dB. The difference is {example["obs"]:g} \u2212 ({example["est"]:g}) = {example["diff"]:+.1f} dB, '
+                f'and taking off the {offset_db:g} dB reference leaves <b>{example["after"]:+.1f} dB</b>. A band\'s bar is the middle of such results across its receiving stations.</p>')
+    modes = ", ".join(f"{m} {t:+g} dB" for m, t in (thresholds or {}).items() if m in ("CW", "SSB", "FT8"))
+    return ('<h5 style="margin:10px 0 4px">How a bar is worked out</h5><ol class="lc-steps">'
+            f'<li><b>Restate each WSPR report to your power.</b> A WSPR transmitter near you gives its power in its report, and a receiver gives the signal-to-noise ratio (SNR) it decoded it at. '
+            f'The estimate for you is that SNR plus the difference between your power and the transmitter\'s, in dB: SNR + 10 \u00d7 log\u2081\u2080(your watts \u00f7 its watts). '
+            f'For example, a {tx_w} W ({tx_dbm:.0f} dBm) transmitter decoded at {tx_snr:g} dB becomes {tx_snr:g} + ({dbm:.0f} \u2212 {tx_dbm:.0f}) = {restated:+.0f} dB for your {power_w:g} W ({dbm:.0f} dBm). '
+            'Transmitters declare their own power, and it is not checked.</li>'
+            '<li><b>Take the middle estimate for each receiving station</b> that also spotted you, over the stretch of the log.</li>'
+            '<li><b>Take the skimmer\'s middle reported SNR of you</b> over the same stretch.</li>'
+            f'<li><b>Subtract, then take off the reference.</b> RBN report \u2212 WSPR estimate, minus {offset_db:g} dB, because an ordinary station reads about {offset_db:g} dB higher on RBN than on WSPR '
+            '(the two services measure noise differently). That fixed correction is the only thing added or taken off by hand; it is not tied to power or mode.</li></ol>'
+            + real +
+            f'<p class="sub"><b>Power.</b> You entered {power_w:g} W, so ' + (f'every estimate is {10 * math.log10(power_w / 100):+.1f} dB from what a 100 W station would get. ' if power_w != 100 else
+                                                                         'the estimates are the ones a 100 W station would get, the power the reference was found for. ')
+            + 'A different power moves every estimate by the '
+            'same number of dB (doubling it adds 3 dB), and so moves every bar the other way by that amount. It has to be the power you ran, or the bars are shifted by the difference.</p>'
+            f'<p class="sub"><b>Mode.</b> The bars do not use it: the comparison reads your {escape(mode)} contacts, because RBN hears only CW and RTTY, and takes off the same reference whatever you ran. '
+            'Mode matters in the openings above, where a receiver counts as having looked strong enough to hear you when its estimate is above the mode\'s threshold'
+            + (f' ({escape(modes)}, in 2,500 Hz)' if modes else "") + '; changing the mode there changes which receivers count, not these bars.</p>')
+
+
+def signal_intro_html(offset_db, power_w=None, mode="CW", example=None, thresholds=None):
     """The opening of the signal comparison, so the section says what it compares and what it rests on before any number: the matching, the reference
-    correction (an experimental one) and what the bars are not."""
+    correction (an experimental one), how a bar is worked out from the power and the mode (when `power_w` is given) and what the bars are not."""
     return ('<div class="lc"><div class="lc-card" id="sec-signal"><h4>Signal comparison: RBN skimmers against WSPR stations near you</h4>'
             '<p class="sub">Skimmers that spotted you and also decode WSPR are matched with the WSPR transmitters near you that the same station decoded in the same stretch of '
             'your log, restated to your power. Each bar is the middle result (the line through it is where the middle half of the matches fell) of how far the RBN reports sat '
             'above (blue) or below (amber) what that estimate gave.</p>'
             f'<p class="sub"><b>The reference is experimental.</b> Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {offset_db:.0f} dB higher on '
             'RBN than on WSPR (found from two checks of stations whose power is known), and that is taken off. A bar is a hint about how you were heard, '
-            'not a measurement of your antenna.</p></div></div>')
+            'not a measurement of your antenna.</p>' + (signal_math_html(power_w, mode, offset_db, example, thresholds) if power_w else "") + '</div></div>')
 
 
 def band_table_html(bands, min_contacts=3):

@@ -55,7 +55,7 @@ def history(start, end, timeout=20):
     flux), and 'flares' as (time of the peak, class such as 'C2.1') from the X-ray events NOAA still lists. Each part is None when it could not
     be read; 'flares' is also None when the stretch is older than NOAA's list. Never raises."""
     start, end = pd.Timestamp(start), pd.Timestamp(end)
-    out = {"kp": None, "flux": None, "flares": None}
+    out = {"kp": None, "flux": None, "flares": None, "flare_details": {}}
     try:
         out["kp"] = [(t, v) for t, v in _gfz("Kp", start.floor("D"), end.ceil("D"), timeout) if t + timedelta(hours=3) > start and t < end]
     except Exception:
@@ -70,17 +70,44 @@ def history(start, end, timeout=20):
         events = resp.json()
         first = min(pd.Timestamp(e["begin_datetime"]) for e in events if e.get("begin_datetime"))
         if start > first + timedelta(days=1):                       # the list reaches back far enough to have seen this stretch
-            seen = {}
+            seen, details = {}, {}
             for e in events:
                 cls = e.get("particulars1") or ""
                 if e.get("type") == "XRA" and cls[:1] in ("A", "B", "C", "M", "X") and e.get("max_datetime"):
                     peak = pd.Timestamp(e["max_datetime"]).floor("min")
                     if start <= peak <= end:
-                        seen[peak] = max(seen.get(peak, ""), cls, key=lambda c: (("ABCMX".index(c[:1])), float(c[1:] or 0)))   # two satellites report each flare
+                        best = max(seen.get(peak, ""), cls, key=lambda c: (("ABCMX".index(c[:1])), float(c[1:] or 0)))   # two satellites report each flare
+                        if best != seen.get(peak):
+                            seen[peak] = best
+                            details[peak] = {"begin": _stamp(e.get("begin_datetime")), "end": _stamp(e.get("end_datetime")), "region": str(e.get("region") or "").strip()}
             out["flares"] = sorted(seen.items())
+            out["flare_details"] = details
     except Exception:
         pass
     return out
+
+
+def _stamp(text):
+    """A time from NOAA's event list as a naive UTC timestamp, or None."""
+    try:
+        return pd.Timestamp(text).tz_localize(None) if text else None
+    except Exception:
+        return None
+
+
+def flare_level(cls):
+    """What a flare class means for HF, in NOAA's radio blackout scale: R1 (minor) for M1 to M4.9, R2 (moderate) from M5, R3 (strong) from X1, R4 (severe) from
+    X10 and R5 (extreme) from X20; below M, 'too small to affect HF'. Empty for something that is not a flare class."""
+    letter = (cls or "")[:1]
+    try:
+        n = float((cls or "")[1:] or 0)
+    except ValueError:
+        n = 0.0
+    if letter == "X":
+        return "R5, an extreme radio blackout" if n >= 20 else "R4, a severe radio blackout" if n >= 10 else "R3, a strong radio blackout"
+    if letter == "M":
+        return "R2, a moderate radio blackout" if n >= 5 else "R1, a minor radio blackout"
+    return "too small to affect HF" if letter in ("A", "B", "C") else ""
 
 
 def xray_class(flux):

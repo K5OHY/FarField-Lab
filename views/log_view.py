@@ -6,6 +6,7 @@ import threading
 import pandas as pd
 import streamlit as st
 
+import conditions as cond
 import log_check as lc
 import log_check_html as lh
 import log_foundations as lf
@@ -737,16 +738,16 @@ def log_page():
     if result is None:
         return
     with compare_slot:
-        st.html(lh.CSS + lh.signal_intro_html(lc.TYPICAL_OFFSET_DB))
+        shown = set(result["bands"].loc[result["bands"]["contacts"] >= 3, "band"])          # the bands that have a bar below
+        table = lc.match_table(result["matches"])
+        table = table[table["Band"].isin(shown)].reset_index(drop=True)
+        st.html(lh.CSS + lh.signal_intro_html(lc.TYPICAL_OFFSET_DB, power, "CW", lh.signal_example(table), cond.MODES))
         st.html(lh.CSS + lh.band_table_html(result["bands"]))
         o = result["overall"]
         notes = [f"Estimated strength against a typical WSPR station near you: {o['stronger_db']:+.0f} dB, from {o['matches']} matches with {o.get('match_rx', o['matches'])} different receiving stations "
                  "(a station heard in two stretches of the log is a match in each; explained below)." if pd.notna(o["stronger_db"]) else None,
                  f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
         st.caption(" ".join(n for n in notes if n))
-        shown = set(result["bands"].loc[result["bands"]["contacts"] >= 3, "band"])          # the bands that have a bar above
-        table = lc.match_table(result["matches"])
-        table = table[table["Band"].isin(shown)].reset_index(drop=True)
         if len(table):
             with st.expander(f"The receiving stations behind these bars ({len(table)})"):
                 st.caption("One row for each band and receiving station. A station that was matched in more than one stretch of the log has more than one match.")

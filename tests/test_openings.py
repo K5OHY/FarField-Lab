@@ -755,6 +755,37 @@ class TheSignalComparison(unittest.TestCase):
         self.assertIn("about 10 dB higher", html)
         self.assertEqual(lo.unsupported_claims(html), [])
 
+    def test_the_section_works_the_arithmetic_through_with_the_power_and_says_what_the_mode_does(self):
+        import conditions as cond
+        html = lh.signal_intro_html(10.0, 100.0, "CW", None, cond.MODES)
+        self.assertIn("How a bar is worked out", html)
+        self.assertIn("10 × log₁₀(your watts ÷ its watts)", html)
+        self.assertIn("-20 + (50 − 37) = -7 dB for your 100 W (50 dBm)", html)           # a 5 W transmitter heard at -20 dB, restated to 100 W
+        self.assertIn("only thing added or taken off by hand", html)                          # the 10 dB is the one fixed correction and is not tied to power or mode
+        self.assertIn("<b>Power.</b> You entered 100 W", html)
+        self.assertIn("the estimates are the ones a 100 W station would get", html)
+        self.assertIn("doubling it adds 3 dB", html)
+        self.assertIn("<b>Mode.</b> The bars do not use it", html)
+        self.assertIn("CW -5 dB", html)                                                       # the threshold the mode does set, in the openings
+        self.assertIn("SSB +8 dB", html)
+        half = lh.signal_intro_html(10.0, 50.0, "CW", None, cond.MODES)
+        self.assertIn("every estimate is -3.0 dB from what a 100 W station would get", half)
+        self.assertIn("-20 + (47 − 37) = -10 dB for your 50 W (47 dBm)", half)
+        self.assertEqual(lo.unsupported_claims(html), [])
+
+    def test_a_real_match_is_worked_through_when_one_matched_once(self):
+        table = lc.match_table(pd.DataFrame([("20m", "K1HTV-4", -10.0, -20.0, 15.0), ("20m", "K3GMQ", -9.0, -19.0, 14.0), ("20m", "K3GMQ", -9.0, -19.0, 14.0)],
+                                            columns=["band", "rx", "adj", "obs", "diff"]))
+        ex = lh.signal_example(table)
+        self.assertEqual(ex["rx"], "K1HTV-4")                                                  # a station matched once, so the numbers add up exactly
+        self.assertEqual((ex["obs"], ex["est"], ex["diff"], ex["after"]), (-20.0, -10.0, -10.0, -20.0))
+        html = lh.signal_intro_html(10.0, 100.0, "CW", ex, None)
+        self.assertIn("K1HTV-4 on 20m", html)
+        self.assertIn("-20 − (-10) = -10.0 dB", html)
+        self.assertIn("leaves <b>-20.0 dB</b>", html)
+        self.assertIsNone(lh.signal_example(table[table["Matches"] > 1]))
+        self.assertIsNone(lh.signal_example(None))
+
     def test_a_band_with_enough_matches_shows_how_far_the_middle_half_ran(self):
         row = {"band": "20m", "contacts": 5, "other": 0, "skimmers": 4, "report": 5.0, "page": 0.5, "spotted": 0.5, "listening": 3, "stronger_db": 2.0, "matches": 9,
                "match_rx": 6, "q1": -1.0, "q3": 5.0, "thin": False, "note": "", "tone": "", "no_picture": False}
