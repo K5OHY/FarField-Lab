@@ -204,12 +204,12 @@ GUIDES = {
         steps=["Set your power first. This page does not read it from the log, and the work starts as soon as a log is loaded.",
                "Upload your ADIF log (most logging programs can export one) and check the callsign and grid square taken from it.",
                "Read the row of findings under the numbers: each one is a link to the part of the page it comes from.",
-               "In the openings, choose DX or Regional, look for a band and time you want to know more about, and open *Details for one band and time* to see the stations, spots and contacts behind it."],
+               "In the openings, pick a destination from the tabs (only those with something to show are listed), read the lines worth a look, and open *Details for one band and time* to see the stations, spots and contacts behind a bar. *Regional* shows the eight compass directions."],
         shows=["Your session in numbers: contacts, stations, bands, the active rate, and who worked you on more than one band.",
                "What you worked: DXCC entities, continents, US states, provinces and CQ zones, and session highlights: when each other continent first answered, the farthest contact on each band and how many new stations came in each hour.",
                "A session chart with a lane for each band, your sending speed as the skimmers measured it, and two maps side by side: the stations you worked, and the skimmers that spotted you.",
                "For a POTA or SOTA log, how your activation compares with the others listed for that park or summit, and a picture to share in the shape your site wants.",
-               "How you used the openings, band by band: where nearby WSPR showed a path (to the other continents, or in each direction), when you were active and who you worked there, with the time of each path set against the time of each contact.",
+               "How you used the openings, one destination at a time: where nearby WSPR showed a path, the band you were on above a lane for each band, and who you worked there, with the time of each path set against the time of each contact.",
                "The signal comparison: how far the skimmers' reports sat above or below what the WSPR stations near you would give at your power, with the stations behind it."],
         limits="A log holds only what you wrote down, so it says when you logged contacts, not when you were listening or calling. WSPR shows reported paths, "
                "not what you could have worked. A band with no reports can just mean nobody was listening. Skimmers only hear CW, so the spotter map covers your "

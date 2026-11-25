@@ -603,3 +603,111 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
     return {"headline": timeline_headline(panels, names, reach), "panels": panels, "idle": idle, "metric": metric, "min_km": min_km, "only": only, "bin_min": bin_min,
             "power_w": grid.attrs.get("power_w"), "mode": grid.attrs.get("mode", "CW"), "rbn_line": rbn_line(cells),
             "reach": reach, "lane_order": list(codes), "lane_names": names, "lane_colours": colours, "lane_word": word}
+
+
+# ------------------------------------------------------------------------------------------------- the destination view
+
+STRIP_MIN = 15      # the 'you were on' strip names the band with the most contacts in each quarter hour
+
+
+def _band_runs(contacts, start, end, strip_min=STRIP_MIN):
+    """Runs of the band you were on, for the strip above the lanes: [(from, to, band or None)] over [start, end), the band with the most contacts in each
+    `strip_min` minutes, runs of the same band joined, None where no contact was logged."""
+    if not contacts:
+        return [(start, end, None)]
+    d = pd.DataFrame(contacts, columns=["time", "band"])
+    d["slot"] = pd.to_datetime(d["time"]).dt.floor(f"{strip_min}min")
+    q = d.groupby(["slot", "band"]).size().reset_index(name="n").sort_values(["slot", "n"], ascending=[True, False]).drop_duplicates("slot").set_index("slot")["band"]
+    runs = []
+    for s in pd.date_range(start.floor(f"{strip_min}min"), end - pd.Timedelta(minutes=strip_min), freq=f"{strip_min}min"):
+        b, e = q.get(s), s + pd.Timedelta(minutes=strip_min)
+        if runs and runs[-1][2] == b:
+            runs[-1] = (runs[-1][0], e, b)
+        else:
+            runs.append((s, e, b))
+    return runs
+
+
+def _rbn_only_line(band, name):
+    text = f"RBN skimmers in {name} spotted you on {band}; the nearby WSPR showed no path there and you logged no contact with {name} on {band}."
+    assert not unsupported_claims(text), unsupported_claims(text)
+    return text
+
+
+def destination_views(tl, max_lines=3):
+    """The band timeline (band_timeline, every destination) turned round: one view for each destination that has something to show, which is a path in the
+    nearby WSPR, an RBN skimmer there that spotted you, or a contact with it. Returns (views, empty): `views` ordered with the destination you worked most
+    first, then by the bands that had a path; `empty` the destinations with nothing, in order. A view holds `code`, `name`, `contacts`, `paths` (bands with a
+    path), `rbn` and, for each stretch of the log, the strip of the band you were on, a lane for each band that has something to show and the lines worth a
+    look: what the page already says for a band, but for this destination alone, so a contact at 17:25 is never read as backed by a path at noon."""
+    names, codes = tl["lane_names"], tl["lane_order"]
+    views = {c: {"code": c, "name": names[c], "contacts": 0, "paths": 0, "rbn": False, "panels": []} for c in codes}
+    for panel in tl["panels"]:
+        slots, step = panel["slots"], pd.Timedelta(minutes=panel["bin_min"])
+        start, end = slots[0], slots[-1] + step
+        every = [(pd.Timestamp(k["time"]), card["band"]) for card in panel["cards"] for k in card["contacts"]]
+        runs = _band_runs(every, start, end)
+        floor = f"{panel['bin_min']}min"
+        elsewhere = {}
+        for t, b in every:
+            elsewhere.setdefault(t.floor(floor), set()).add(b)
+        elsewhere = {t: sorted(bs, key=lc._rank, reverse=True) for t, bs in elsewhere.items()}
+        for c in codes:
+            lanes, lines = [], []
+            for card in sorted(panel["cards"], key=lambda x: lc._rank(x["band"]), reverse=True):
+                bins = card["opened"].get(c, [])
+                mine = [k for k in card["contacts"] if k["cont"] == c]
+                rbn_bins = [x["slot"] for x in card["lanes"].get(c, []) if x["rbn"]]
+                if not (bins or mine or rbn_bins):
+                    continue
+                own = {pd.Timestamp(k["time"]).floor(floor) for k in card["contacts"]}
+                first = min((pd.Timestamp(k["time"]) for k in card["contacts"]), default=None)
+                cells = card["lanes"].get(c, [])
+                lanes.append({"band": card["band"], "cells": [{"slot": x["slot"], "n": x["n"], "rbn": bool(x["rbn"])} for x in cells],
+                              "contacts": [{"time": k["time"], "call": k["call"]} for k in mine], "worked_band": card["worked_band"]})
+                if bins or mine:
+                    text = band_finding(card["band"], {c: bins} if bins else {}, own, elsewhere, [(k["time"], k["call"], c) for k in mine], len(card["contacts"]), first, step,
+                                        {c} if rbn_bins else (), names)
+                else:
+                    text = _rbn_only_line(card["band"], names[c])
+                outside = len([t for t in bins if t not in own])
+                at_time = bool(mine and bins and _when(bins, [pd.Timestamp(k["time"]) for k in mine], step).startswith("at the time"))
+                lines.append((0 if at_time else 1 if mine else 2, -outside, -len(bins), lc._rank(card["band"]) * -1, card["band"], text))
+                v = views[c]
+                v["contacts"] += len(mine)
+                v["paths"] += 1 if bins else 0
+                v["rbn"] = v["rbn"] or bool(rbn_bins)
+            lines.sort()
+            views[c]["panels"].append({"panel": panel["panel"], "slots": slots, "bin_min": panel["bin_min"], "strip": runs, "lanes": lanes,
+                                       "lines": [(b, t) for *_, b, t in lines[:max_lines]]})
+    shown = [v for v in views.values() if v["contacts"] or v["paths"] or v["rbn"]]
+    shown.sort(key=lambda v: (-v["contacts"], -v["paths"], not v["rbn"]))
+    empty = [v["name"] for c in codes for v in [views[c]] if not (v["contacts"] or v["paths"] or v["rbn"])]
+    return shown, empty
+
+
+def destination_badge(view):
+    """The short note on a destination's tab: how many contacts, RBN, or 'paths only'."""
+    parts = []
+    if view["contacts"]:
+        parts.append(f"{view['contacts']} contact{'s' if view['contacts'] != 1 else ''}")
+    if view["rbn"]:
+        parts.append("RBN")
+    return " · ".join(parts) if parts else "paths only"
+
+
+def inside_limit_note(places, home_cont, min_km):
+    """A sentence naming the countries you worked on another continent that were nearer than the distance rule, so they are not counted as DX (the answer to 'why is
+    my contact missing?'). Empty when there are none."""
+    if places is None or len(places) == 0 or not min_km:
+        return ""
+    d = places[places["continent"].isin(lf.CONTINENT_NAMES) & (places["continent"] != (home_cont or "NA")) & (places["c_km"] < min_km)]
+    if d.empty:
+        return ""
+    from rbn_data import country_location
+    named = []
+    for call in dict.fromkeys(d.sort_values("c_km")["call"]):             # by callsign, with the country its prefix says (a log's own COUNTRY field can be wrong)
+        guess = country_location(call)
+        named.append(f"{call} ({guess[2]})" if guess and guess[2] else call)
+    shown = ", ".join(named[:4]) + (f" and {len(named) - 4} more" if len(named) > 4 else "")
+    return f"Inside the {min_km * 0.621371:,.0f} mile limit, so not counted as DX: {shown}."

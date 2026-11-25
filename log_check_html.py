@@ -129,6 +129,24 @@ CSS = """<style>
 .lc-hl th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.65;font-weight:700}.lc-hl td.n{text-align:right;font-variant-numeric:tabular-nums}
 .lc-hl .hb{display:block;height:8px;border-radius:5px;background:var(--b);min-width:2px}.lc-hl .hb.new{background:var(--t);margin-top:2px}
 .lc-hl .none{opacity:.55;font-size:13px}
+.dv-look{display:grid;grid-template-columns:46px 1fr;gap:12px;align-items:start;padding:8px 0;border-top:1px solid var(--line)}.dv-look:first-of-type{border-top:0}
+.dv-look b{font-size:17px}.dv-look div{font-size:14.5px}
+.dv-row{display:grid;grid-template-columns:92px 1fr;align-items:center;margin-top:7px}.dv-row.top{margin-top:2px}
+.dv-lab{color:inherit;opacity:.65;font-size:12.5px}.dv-name{font-weight:800;font-size:16px}
+.dv-strip{position:relative;height:28px;border-radius:7px;overflow:hidden;background:var(--lane)}
+.dv-seg{position:absolute;top:0;height:100%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12.5px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);border-right:1px solid rgba(0,0,0,.3);overflow:hidden}
+.dv-seg.none{background:repeating-linear-gradient(45deg,transparent 0 6px,rgba(128,128,128,.14) 6px 12px);color:inherit;opacity:.6;font-weight:500;text-shadow:none}
+.dv-track{position:relative;height:28px;background:var(--lane);border-radius:7px}
+.dv-tk{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+.dv-bar{position:absolute;top:4px;height:20px;border-radius:5px}.dv-bar.pale{opacity:.4}
+.dv-ring{position:absolute;top:6px;width:14px;height:14px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
+.dv-dot{position:absolute;top:5px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid;z-index:3}
+.dv-call{position:absolute;top:-3px;font-size:11.5px;font-weight:700;background:rgba(20,24,32,.88);color:#fff;padding:1px 5px;border-radius:5px;z-index:4;white-space:nowrap}
+.dv-call.r{margin-left:12px}.dv-call.l{transform:translateX(calc(-100% - 12px))}
+.dv-axis{position:relative;height:20px;margin-left:92px;font-size:12px;opacity:.7}.dv-axis span{position:absolute;transform:translateX(-50%);top:4px}
+.dv-legend{display:flex;gap:22px;flex-wrap:wrap;font-size:13px;opacity:.8;margin-top:10px;align-items:center}.dv-legend i{display:inline-block;vertical-align:middle;margin-right:7px}
+.dv-sw{width:26px;height:12px;border-radius:4px;background:linear-gradient(90deg,#8a8f98 0 60%,#4a4e55 60%)}.dv-ld{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #8a8f98}
+.dv-lr{width:14px;height:14px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.5);background:#555}
 .lc-glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:0 0 14px}
 .lc-glance a{display:block;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--soft);text-decoration:none;color:inherit}
 .lc-glance a:hover{border-color:rgb(32,178,170)}.lc-glance .k{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;opacity:.65;text-transform:uppercase}
@@ -789,6 +807,75 @@ def highlights_html(first, far, hours, lines):
     c = (f'<div><h5>New stations in each hour</h5><table><tr><th>UTC</th><th>Contacts (blue) and new stations (green)</th><th>New / all</th></tr>{rows}</table>'
          '<p class="sub">A new station is one not worked earlier in the session, on any band.</p></div>') if len(hours) else ""
     return (f'<div class="lc"><div class="lc-card" id="sec-highlights"><h4>Session highlights</h4>{says}<div class="lc-hl">{a}{b}{c}</div></div></div>')
+
+
+def destination_html(view, tl, colours=None, empty=(), limit_note=""):
+    """One destination as a picture that answers 'when was it reachable, and where were you?': the plain idea in a sentence, the few lines worth a look and, for each
+    stretch of the log, a strip of the band you were on above a lane for each band that has something to show: a bar where the nearby WSPR showed a path to the
+    destination (pale for one receiving station), a circle for a contact with it, a ring where an RBN skimmer there spotted you. `view` is one of
+    log_openings.destination_views, `tl` the timeline it came from. Under it, what has nothing to show and why."""
+    from log_openings import _join
+    if colours is None:
+        from ui_common import BAND_COLORS as colours
+    name, many = view["name"], len(view["panels"]) > 1
+    power_w, mode, observed = tl.get("power_w") or 0, tl.get("mode", "CW"), tl["metric"] == "heard"
+    looks = ""
+    for panel in view["panels"]:
+        stamp = f"{pd.Timestamp(panel['slots'][0]):%d %b}: " if many else ""
+        looks += "".join(f'<div class="dv-look"><b style="color:{colours.get(b, "#888")}">{b}</b><div>{escape(stamp + t)}</div></div>' for b, t in panel["lines"])
+    out = []
+    for panel in view["panels"]:
+        slots, step = panel["slots"], pd.Timedelta(minutes=panel["bin_min"])
+        start, end = slots[0], slots[-1] + step
+        span = (end - start).total_seconds()
+        pct = lambda t: (pd.Timestamp(t) - start).total_seconds() / span * 100
+        ticks, axis = "", ""
+        for t in _hour_ticks(start, end, panel["bin_min"]):
+            ticks += f'<i class="dv-tk" style="left:{pct(t):.2f}%"></i>'
+            axis += f'<span style="left:{pct(t):.2f}%">{t:%H:%M}</span>'
+        strip = ""
+        for a, b, band in panel["strip"]:
+            w = pct(b) - pct(a)
+            if band:
+                strip += f'<div class="dv-seg" style="left:{pct(a):.2f}%;width:{w:.2f}%;background:{colours.get(band, "#888")}" title="Logged contacts on {band}, {a:%H:%M}\u2013{b:%H:%M} UTC">{band if w > 4 else ""}</div>'
+            else:
+                strip += f'<div class="dv-seg none" style="left:{pct(a):.2f}%;width:{w:.2f}%" title="No contact logged, {a:%H:%M}\u2013{b:%H:%M} UTC">{"no contacts logged" if w > 14 else ""}</div>'
+        lanes = ""
+        for lane in panel["lanes"]:
+            colour, band = colours.get(lane["band"], "#888"), lane["band"]
+            marks = ""
+            for x in lane["cells"]:
+                left, width = pct(x["slot"]), 100 / len(slots)
+                if x["n"] >= 1:
+                    what = (f"{x['n']} receiving station{'s' if x['n'] != 1 else ''} in {name} decoded WSPR near you" if observed else
+                            f"{x['n']} receiving station{'s' if x['n'] != 1 else ''} in {name} looked strong enough to hear {power_w:g} W")
+                    marks += (f'<i class="dv-bar{"" if x["n"] >= 2 else " pale"}" style="left:{left:.2f}%;width:calc({width:.2f}% - 2px);background:{colour}" '
+                              f'title="{band}, {x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC: {what}"></i>')
+                if x["rbn"]:
+                    marks += f'<i class="dv-ring" style="left:calc({left + width / 2:.2f}% - 8px)" title="{band}, {x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC: RBN skimmers in {escape(name)} spotted you"></i>'
+            for k in lane["contacts"]:
+                side = "r" if pct(k["time"]) < 78 else "l"
+                marks += (f'<i class="dv-dot" style="left:calc({pct(k["time"]):.2f}% - 8px);border-color:{colour}" title="{escape(k["call"])}, {pd.Timestamp(k["time"]):%H:%M} UTC, {band}"></i>'
+                          f'<span class="dv-call {side}" style="left:{pct(k["time"]):.2f}%">{escape(k["call"])} {pd.Timestamp(k["time"]):%H:%M}</span>')
+            note = "" if lane["worked_band"] else f' <span class="dv-lab" style="font-size:11px;font-weight:400">not worked</span>'
+            lanes += f'<div class="dv-row"><div class="dv-name" style="color:{colour}">{band}{note}</div><div class="dv-track">{ticks}{marks}</div></div>'
+        head = f'<p class="sub" style="margin:10px 0 4px"><b>{pd.Timestamp(slots[0]):%a %d %b %Y}</b> (UTC)</p>' if many else ""
+        out.append(head + f'<div class="dv-row top"><div class="dv-lab">You were on</div><div class="dv-strip">{strip}</div></div>{lanes}<div class="dv-axis">{axis}</div>')
+    nothing = ""
+    if empty:
+        nothing += f"Not shown: {_join(empty)} (no nearby WSPR path, no RBN skimmer and no contact there). "
+    if limit_note:
+        nothing += limit_note + " "
+    legend = ('<div class="dv-legend"><span><i class="dv-sw"></i>nearby WSPR showed a path to ' + escape(name) + ' (pale: one receiving station)</span>'
+              f'<span><i class="dv-ld"></i>your contact with {escape(name)}</span><span><i class="dv-lr"></i>an RBN skimmer in {escape(name)} spotted you</span></div>')
+    estimate = ("what WSPR showed" if observed else f"an estimate for {power_w:g} W in {escape(mode)}")
+    idea = (f'<p class="sub" style="margin:0 0 6px">Nearby WSPR stations act as test signals from your area. When receivers in {escape(name)} decode them, that shows a path from where you were '
+            f'(read as {estimate}). A bar says a path was reported. It does not say whether a contact was possible, or what you were doing at the time.</p>')
+    rbn = f'<p class="sub">{escape(tl["rbn_line"])}</p>' if tl.get("rbn_line") and not str(tl["rbn_line"]).startswith("RBN skimmers") else ""
+    return (f'<div class="lc"><div class="lc-card" id="sec-openings"><h4>{escape(name)}: when was it reachable, and where were you?</h4>{idea}'
+            + (f'<p style="margin:10px 0 2px;font-size:12px;font-weight:700;letter-spacing:.08em;opacity:.65">WORTH A LOOK</p>{looks}' if looks else "")
+            + '<div style="margin-top:12px">' + "".join(out) + "</div>" + legend
+            + f'<p class="sub" style="margin-top:8px">{escape(nothing.strip())} Each bar covers {tl["bin_min"]} minutes, judged on the hour of WSPR up to its end.</p>{rbn}</div></div>')
 
 
 def with_id(html, ident):

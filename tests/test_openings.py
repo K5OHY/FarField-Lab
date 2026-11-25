@@ -726,6 +726,92 @@ class TheCardHeadline(Session):
         self.assertEqual(lo.unsupported_claims(tl["headline"]), [])
 
 
+class TheDestinationView(Session):
+    """The openings one destination at a time: only destinations with something to show get a view, the rest are named."""
+    LOCS = {"DL1SKM": (50.0, 10.0), "ZS6SKM": (-26.0, 28.0)}
+
+    def timeline(self, log=None, wspr=None, spots=None, rbn_ok=True):
+        log = self.log() if log is None else log
+        grid = self.grid(log, wspr)
+        return lo.band_timeline(grid, log, lc.contact_places(log, HOME), spots, self.LOCS, HOME, DX, "good", rbn_ok, None, "dx", "NA")
+
+    def test_only_destinations_with_a_path_a_skimmer_or_a_contact_get_a_view(self):
+        views, empty = lo.destination_views(self.timeline())
+        self.assertEqual([v["code"] for v in views], ["EU", "AS"])                               # Germany: path and contact; Japan: a contact only (its receivers were too weak)
+        self.assertEqual(empty, ["Africa", "Oceania", "South America"])                        # nothing at all there
+        eu, asia = views
+        self.assertEqual((eu["contacts"], eu["paths"], asia["contacts"], asia["paths"]), (1, 1, 1, 0))
+        self.assertEqual((lo.destination_badge(eu), lo.destination_badge(asia)), ("1 contact", "1 contact"))
+        self.assertEqual(lo.destination_badge({"contacts": 0, "rbn": False}), "paths only")
+        self.assertEqual(lo.destination_badge({"contacts": 3, "rbn": True}), "3 contacts \u00b7 RBN")
+
+    def test_the_destinations_you_worked_come_before_those_with_only_paths(self):
+        wspr = self.wspr()
+        africa = wspr[wspr["rx"].str.startswith("DL")].assign(rx=lambda d: d["rx"].str.replace("DL1R", "ZS6R"), rx_lat=-26.0, rx_lon=28.0)
+        views, empty = lo.destination_views(self.timeline(wspr=pd.concat([wspr, africa], ignore_index=True)))
+        self.assertEqual([v["code"] for v in views][:2], ["EU", "AS"])                           # worked first
+        self.assertIn("AF", [v["code"] for v in views])
+        self.assertEqual([v["code"] for v in views][-1], "AF")                                   # paths only, last
+        self.assertEqual(lo.destination_badge(views[-1]), "paths only")
+
+    def test_a_view_says_for_this_destination_alone_when_the_path_was_and_what_you_did(self):
+        views, _ = lo.destination_views(self.timeline())
+        panel = views[0]["panels"][0]
+        self.assertEqual(panel["lanes"][0]["band"], "20m")
+        self.assertEqual([c["call"] for c in panel["lanes"][0]["contacts"]], ["DL1AAA"])
+        band, text = panel["lines"][0]
+        self.assertEqual(band, "20m")
+        self.assertIn("Worked Europe", text)
+        self.assertEqual(lo.unsupported_claims(text), [])
+        self.assertNotIn("Asia", text)                                                           # the line is about Europe only
+
+    def test_the_strip_names_the_band_you_were_on_and_leaves_a_gap_where_you_logged_nothing(self):
+        log = log_of(rec("W1AAA", "2000", band="20m", gridsquare="FN31"), rec("W1BBB", "2010", band="20m", gridsquare="FN31"),
+                     rec("W1CCC", "2100", band="15m", gridsquare="FN31"))
+        runs = lo._band_runs([(T("2026-11-18 20:00"), "20m"), (T("2026-11-18 20:10"), "20m"), (T("2026-11-18 21:00"), "15m")], T("2026-11-18 20:00"), T("2026-11-18 21:15"))
+        self.assertEqual([(a.strftime("%H:%M"), b.strftime("%H:%M"), band) for a, b, band in runs],
+                         [("20:00", "20:15", "20m"), ("20:15", "21:00", None), ("21:00", "21:15", "15m")])
+        self.assertEqual(lo._band_runs([], T("2026-11-18 20:00"), T("2026-11-18 20:30")), [(T("2026-11-18 20:00"), T("2026-11-18 20:30"), None)])
+
+    def test_a_skimmer_alone_is_enough_for_a_destination_and_says_so(self):
+        spots = pd.DataFrame({"spotter": ["ZS6SKM"], "band": ["20m"], "snr": [9.0], "time": [T("2026-11-18 20:12")], "mode": ["CQ"], "tx_mode": ["CW"]})
+        views, empty = lo.destination_views(self.timeline(spots=spots))
+        africa = [v for v in views if v["code"] == "AF"]
+        self.assertTrue(africa and africa[0]["rbn"])
+        self.assertEqual(lo.destination_badge(africa[0]), "RBN")
+        line = africa[0]["panels"][0]["lines"][0][1]
+        self.assertIn("RBN skimmers in Africa spotted you on 20m", line)
+        self.assertEqual(lo.unsupported_claims(line), [])
+
+    def test_a_contact_nearer_than_the_limit_is_explained_not_lost(self):
+        log = log_of(rec("HK3AAA", "2010", gridsquare="FJ24", country="Colombia"), rec("W1AAA", "2040", gridsquare="FN31"))
+        note = lo.inside_limit_note(lc.contact_places(log, HOME), "NA", DX)
+        self.assertEqual(note, "Inside the 3,000 mile limit, so not counted as DX: HK3AAA (Colombia).")            # by callsign, with the country its prefix says
+        self.assertEqual(lo.inside_limit_note(lc.contact_places(log, HOME), "NA", 0.0), "")
+        self.assertEqual(lo.inside_limit_note(lc.contact_places(self.log(), HOME), "NA", DX), "")
+
+    def test_the_picture_has_the_idea_the_lines_the_strip_the_lanes_and_what_was_left_out(self):
+        tl = self.timeline()
+        views, empty = lo.destination_views(tl)
+        html = lh.destination_html(views[0], tl, {"20m": "#800080", "15m": "#444444"}, empty, "Inside the 3,000 mile limit, so not counted as DX: Aruba.")
+        for text in ("Europe: when was it reachable, and where were you?", "Nearby WSPR stations act as test signals", "WORTH A LOOK", "You were on", "DL1AAA",
+                     "nearby WSPR showed a path to Europe (pale: one receiving station)", "your contact with Europe", "an RBN skimmer in Europe spotted you",
+                     "Not shown: Africa, Oceania and South America (no nearby WSPR path, no RBN skimmer and no contact there).", "not counted as DX: Aruba.", 'id="sec-openings"'):
+            self.assertIn(text, html)
+        self.assertEqual(lo.unsupported_claims(html), [])
+
+    def test_a_log_over_two_days_has_a_stretch_for_each_and_dated_lines(self):
+        log = log_of(rec("DL1AAA", "2010", gridsquare="JN58"), rec("DL1BBB", "2010", gridsquare="JN58").replace("20261118", "20261120"))
+        wspr = self.wspr()
+        late = wspr.assign(time=wspr["time"] + pd.Timedelta(days=2))
+        tl = self.timeline(log=log, wspr=pd.concat([wspr, late], ignore_index=True))
+        views, empty = lo.destination_views(tl)
+        self.assertEqual(len(views[0]["panels"]), 2)
+        html = lh.destination_html(views[0], tl, None, empty)
+        self.assertIn("Wed 18 Nov 2026", html)
+        self.assertIn("Fri 20 Nov 2026", html)
+
+
 class TheSignalComparison(unittest.TestCase):
     """The comparison with RBN as a section of its own: what it compares, how wide the results ran, and which receiving stations are behind it."""
 

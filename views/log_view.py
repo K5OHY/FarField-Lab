@@ -284,7 +284,7 @@ def _busiest_dx_continent(places):
     return f"continent:{far.idxmax()}" if len(far) else "all"
 
 
-LAYOUTS = {"cards": "Band by band", "grid": "Grid"}
+LAYOUTS = {"dest": "By destination", "cards": "Band by band", "grid": "Grid"}
 
 
 def _home_continent(call):
@@ -298,50 +298,66 @@ def _home_continent(call):
 
 
 def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, digest, home_cont="NA"):
-    """How you used the openings, in two views of the same evidence. *Band by band* (the default) is a card for each band you worked, on a time axis, with
-    a lane for each distant continent. *Grid* is the earlier view: a box for each band and time bin, read for one destination. Both can be read as what WSPR
-    showed or as an estimate for your station, and both are followed by 'look at one box', which shows the evidence behind any bar or box. Returns
-    draw(spots, rbn_ok), which draws it all again: it is called once without RBN and again when the spots have been read."""
+    """How you used the openings. The default is *By destination*: one destination at a time (only those with a path in the nearby WSPR, an RBN skimmer or a
+    contact get a tab, and the rest are named in a line), shown as a strip of the band you were on above a lane for each band. *Regional* is the last tab: the eight
+    compass directions, band by band. Under More options the earlier views remain: *Band by band* (a card for each band you worked, with a lane for each distant
+    continent) and *Grid* (a box for each band and time bin, read for one destination). All can be read as what WSPR showed or as an estimate for your station, and all
+    are followed by 'look at one box', which shows the evidence behind a bar or box. Returns draw(spots, rbn_ok), which draws it all again: it is called once
+    without RBN and again when the spots have been read; it returns the sentence for the row of findings."""
     places = lc.contact_places(log, home)
-    show = st.radio("The DX picture", list(lh.DX_VIEWS.values()), horizontal=True, key="log_dx_view", label_visibility="collapsed",
-                    help="What WSPR showed: the stations that decoded WSPR transmitters near you, with nothing assumed about your station. "
-                         "Estimate for my station: the ones whose reports, restated to your power, look strong enough to hear you.")
+    with st.expander("More options"):
+        show = st.radio("What the bars show", list(lh.DX_VIEWS.values()), horizontal=True, key="log_dx_view",
+                        help="What WSPR showed: the stations that decoded WSPR transmitters near you, with nothing assumed about your station. "
+                             "Estimate for my station: the ones whose reports, restated to your power, look strong enough to hear you.")
+        layout = st.radio("View", list(LAYOUTS.values()), horizontal=True, key="log_openings_layout",
+                          help="By destination: one destination at a time, with the band you were on above a lane for each band. Band by band: a card for each band you worked, with the "
+                               "distant continents WSPR showed a path to, and your contacts, on one time axis. Grid: the earlier view, a box for each band and time bin for one destination.")
+        reach = "dx"
+        if layout == LAYOUTS["cards"]:
+            shown = st.radio("Reach", list(lo.REACH.values()), horizontal=True, key="log_reach",
+                             help="DX: the other continents, from the distance set below (3,000 miles by default). Regional: the eight compass directions "
+                                  f"from you, for stations from {lo.REGIONAL_MIN_KM} km out to where DX begins, which is where most of a North American activation is worked.")
+            reach = next(k for k, v in lo.REACH.items() if v == shown)
+        distance = st.selectbox("At least this far away", list(lf.DISTANCE_CHOICES), index=list(lf.DISTANCE_CHOICES).index(lf.DEFAULT_DISTANCE),
+                                format_func=lambda k: lf.DISTANCE_CHOICES[k][0], key="log_distance",
+                                help="A station nearer than this is not counted as a destination, for the WSPR evidence, your contacts and the RBN skimmers alike.")
     metric_view = next(k for k, v in lh.DX_VIEWS.items() if v == show)
-    layout = st.radio("View", list(LAYOUTS.values()), horizontal=True, key="log_openings_layout",
-                      help="Band by band: a card for each band you worked, with the distant continents WSPR showed a path to, and your contacts, on one time axis. "
-                           "Grid: the earlier view, a box for each band and time bin for one destination.")
-    cards = layout == LAYOUTS["cards"]
-    reach = "dx"
-    if cards:
-        shown = st.radio("Reach", list(lo.REACH.values()), horizontal=True, key="log_reach",
-                         help="DX: the other continents, from the distance you set under More options (3,000 miles by default). Regional: the eight compass directions "
-                              f"from you, for stations from {lo.REGIONAL_MIN_KM} km out to where DX begins, which is where most of a North American activation is worked.")
-        reach = next(k for k, v in lo.REACH.items() if v == shown)
-    c1, c2 = st.columns([3, 1.4])
-    if cards:
+    min_km = lf.DISTANCE_CHOICES[distance][1]
+    by_dest, cards = layout == LAYOUTS["dest"], layout == LAYOUTS["cards"]
+    pick = None                                 # the tab chosen in the destination view: a continent code, or "regional"
+    if by_dest:
+        base = lo.band_timeline(grid, log, places, None, skimmers, home, min_km, lo.METRIC[metric_view], False, None, "dx", home_cont)
+        tabs, _ = lo.destination_views(base)
+        options = [v["code"] for v in tabs] + ["regional"]
+        names = {v["code"]: f"{v['name']} · {lo.destination_badge(v)}" for v in tabs}
+        names["regional"] = "Regional (by direction)"
+        pick = st.segmented_control("Destination", options, default=options[0], format_func=names.get, key=f"log_dest_tab_{digest[:8]}_{'_'.join(options)}",
+                                    label_visibility="collapsed",
+                                    help="Only the destinations that have something to show are listed: a path in the nearby WSPR, an RBN skimmer there that spotted you, or a contact. "
+                                         "Regional shows the eight compass directions instead of the other continents.") or options[0]
+        view, dest = "continent", (None if pick == "regional" else pick)
+        reach = "regional" if pick == "regional" else "dx"
+    elif cards:
         lane_codes, lane_names, _, lane_word, _ = lo.lane_set(reach, home_cont)
         options = [("all", f"All {lane_word}s" if lane_word == "continent" else "All directions")] + [(c, lane_names[c][:1].upper() + lane_names[c][1:]) for c in lane_codes]
-        choice = c1.selectbox("Show", [k for k, _ in options], format_func=dict(options).get, key=f"log_card_dest_{reach}",
+        choice = st.selectbox("Show", [k for k, _ in options], format_func=dict(options).get, key=f"log_card_dest_{reach}",
                               help="Every destination, or just one. Your own continent is not a DX destination." if reach == "dx" else "Every direction, or just one.")
         view, dest = "continent", (None if choice == "all" else choice)
     else:
         options = _destination_choices()
         default = _busiest_dx_continent(places)
-        choice = c1.selectbox("Destination", [k for k, _ in options], index=[k for k, _ in options].index(default), format_func=dict(options).get,
+        choice = st.selectbox("Destination", [k for k, _ in options], index=[k for k, _ in options].index(default), format_func=dict(options).get,
                               key=f"log_dest_{digest[:8]}", help="Where to look: a continent, or a compass direction from you (eight sectors of 45 degrees). "
                                                                   "It opens on the continent where you made the most DX contacts.")
         kind, _, code = choice.partition(":")
         view, dest = ("continent" if kind == "continent" else "sector"), (code or None)
-    with c2.expander("More options"):
-        distance = st.selectbox("At least this far away", list(lf.DISTANCE_CHOICES), index=list(lf.DISTANCE_CHOICES).index(lf.DEFAULT_DISTANCE),
-                                format_func=lambda k: lf.DISTANCE_CHOICES[k][0], key="log_distance",
-                                help="A station nearer than this is not counted as a destination, for the WSPR evidence, your contacts and the RBN skimmers alike.")
-    min_km = lf.DISTANCE_CHOICES[distance][1]
+    regional = reach == "regional"
     grid_slot, table_slot = st.empty(), st.empty()
     with st.expander("How to read this, and what it rests on"):
         explain_slot, words_slot = st.empty(), st.empty()
     bands = list(dict.fromkeys(grid["band"]))
     slots = sorted(grid["slot"].unique())
+    lane_codes, lane_names = lo.lane_set(reach, home_cont)[:2] if (cards or by_dest) else ((), {})
     with st.expander("Details for one band and time: the stations, spots and contacts behind it"):
         cols = st.columns(3 if cards else 2)
         band = cols[0].selectbox("Band", bands, key="log_box_band")
@@ -350,18 +366,40 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
             ev_choice = cols[2].selectbox("Continent" if reach == "dx" else "Direction", ["all"] + list(lane_codes),
                                           format_func=lambda k: "All" if k == "all" else lane_names[k], key=f"log_box_cont_{reach}")
             ev_view, ev_dest = ("continent" if reach == "dx" else "sector"), (None if ev_choice == "all" else ev_choice)
+        elif by_dest:
+            ev_view, ev_dest = ("sector", None) if regional else ("continent", dest)           # the destination chosen above
         else:
             ev_view, ev_dest = view, dest
         box_slot = st.empty()
+    ev_km = lo.REGIONAL_MIN_KM if (regional and (cards or by_dest)) else min_km
 
     def draw(spots, rbn_ok):
         metric = lo.METRIC[metric_view]
-        if cards:
+        headline = ""
+        if by_dest and not regional:
+            timeline = lo.band_timeline(grid, log, places, spots, skimmers, home, min_km, metric, rbn_ok, None, "dx", home_cont)
+            tabs, empty = lo.destination_views(timeline)
+            current = next((v for v in tabs if v["code"] == pick), None)
+            if current is None:
+                grid_slot.caption("Nothing to show for this destination.")
+            else:
+                note = lo.inside_limit_note(places, home_cont, min_km)
+                extra = [v["name"] for v in tabs if v["code"] not in options]
+                if extra:                          # a destination only the RBN spots found: it has no tab, so it is said here
+                    note = (note + " " if note else "") + f"RBN skimmers in {', '.join(extra)} spotted you, though the nearby WSPR showed no path and you logged no contact there."
+                grid_slot.html(lh.CSS + lh.destination_html(current, timeline, BAND_COLORS, empty, note))
+                first = current["panels"][0]["lines"][0] if current["panels"] and current["panels"][0]["lines"] else None
+                headline = f"{current['name']}, {first[0]}: {first[1]}" if first else ""
+            table_slot.empty()
+            explain_slot.html(lh.CSS + lh.band_cards_explain_html(timeline, grid))
+            words_slot.empty()
+        elif cards or (by_dest and regional):
             timeline = lo.band_timeline(grid, log, places, spots, skimmers, home, min_km, metric, rbn_ok, dest, reach, home_cont)
             grid_slot.html(lh.CSS + lh.with_id(lh.band_cards_html(timeline, zone), "sec-openings"))
             table_slot.empty()
             explain_slot.html(lh.CSS + lh.band_cards_explain_html(timeline, grid))
             words_slot.empty()
+            headline = timeline["headline"]
         else:
             cells = lo.opening_cells(grid, log, places, spots, skimmers, home, view, dest, min_km, metric, rbn_ok)
             grid_slot.html(lh.CSS + lh.with_id(lh.openings_html(cells, grid, zone, metric_view), "sec-openings"))
@@ -375,12 +413,11 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
             explain_slot.html(lh.CSS + lh.openings_explain_html(cells, grid, metric_view))
             lines = lo.openings_summary(cells)
             words_slot.markdown("**In words**\n\n" + "\n".join(f"- {line}" for line in lines) if lines else "")
-        ev_km = min_km if reach == "dx" or not cards else lo.REGIONAL_MIN_KM
+            headline = lo.openings_headline(cells)
         evidence = lo.opening_cells(grid, log, places, spots, skimmers, home, ev_view, ev_dest, ev_km, metric, rbn_ok)
         with box_slot.container():
-            _box_evidence(evidence, grid, log, places, spots, skimmers, home, band, slot, ev_view, ev_dest, min_km if reach == "dx" or not cards else lo.REGIONAL_MIN_KM,
-                          rbn_ok, radius_km)
-        return timeline["headline"] if cards else lo.openings_headline(cells)
+            _box_evidence(evidence, grid, log, places, spots, skimmers, home, band, slot, ev_view, ev_dest, ev_km, rbn_ok, radius_km)
+        return headline
 
     draw(None, False)
     with st.expander("Another view: the percent of stations that could have heard you"):
