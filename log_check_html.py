@@ -103,7 +103,7 @@ CSS = """<style>
 .bc-bar{position:absolute;top:4px;height:9px;border-radius:4px;background:var(--c)}.bc-bar.p{opacity:.38}
 .bc-thin{position:absolute;top:4px;height:9px;border-radius:4px;border:1px dashed currentColor;opacity:.45;box-sizing:border-box}
 .bc-tick{position:absolute;top:5px;width:2px;height:8px;background:currentColor;opacity:.45}
-.bc-dot{position:absolute;top:3px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:2px solid Canvas;box-sizing:content-box;background:var(--c)}
+.bc-dot{z-index:2;position:absolute;top:3px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:2px solid Canvas;box-sizing:content-box;background:var(--c)}
 .bc-ring{position:absolute;top:2px;width:9px;height:9px;margin-left:-6px;border-radius:50%;border:2px solid #3b82f6;box-sizing:content-box;background:Canvas}
 .bc-none{font-size:12px;opacity:.55;line-height:17px;padding-left:4px}
 .bc-ax{position:relative;height:15px;margin-top:3px}.bc-ax span{position:absolute;font-size:11px;opacity:.6;transform:translateX(-50%)}
@@ -120,6 +120,11 @@ CSS = """<style>
 .lc-fl{position:absolute;top:50%;border-radius:50%;border:1px solid Canvas}.lc-kq{position:absolute;bottom:6px;background:var(--a);border-radius:1.5px 1.5px 0 0}
 .lc-card a{color:inherit;text-decoration:underline}
 [id^="sec-"]{scroll-margin-top:72px}
+.lc-hl{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:10px}.lc-hl h5{margin:0 0 6px;font-size:14px}
+.lc-hl table{width:100%;border-collapse:collapse;font-size:13px}.lc-hl td,.lc-hl th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.lc-hl th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.65;font-weight:700}.lc-hl td.n{text-align:right;font-variant-numeric:tabular-nums}
+.lc-hl .hb{display:block;height:8px;border-radius:5px;background:var(--b);min-width:2px}.lc-hl .hb.new{background:var(--t);margin-top:2px}
+.lc-hl .none{opacity:.55;font-size:13px}
 .lc-glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:0 0 14px}
 .lc-glance a{display:block;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--soft);text-decoration:none;color:inherit}
 .lc-glance a:hover{border-color:rgb(32,178,170)}.lc-glance .k{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;opacity:.65;text-transform:uppercase}
@@ -449,7 +454,7 @@ def band_cards_html(tl, tz_name=None):
             ticks, dots = "", ""
             for c in card["contacts"]:
                 x = pct(c["time"])
-                if c["cont"]:
+                if c["cont"] and word != "direction":        # in the directions picture each contact is drawn in its own lane, so the top row has ticks only
                     dots += f'<i class="bc-dot" style="--c:{colours[c["cont"]]};left:{x:.2f}%" title="{escape(c["call"])}, {pd.Timestamp(c["time"]):%H:%M} UTC, {names[c["cont"]]}"></i>'
                 else:
                     ticks += f'<i class="bc-tick" style="left:{x:.2f}%"></i>'
@@ -465,6 +470,11 @@ def band_cards_html(tl, tz_name=None):
                     if x["rbn"]:
                         rings += (f'<i class="bc-ring" style="left:{(i + 0.5) / n * 100:.2f}%" title="RBN: {escape(", ".join(x["rbn"][:6]))} in {names[c]} spotted you, '
                                   f'{x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC"></i>')
+                if word == "direction":
+                    for k in card["contacts"]:
+                        if k["cont"] == c:
+                            rings += (f'<i class="bc-dot" style="--c:{colours[c]};left:{pct(k["time"]):.2f}%" title="{escape(k["call"])}, {pd.Timestamp(k["time"]):%H:%M} UTC, '
+                                      f'{names[c]}"></i>')
                 empty = "" if bars or rings else '<span class="bc-none">no reports from there</span>'
                 rows += f'<div class="bc-row" style="--c:{colours[c]}"><div class="bc-lab"><i></i>{names[c]}</div><div class="bc-trk" style="--n:{n}">{bars}{rings}{empty}</div></div>'
             # a card with no distant-continent lane has no note inside the chart: the sentence under it already says so, in the same words
@@ -726,6 +736,29 @@ def summit_facts_html(card):
         facts.append(f"First activation listed: <b>{escape(card['first'][0])}</b>, {card['first'][1]:%d %b %Y}")
     facts.append(f'<a href="https://www.sota.org.uk/Summit/{escape(card["ref"], quote=True)}" target="_blank" rel="noopener noreferrer">this summit on the SOTA website</a>')
     return '<div class="lc"><div class="lc-card"><h4>About the summit</h4><ul class="lc-says">' + "".join(f"<li>{f}</li>" for f in facts) + "</ul></div></div>"
+
+
+def highlights_html(first, far, hours, lines):
+    """The session's highlights: a few plain sentences, then when each other continent first answered, the farthest contact on each band and how many new
+    stations came in each hour (log_highlights has the tables). Empty when there is nothing to show."""
+    if not (len(first) or len(far) or len(hours)):
+        return ""
+    from log_highlights import _hm
+    says = ('<ul class="lc-says">' + "".join(f"<li>{escape(x)}</li>" for x in lines) + "</ul>") if lines else ""
+    if len(first):
+        rows = "".join(f"<tr><td><b>{escape(r.name)}</b></td><td>{escape(r.call)}</td><td>{r.band}</td><td>{r.time:%H:%M}</td><td class=\"n\">{escape(_hm(r.since)) if r.since >= 1 else 'first'}</td></tr>"
+                       for r in first.itertuples())
+        a = f'<div><h5>When each other continent first answered</h5><table><tr><th>Continent</th><th>Station</th><th>Band</th><th>UTC</th><th>Into the session</th></tr>{rows}</table></div>'
+    else:
+        a = '<div><h5>When each other continent first answered</h5><p class="none">No contact outside your own continent.</p></div>'
+    rows = "".join(f"<tr><td><b>{r.band}</b></td><td>{escape(r.call)}</td><td>{escape(r.place)}</td><td class=\"n\">{'~' if r.approx else ''}{r.km:,.0f} km</td></tr>" for r in far.itertuples())
+    b = f'<div><h5>The farthest contact on each band</h5><table><tr><th>Band</th><th>Station</th><th>Where</th><th>Distance</th></tr>{rows}</table></div>' if len(far) else ""
+    top = max(int(hours["contacts"].max()), 1) if len(hours) else 1
+    rows = "".join(f"<tr><td>{r.hour:%H:%M}</td><td style=\"width:50%\"><i class=\"hb\" style=\"width:{r.contacts / top * 100:.0f}%\" title=\"{r.contacts} contacts\"></i>"
+                   f"<i class=\"hb new\" style=\"width:{r.new / top * 100:.0f}%\" title=\"{r.new} new stations\"></i></td><td class=\"n\">{r.new} / {r.contacts}</td></tr>" for r in hours.itertuples())
+    c = (f'<div><h5>New stations in each hour</h5><table><tr><th>UTC</th><th>Contacts (blue) and new stations (green)</th><th>New / all</th></tr>{rows}</table>'
+         '<p class="sub">A new station is one not worked earlier in the session, on any band.</p></div>') if len(hours) else ""
+    return (f'<div class="lc"><div class="lc-card" id="sec-highlights"><h4>Session highlights</h4>{says}<div class="lc-hl">{a}{b}{c}</div></div></div>')
 
 
 def with_id(html, ident):

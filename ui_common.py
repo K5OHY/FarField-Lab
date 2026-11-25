@@ -199,18 +199,22 @@ GUIDES = {
                "reports on a band means nothing was heard, not that the band is closed. Reports arrive a few minutes late."),
     "log": dict(
         purpose="What happened in this session, and who heard you? Upload your log (a POTA or SOTA activation works too) and see it beside "
-                "the skimmers and WSPR stations that reported you.",
+                "the skimmers and WSPR stations that reported you. Three sources are used: your log says who you worked, WSPR near you shows which paths "
+                "were reported, and RBN shows which skimmers decoded your CW.",
         steps=["Set your power first. This page does not read it from the log, and the work starts as soon as a log is loaded.",
-               "Upload your ADIF log (most logging programs can export one).",
-               "Check the callsign and grid square taken from the log, then read down the page. Pick a band under the maps to compare them."],
-        shows=["Your session in numbers: contacts, stations, bands, busiest hour, and who followed you from band to band.",
-               "What you worked: DXCC entities, continents, US states, provinces and CQ zones.",
+               "Upload your ADIF log (most logging programs can export one) and check the callsign and grid square taken from it.",
+               "Read the row of findings under the numbers: each one is a link to the part of the page it comes from.",
+               "In the openings, choose DX or Regional, look for a band and time you want to know more about, and open *Details for one band and time* to see the stations, spots and contacts behind it."],
+        shows=["Your session in numbers: contacts, stations, bands, the active rate, and who worked you on more than one band.",
+               "What you worked: DXCC entities, continents, US states, provinces and CQ zones, and session highlights: when each other continent first answered, the farthest contact on each band and how many new stations came in each hour.",
                "A session chart with a lane for each band, your sending speed as the skimmers measured it, and two maps side by side: the stations you worked, and the skimmers that spotted you.",
-               "For a POTA or SOTA log, how your activation compares with the others listed for that park or summit, and a picture to share.",
-               "How you used the openings: for a direction or continent you choose, where WSPR showed a path, beside when you were active and who you worked there (a click on a box shows what is behind it), and the space weather during the session."],
-        limits="A log holds only what you wrote down. The skimmer and WSPR comparisons are estimates, and a band with no reports can just mean "
-               "nobody was listening. Skimmers only hear CW, so the spotter map covers your CW contacts. The log is used for this visit only; "
-               "your callsign is sent to public services (RBN, WSPR and callsign lookups) to get the data."),
+               "For a POTA or SOTA log, how your activation compares with the others listed for that park or summit, and a picture to share in the shape your site wants.",
+               "How you used the openings, band by band: where nearby WSPR showed a path (to the other continents, or in each direction), when you were active and who you worked there, with the time of each path set against the time of each contact.",
+               "The signal comparison: how far the skimmers' reports sat above or below what the WSPR stations near you would give at your power, with the stations behind it."],
+        limits="A log holds only what you wrote down, so it says when you logged contacts, not when you were listening or calling. WSPR shows reported paths, "
+               "not what you could have worked. A band with no reports can just mean nobody was listening. Skimmers only hear CW, so the spotter map covers your "
+               "CW contacts. The signal comparison rests on a reference correction that is experimental, and it says nothing about your antenna. The log is used "
+               "for this visit only; your callsign is sent to public services (RBN, WSPR and callsign lookups) to get the data."),
 }
 
 

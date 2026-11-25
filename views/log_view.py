@@ -9,6 +9,7 @@ import streamlit as st
 import log_check as lc
 import log_check_html as lh
 import log_foundations as lf
+import log_highlights as hl
 import log_openings as lo
 import share_card as sc
 import space_weather as sw
@@ -596,7 +597,8 @@ def log_page():
     # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
     glance_slot = st.empty()
-    pota_slot, share_slot, followers_slot, worked_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(11))
+    pota_slot, share_slot, followers_slot, worked_slot, highlights_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(12))
+    home_cont = _home_continent(call)
     maps_hold = maps_slot.empty()
     if not cw.empty:
         maps_hold.caption("The maps appear here when the RBN spots have been read.")
@@ -618,6 +620,13 @@ def log_page():
         if still:
             with st.expander("Still to work: continents, states, provinces and zones"):
                 st.html(lh.CSS + still)
+    with highlights_slot:
+        hl_places = lc.contact_places(log, home)
+        hl_first, hl_far, hl_hours = hl.first_by_continent(hl_places, home_cont), hl.farthest_by_band(hl_places), hl.new_by_hour(log)
+        hl_html = lh.highlights_html(hl_first, hl_far, hl_hours, hl.highlight_lines(hl_first, hl_far, hl_hours))
+        if hl_html:
+            st.html(lh.CSS + hl_html)
+        timing_hold = st.empty()           # when RBN first and last spotted you on each band, added when the spots have been read
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     chart = chart_slot.empty()
@@ -658,7 +667,7 @@ def log_page():
     with conditions_slot:
         grid_of_conditions = _conditions(log, home, power, label, digest, radius_km) if len(days) <= MAX_DAYS else None
         if grid_of_conditions is not None and len(grid_of_conditions) > 0:
-            draw_openings = _openings_section(grid_of_conditions, log, home, power, mode, zone, radius_km, skimmers, digest, _home_continent(call))
+            draw_openings = _openings_section(grid_of_conditions, log, home, power, mode, zone, radius_km, skimmers, digest, home_cont)
     with reports_slot:      # who hears whom comes from the log alone, so it is drawn at once
         balance = lh.balance_html(lc.reports_balance(log))
         if balance:
@@ -687,6 +696,15 @@ def log_page():
         speed = lh.speed_line(log, spots)
         if speed:
             speed_hold.markdown(f":material/speed: {speed}")
+    timing = hl.rbn_timing(log, spots)
+    if len(timing):
+        with timing_hold.container():
+            with st.expander("When RBN first and last spotted you on each band, beside your first and last contact"):
+                st.caption("Times in UTC. A spot says a skimmer decoded you, a contact says you logged someone: the two are shown side by side, and neither says "
+                           "when you were calling or listening.")
+                show = timing.assign(**{c: timing[c].dt.strftime("%H:%M:%S") for c in ("first_contact", "last_contact", "first_spot", "last_spot")}).fillna("none")
+                st.dataframe(show.rename(columns={"band": "Band", "first_contact": "First contact", "last_contact": "Last contact", "first_spot": "First RBN spot",
+                                                  "last_spot": "Last RBN spot", "spots": "Spots"}), hide_index=True, width="stretch", height=min(300, 38 + 35 * len(show)))
     headline = ""
     if draw_openings is not None:   # the skimmers that spotted you are added to the openings, now the spots have been read (or are known to be missing)
         headline = draw_openings(spots, not cw.empty and len(missing) < len(days)) or ""

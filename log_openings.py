@@ -529,6 +529,7 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
 
     def card_for(band, mine, slots, elsewhere):
         own_bins = set(mine["slot"])
+        used = set(mine[col][(mine["c_km"] >= lo_km) & (mine["c_km"] < hi_km)]) if len(mine) else set()      # the destinations you worked on this band
         lanes = {}
         for c in codes:
             if only and c != only:
@@ -537,7 +538,7 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
             row = [{"heard": 0, "good": 0} if states.get((s, band)) == lf.SPARSE else r for s, r in zip(slots, row)]       # too little WSPR: no bar, the card marks it
             ns = [r["good"] if metric == "good" else r["heard"] for r in row]
             spotted = any(rbn_who.get((s, band, c)) and rbn_state.get((s, band), ("", ""))[0] in (lf.EVIDENCE, lf.NO_REPORTS) for s in slots)
-            if any(ns) or spotted or only:
+            if any(ns) or spotted or only or (reach == "regional" and c in used):          # in the directions picture a contact is drawn in its own lane
                 lanes[c] = [{"slot": s, "n": n, "heard": r["heard"], "good": r["good"],
                              "rbn": rbn_who.get((s, band, c), []) if rbn_state.get((s, band), (lf.NOT_APPLICABLE, ""))[0] in (lf.EVIDENCE, lf.NO_REPORTS) else []}
                             for s, n, r in zip(slots, ns, row)]
@@ -545,6 +546,16 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
         opened = {c: v for c, v in opened.items() if v}
         if not len(mine) and not opened:
             return None                                                # a band you did not work gets a card only when there is a path to show
+        steady = []
+        if reach == "regional":
+            # Close to home a path is nearly always there, so a lane that never changes says nothing a sentence does not say better. A lane that stays open from the
+            # first bin to the last, with no contact and no skimmer in it, is left off the chart and named in one line; a lane that changes, or has you in it, is drawn.
+            for c, v in list(lanes.items()):
+                judged = [x for x, s_ in zip(v, slots) if states.get((s_, band)) != lf.SPARSE]
+                if judged and all(x["n"] >= 1 for x in judged) and c not in used and not any(x["rbn"] for x in v):
+                    steady.append(c)
+                    del lanes[c]
+                    opened.pop(c, None)
         contacts = [{"time": t, "call": call, "cont": (c if c in codes and lo_km <= km < hi_km else ""), "km": km}      # the same distance rule as the WSPR and the skimmers
                     for t, call, c, km in zip(mine["time"], mine["call"], mine[col], mine["c_km"])]
         worked = [(c["time"], c["call"], c["cont"]) for c in contacts if c["cont"] and (not only or c["cont"] == only)]
@@ -553,10 +564,13 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
         finding = band_finding(band, opened, own_bins, elsewhere, worked, len(mine), first, step, rbn_cont, names)
         if reach == "regional" and finding == NO_PATHS:
             finding = NO_PATHS_REGIONAL
+        if steady:
+            line = f"Paths stayed open the whole time toward {_join(names[c] for c in steady)}."
+            finding = line if finding in (NO_PATHS, NO_PATHS_REGIONAL) else f"{finding} {line}"
         assert not unsupported_claims(finding), unsupported_claims(finding)
         worked_c = {c for _, _, c in worked}
         outside = any(t not in own_bins for c, v in opened.items() if c not in worked_c for t in v)
-        return {"band": band, "worked_band": bool(len(mine)), "lanes": lanes, "opened": opened, "outside": outside,
+        return {"band": band, "worked_band": bool(len(mine)), "steady": steady, "lanes": lanes, "opened": opened, "outside": outside,
                 "thin": [s for s in slots if states.get((s, band)) == lf.SPARSE], "spans": activity_spans(mine["time"]), "contacts": contacts, "finding": finding,
                 "worked": list(dict.fromkeys((call, cont) for _, call, cont in worked)),
                 "rbn_why": next((rbn_state[(s, band)][1] for s in slots if rbn_state.get((s, band), ("", ""))[1]), "")}

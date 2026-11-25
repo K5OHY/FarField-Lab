@@ -588,6 +588,23 @@ class TheBandTimeline(Session):
         html = lh.band_cards_html(tl)
         self.assertIn("in that direction", html)
 
+    def test_a_regional_lane_that_never_changes_is_named_in_a_line_not_drawn(self):
+        log = log_of(rec("W7AAA", "2010", gridsquare="CN87"), rec("W7BBB", "2040", gridsquare="CN87"), rec("W7CCC", "2105", gridsquare="CN87"))      # all to the northwest
+        east = self.wspr()
+        east = east[east["rx"].str.startswith("N")]
+        tl = lo.band_timeline(self.grid(log, east), log, lc.contact_places(log, HOME), None, {}, HOME, DX, "heard", True, None, "regional")
+        card = tl["panels"][0]["cards"][0]
+        self.assertTrue(card["steady"], "the receivers are heard in every bin, so some lane stays open throughout")
+        self.assertFalse(set(card["steady"]) & set(card["lanes"]))                               # not drawn
+        self.assertIn("Paths stayed open the whole time toward", card["finding"])
+        in_lane = {c["cont"] for c in card["contacts"] if c["cont"]}
+        self.assertFalse(in_lane & set(card["steady"]))                                          # a lane you are in is always drawn, with your contacts in it
+        self.assertEqual(lo.unsupported_claims(card["finding"]), [])
+        html = lh.band_cards_html(tl)
+        self.assertIn('class="bc-dot"', html)                                                    # each contact is a dot in its own lane
+        dx = lo.band_timeline(self.grid(log, east), log, lc.contact_places(log, HOME), None, {}, HOME, DX, "heard", True, None, "dx")
+        self.assertEqual(dx["panels"][0]["cards"][0]["steady"], [])                              # only the regional picture collapses lanes
+
     def test_a_regional_contact_is_a_contact_between_500_km_and_the_dx_distance(self):
         log = log_of(rec("W5NEAR", "2010", gridsquare="EM00"), rec("W1FAR", "2020", gridsquare="FN31"), rec("DL1AAA", "2030", gridsquare="JN58"))
         places = lc.contact_places(log, HOME)
