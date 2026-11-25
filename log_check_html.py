@@ -147,6 +147,7 @@ CSS = """<style>
 .dv-legend{display:flex;gap:22px;flex-wrap:wrap;font-size:13px;opacity:.8;margin-top:10px;align-items:center}.dv-legend i{display:inline-block;vertical-align:middle;margin-right:7px}
 .dv-sw{width:26px;height:12px;border-radius:4px;background:linear-gradient(90deg,#8a8f98 0 60%,#4a4e55 60%)}.dv-ld{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #8a8f98}
 .dv-lr{width:14px;height:14px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.5);background:#555}
+.lc-sec{margin:30px 0 6px;padding-top:14px;border-top:1px solid var(--line)}.lc-sec h3{margin:0;font-size:23px;line-height:1.25}.lc-sec p{margin:3px 0 0;font-size:14px;opacity:.7}
 .lc-glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:0 0 14px}
 .lc-glance a{display:block;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--soft);text-decoration:none;color:inherit}
 .lc-glance a:hover{border-color:rgb(32,178,170)}.lc-glance .k{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;opacity:.65;text-transform:uppercase}
@@ -886,12 +887,17 @@ def with_id(html, ident):
     return html
 
 
-def glance_html(items):
+def section_heading_html(ident, title, note=""):
+    """A heading that opens a group of sections of the page, with an id so a link can jump to it and, optionally, one line saying what the group answers."""
+    return f'<div class="lc"><div class="lc-sec" id="{escape(ident)}"><h3>{escape(title)}</h3>' + (f"<p>{escape(note)}</p>" if note else "") + "</div></div>"
+
+
+def glance_html(items, foot=""):
     """A row of short findings, each a link to the part of the page it comes from. `items` are (label, sentence, anchor) and a sentence may be empty
     (that finding is left out). Empty when there are none."""
     cards = "".join(f'<a href="#{escape(anchor)}"><span class="k">{escape(label)}</span><b>{escape(text)}</b><span class="go">Jump there ↓</span></a>'
                     for label, text, anchor in items if text)
-    return f'<div class="lc"><div class="lc-glance">{cards}</div></div>' if cards else ""
+    return f'<div class="lc"><div class="lc-glance">{cards}</div>{foot}</div>' if cards else ""
 
 
 def pota_banner_html(card):

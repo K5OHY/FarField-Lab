@@ -556,7 +556,7 @@ def _glance(park_cards, rep, spots, skimmers, home, headline, result):
         o = result["overall"]
         items.append(("Signal against WSPR stations near you", f"About {o['stronger_db']:+.0f} dB against a typical station, from {o['matches']} matches with "
                                                                 f"{o.get('match_rx', o['matches'])} receiving stations.", "sec-signal"))
-    return lh.glance_html(items)
+    return lh.glance_html(items, '<p class="sub" style="margin:-2px 0 10px"><a href="#sec-share">Save a session card to share \u2193</a></p>')
 
 
 def log_page():
@@ -638,7 +638,16 @@ def log_page():
     # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
     glance_slot = st.empty()
-    pota_slot, share_slot, followers_slot, worked_slot, highlights_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(12))
+    # The order of the page: what happened (the park, who worked you on more than one band, the highlights and the rate), who heard you (the session chart and the two
+    # maps), the openings and the space weather, the signals, and last the reference lists and the share box. Each group opens with a heading.
+    (overview_head, pota_slot, followers_slot, highlights_slot, heard_head, chart_slot, maps_slot, open_head, conditions_slot, space_slot, signal_head, reports_slot,
+     work, compare_slot, ref_slot, share_slot) = (st.container() for _ in range(16))
+    for slot, ident, title, note in ((overview_head, "sec-overview", "Session overview", "What happened: the park, who worked you on more than one band, the highlights and how fast the contacts came in."),
+                                     (heard_head, "sec-heard", "Who heard you", "Your session against the RBN skimmers that spotted you, and the stations you worked."),
+                                     (open_head, "sec-reach", "Openings and reach", "Where nearby WSPR showed a path, and the space weather around your session."),
+                                     (signal_head, "sec-signals", "Signal comparison", "How the reports you gave and got compare, and how the skimmers heard you against the WSPR stations near you.")):
+        with slot:
+            st.html(lh.CSS + lh.section_heading_html(ident, title, note))
     home_cont = _home_continent(call)
     maps_hold = maps_slot.empty()
     if not cw.empty:
@@ -651,15 +660,13 @@ def log_page():
             with st.expander(f"Show the other {len(rest_k)} station{'s' if len(rest_k) != 1 else ''} "
                              f"(worked on {lo_k}{'' if lo_k == hi_k else f' to {hi_k}'} bands)"):
                 st.html(lh.CSS + lh.ladder_rest_html(log))
-    with worked_slot:
+    with ref_slot:
+        st.html(lh.CSS + lh.section_heading_html("sec-reference", "Reference", "The long lists, folded away."))
         shown_bands = lc.bands_top_down(log)
-        st.html(lh.CSS + lh.worked_html(worked, shown_bands))
-        if worked["n_entities"] > lh.ENTITY_ROWS:
-            with st.expander(f"Show the other {worked['n_entities'] - lh.ENTITY_ROWS} countries"):
-                st.html(lh.CSS + lh.worked_html(worked, shown_bands, rows=worked["n_entities"], first=lh.ENTITY_ROWS))
-        still = lh.still_to_work_html(worked)
-        if still:
-            with st.expander("Still to work: continents, states, provinces and zones"):
+        with st.expander("What you worked, and what is still to work: countries, continents, states, provinces and zones"):
+            st.html(lh.CSS + lh.worked_html(worked, shown_bands, rows=worked["n_entities"]))
+            still = lh.still_to_work_html(worked)
+            if still:
                 st.html(lh.CSS + still)
     with highlights_slot:
         hl_places = lc.contact_places(log, home)
@@ -685,7 +692,8 @@ def log_page():
     with pota_slot:         # a POTA log opens with how its park compares; the card is laid out above the rest and filled once the session chart is drawn
         park_cards = _pota_cards(log, call)
     with share_slot:
-        with st.expander("Share this session: a picture and a short summary to post"):
+        st.html(lh.CSS + lh.section_heading_html("sec-share", "Share this session", "A picture and a short summary to post, in the shape each site wants."))
+        with st.expander("Make the picture and the text"):
             made = st.session_state.get("log_share")
             share_key = (digest, call, round(home[0], 3), round(home[1], 3), bool(park_cards))
             if not made or made["key"] != share_key:       # the picture and the text are made once for a log, not at every redraw

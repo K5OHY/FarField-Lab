@@ -897,6 +897,21 @@ class TheGlanceRow(unittest.TestCase):
         self.assertIn("A &lt;path&gt; showed.", html)                                         # text is escaped
         self.assertEqual(lh.glance_html([("RBN", "", "sec-session")]), "")
 
+    def test_a_group_of_sections_opens_with_a_heading_a_link_can_reach(self):
+        html = lh.section_heading_html("sec-reach", "Openings and reach", "Where nearby WSPR showed a path.")
+        self.assertIn('id="sec-reach"', html)
+        self.assertIn("<h3>Openings and reach</h3>", html)
+        self.assertIn("<p>Where nearby WSPR showed a path.</p>", html)
+        self.assertNotIn("<p>", lh.section_heading_html("sec-x", "Only a title"))
+        self.assertIn("&lt;", lh.section_heading_html("sec-x", "A <b> title"))                  # text is escaped
+
+    def test_the_findings_row_ends_with_a_link_to_the_share_box(self):
+        from views.log_view import _glance
+        log = log_of(rec("DL1AAA", "2010", band="20m"), rec("DL1AAA", "2020", band="15m"))
+        html = _glance([], lc.repeat_stations(log), None, {}, HOME, "", None)
+        self.assertIn('href="#sec-share"', html)
+        self.assertEqual(_glance([], lc.repeat_stations(log_of(rec("W1AAA", "2010"))), None, {}, HOME, "", None), "")      # no findings, no row and no link
+
     def test_the_page_builds_the_row_from_what_is_known_so_far(self):
         from views.log_view import _glance
         log = log_of(rec("DL1AAA", "2010", band="20m"), rec("DL1AAA", "2020", band="15m"), rec("W1AAA", "2030", band="20m"))
