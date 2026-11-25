@@ -285,7 +285,17 @@ def _busiest_dx_continent(places):
 LAYOUTS = {"cards": "Band by band", "grid": "Grid"}
 
 
-def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, digest):
+def _home_continent(call):
+    """The continent your callsign belongs to (NA when it cannot be told), so the DX picture never treats your own continent as a destination."""
+    from rbn_data import country_continent, country_location
+    try:
+        guess = country_location(call)
+        return (country_continent(guess[2]) if guess else "") or "NA"
+    except Exception:
+        return "NA"
+
+
+def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, digest, home_cont="NA"):
     """How you used the openings, in two views of the same evidence. *Band by band* (the default) is a card for each band you worked, on a time axis, with
     a lane for each distant continent. *Grid* is the earlier view: a box for each band and time bin, read for one destination. Both can be read as what WSPR
     showed or as an estimate for your station, and both are followed by 'look at one box', which shows the evidence behind any bar or box. Returns
@@ -299,11 +309,18 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
                       help="Band by band: a card for each band you worked, with the distant continents WSPR showed a path to, and your contacts, on one time axis. "
                            "Grid: the earlier view, a box for each band and time bin for one destination.")
     cards = layout == LAYOUTS["cards"]
+    reach = "dx"
+    if cards:
+        shown = st.radio("Reach", list(lo.REACH.values()), horizontal=True, key="log_reach",
+                         help="DX: the other continents, from the distance you set under More options (3,000 miles by default). Regional: the eight compass directions "
+                              f"from you, for stations from {lo.REGIONAL_MIN_KM} km out to where DX begins, which is where most of a North American activation is worked.")
+        reach = next(k for k, v in lo.REACH.items() if v == shown)
     c1, c2 = st.columns([3, 1.4])
     if cards:
-        options = [("all", "All continents")] + [(k, v) for k, v in lf.CONTINENT_NAMES.items() if k not in ("AN", "NA")]
-        choice = c1.selectbox("Show", [k for k, _ in options], format_func=dict(options).get, key="log_card_dest",
-                              help="Every distant continent, or just one. North America is not a distant destination.")
+        lane_codes, lane_names, _, lane_word, _ = lo.lane_set(reach, home_cont)
+        options = [("all", f"All {lane_word}s" if lane_word == "continent" else "All directions")] + [(c, lane_names[c][:1].upper() + lane_names[c][1:]) for c in lane_codes]
+        choice = c1.selectbox("Show", [k for k, _ in options], format_func=dict(options).get, key=f"log_card_dest_{reach}",
+                              help="Every destination, or just one. Your own continent is not a DX destination." if reach == "dx" else "Every direction, or just one.")
         view, dest = "continent", (None if choice == "all" else choice)
     else:
         options = _destination_choices()
@@ -328,9 +345,9 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
         band = cols[0].selectbox("Band", bands, key="log_box_band")
         slot = cols[1].selectbox("Box (UTC)", slots, format_func=lambda t: f"{pd.Timestamp(t):%d %b %H:%M}Z", key="log_box_slot")
         if cards:
-            ev_choice = cols[2].selectbox("Continent", ["all"] + [k for k in lo.LANES], format_func=lambda k: "All continents" if k == "all" else lf.CONTINENT_NAMES[k],
-                                          key="log_box_cont")
-            ev_view, ev_dest = "continent", (None if ev_choice == "all" else ev_choice)
+            ev_choice = cols[2].selectbox("Continent" if reach == "dx" else "Direction", ["all"] + list(lane_codes),
+                                          format_func=lambda k: "All" if k == "all" else lane_names[k], key=f"log_box_cont_{reach}")
+            ev_view, ev_dest = ("continent" if reach == "dx" else "sector"), (None if ev_choice == "all" else ev_choice)
         else:
             ev_view, ev_dest = view, dest
         box_slot = st.empty()
@@ -338,14 +355,14 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
     def draw(spots, rbn_ok):
         metric = lo.METRIC[metric_view]
         if cards:
-            timeline = lo.band_timeline(grid, log, places, spots, skimmers, home, min_km, metric, rbn_ok, dest)
-            grid_slot.html(lh.CSS + lh.band_cards_html(timeline, zone))
+            timeline = lo.band_timeline(grid, log, places, spots, skimmers, home, min_km, metric, rbn_ok, dest, reach, home_cont)
+            grid_slot.html(lh.CSS + lh.with_id(lh.band_cards_html(timeline, zone), "sec-openings"))
             table_slot.empty()
             explain_slot.html(lh.CSS + lh.band_cards_explain_html(timeline, grid))
             words_slot.empty()
         else:
             cells = lo.opening_cells(grid, log, places, spots, skimmers, home, view, dest, min_km, metric, rbn_ok)
-            grid_slot.html(lh.CSS + lh.openings_html(cells, grid, zone, metric_view))
+            grid_slot.html(lh.CSS + lh.with_id(lh.openings_html(cells, grid, zone, metric_view), "sec-openings"))
             with table_slot.container():
                 table = lo.openings_table(cells)
                 if len(table):
@@ -356,9 +373,12 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
             explain_slot.html(lh.CSS + lh.openings_explain_html(cells, grid, metric_view))
             lines = lo.openings_summary(cells)
             words_slot.markdown("**In words**\n\n" + "\n".join(f"- {line}" for line in lines) if lines else "")
-        evidence = lo.opening_cells(grid, log, places, spots, skimmers, home, ev_view, ev_dest, min_km, metric, rbn_ok)
+        ev_km = min_km if reach == "dx" or not cards else lo.REGIONAL_MIN_KM
+        evidence = lo.opening_cells(grid, log, places, spots, skimmers, home, ev_view, ev_dest, ev_km, metric, rbn_ok)
         with box_slot.container():
-            _box_evidence(evidence, grid, log, places, spots, skimmers, home, band, slot, ev_view, ev_dest, min_km, rbn_ok, radius_km)
+            _box_evidence(evidence, grid, log, places, spots, skimmers, home, band, slot, ev_view, ev_dest, min_km if reach == "dx" or not cards else lo.REGIONAL_MIN_KM,
+                          rbn_ok, radius_km)
+        return timeline["headline"] if cards else lo.openings_headline(cells)
 
     draw(None, False)
     with st.expander("Another view: the percent of stations that could have heard you"):
@@ -474,6 +494,29 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
                     "Each is at the centre of its grid square, state or country.")
 
 
+def _glance(park_cards, rep, spots, skimmers, home, headline, result):
+    """The row of short findings under the tiles, each a link to its section, from what is known so far: who worked you on more than one band,
+    who RBN heard you, the openings and the comparison with RBN. A finding that cannot be made yet or at all is left out."""
+    items = []                  # the park or summit card follows this row at once, so it is not repeated here
+    if len(rep):
+        items.append(("Worked you on more than one band", lh.followers_headline(rep), "sec-hunters"))
+    if spots is not None and len(spots):
+        sk = lo.skimmer_table(spots, skimmers, home)
+        bands = lc.bands_top_down(spots)
+        text = f"{spots['spotter'].nunique()} RBN skimmers spotted you, on {', '.join(bands)}."
+        if len(sk):
+            far = sk.loc[sk["km"].idxmax()]
+            text += f" The farthest was {far['who']}, {far['km']:,.0f} km ({far['km'] / 1.609344:,.0f} mi) away."
+        items.append(("RBN and your contacts", text, "sec-session"))
+    if headline:
+        items.append(("Band openings", headline, "sec-openings"))
+    if result is not None and pd.notna(result["overall"]["stronger_db"]):
+        o = result["overall"]
+        items.append(("Signal against WSPR stations near you", f"About {o['stronger_db']:+.0f} dB against a typical station, from {o['matches']} matches with "
+                                                                f"{o.get('match_rx', o['matches'])} receiving stations.", "sec-signal"))
+    return lh.glance_html(items)
+
+
 def log_page():
     """The page."""
     if BANNER.exists():
@@ -552,12 +595,13 @@ def log_page():
     # The page is laid out in this order whatever order the work finishes in: who followed you, the session chart, the maps, the band
     # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
+    glance_slot = st.empty()
     pota_slot, share_slot, followers_slot, worked_slot, chart_slot, maps_slot, conditions_slot, space_slot, reports_slot, work, compare_slot = (st.container() for _ in range(11))
     maps_hold = maps_slot.empty()
     if not cw.empty:
         maps_hold.caption("The maps appear here when the RBN spots have been read.")
     with followers_slot:
-        st.html(lh.CSS + lh.followers_html(log, summary))
+        st.html(lh.CSS + lh.with_id(lh.followers_html(log, summary), "sec-hunters"))
         if len(rep) > lh.LADDER_ROWS:
             rest_k = rep["k"].iloc[lh.LADDER_ROWS:]
             lo_k, hi_k = int(rest_k.min()), int(rest_k.max())
@@ -577,7 +621,7 @@ def log_page():
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     chart = chart_slot.empty()
-    chart.html(lh.CSS + lh.afternoon_html(log, no_spots))
+    chart.html(lh.CSS + lh.with_id(lh.afternoon_html(log, no_spots), "sec-session"))
     speed_hold = chart_slot.empty()        # one line on how fast you sent, under the session chart, once the RBN spots have been read
     with pota_slot:         # a POTA log opens with how its park compares; the card is laid out above the rest and filled once the session chart is drawn
         park_cards = _pota_cards(log, call)
@@ -608,12 +652,13 @@ def log_page():
             st.caption("The summary, ready to copy (the copy button is at the top right of the box):")
             st.code(sc.share_text(facts), language=None)
             st.caption("Nothing here is saved or sent anywhere. The picture and the text are made on this page from your log.")
+    glance_slot.html(lh.CSS + _glance(park_cards, rep, None, skimmers, home, "", None))
     mode, zone = lc.condition_mode(log), _visitor_timezone()
     draw_openings = None
     with conditions_slot:
         grid_of_conditions = _conditions(log, home, power, label, digest, radius_km) if len(days) <= MAX_DAYS else None
         if grid_of_conditions is not None and len(grid_of_conditions) > 0:
-            draw_openings = _openings_section(grid_of_conditions, log, home, power, mode, zone, radius_km, skimmers, digest)
+            draw_openings = _openings_section(grid_of_conditions, log, home, power, mode, zone, radius_km, skimmers, digest, _home_continent(call))
     with reports_slot:      # who hears whom comes from the log alone, so it is drawn at once
         balance = lh.balance_html(lc.reports_balance(log))
         if balance:
@@ -638,12 +683,14 @@ def log_page():
         else:
             spots, missing = _rbn_spots(digest, call, days)
     if len(spots):
-        chart.html(lh.CSS + lh.afternoon_html(log, spots))
+        chart.html(lh.CSS + lh.with_id(lh.afternoon_html(log, spots), "sec-session"))
         speed = lh.speed_line(log, spots)
         if speed:
             speed_hold.markdown(f":material/speed: {speed}")
+    headline = ""
     if draw_openings is not None:   # the skimmers that spotted you are added to the openings, now the spots have been read (or are known to be missing)
-        draw_openings(spots, not cw.empty and len(missing) < len(days))
+        headline = draw_openings(spots, not cw.empty and len(missing) < len(days)) or ""
+    glance_slot.html(lh.CSS + _glance(park_cards, rep, spots, skimmers, home, headline, None))
     result = None
     with work:
         if not cw.empty:
@@ -668,20 +715,25 @@ def log_page():
                         st.session_state["log_result"] = {"signature": signature, "result": result}
     with maps_hold.container():
         _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
+    glance_slot.html(lh.CSS + _glance(park_cards, rep, spots, skimmers, home, headline, result))
     if result is None:
         return
     with compare_slot:
-        st.markdown("#### The comparison with RBN")
+        st.html(lh.CSS + lh.signal_intro_html(lc.TYPICAL_OFFSET_DB))
         st.html(lh.CSS + lh.band_table_html(result["bands"]))
         o = result["overall"]
-        notes = [f"Estimated strength against a typical WSPR station near you: {o['stronger_db']:+.0f} dB, from {o['matches']} matched receivers "
-                 "(explained below)." if pd.notna(o["stronger_db"]) else None,
+        notes = [f"Estimated strength against a typical WSPR station near you: {o['stronger_db']:+.0f} dB, from {o['matches']} matches with {o.get('match_rx', o['matches'])} different receiving stations "
+                 "(a station heard in two stretches of the log is a match in each; explained below)." if pd.notna(o["stronger_db"]) else None,
                  f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
         st.caption(" ".join(n for n in notes if n))
-        st.caption(f"\"Stronger than a typical WSPR station\" sets the skimmers' reports against the WSPR stations near you, restated to your power. "
-                   f"Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {lc.TYPICAL_OFFSET_DB:.0f} dB higher "
-                   "on RBN than on the Band conditions page (found from two checks of stations whose power is known), and that is taken off. "
-                   f"With fewer than {lc.MIN_MATCHES} matched receivers a bar is striped, and it is a hint, not a score. "
+        shown = set(result["bands"].loc[result["bands"]["contacts"] >= 3, "band"])          # the bands that have a bar above
+        table = lc.match_table(result["matches"])
+        table = table[table["Band"].isin(shown)].reset_index(drop=True)
+        if len(table):
+            with st.expander(f"The receiving stations behind these bars ({len(table)})"):
+                st.caption("One row for each band and receiving station. A station that was matched in more than one stretch of the log has more than one match.")
+                st.dataframe(table, hide_index=True, width="stretch", height=min(420, 38 + 35 * len(table)))
+        st.caption(f"With fewer than {lc.MIN_MATCHES} matches a bar is striped, and it is a hint, not a score. "
                    "A log shows who worked you; RBN only shows who a skimmer decoded. "
                    "The S in each band row is the average report they gave you; many operators send a 9 out of habit, so it is a rough picture "
                    "of your station, not a measurement.")

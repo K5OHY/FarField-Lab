@@ -341,7 +341,29 @@ def cell_evidence(grid, log, places, spots, locs, wspr_for, home, band, slot, vi
 
 # ------------------------------------------------------------------------------------------------- the band timeline
 
-LANES = ("EU", "AF", "AS", "OC", "SA")      # the distant continents, in the order they are drawn
+LANES = ("EU", "AF", "AS", "OC", "SA")      # the distant continents for a station in North America, in the order they are drawn
+CONTINENT_LANES = ("EU", "AF", "AS", "OC", "SA", "NA")
+REGIONAL_MIN_KM = 500                      # the regional picture starts beyond the reach of a ground wave and a short skip, and ends where the DX picture begins
+LANE_COLOURS = {"EU": "#2a78d6", "AF": "#eb6834", "AS": "#1baf7a", "OC": "#6250d6", "SA": "#e87ba4", "NA": "#c9a227",
+                "N": "#2a78d6", "NE": "#1baf7a", "E": "#c9a227", "SE": "#eb6834", "S": "#e87ba4", "SW": "#6250d6", "W": "#20a6b8", "NW": "#8a8f98"}
+REACH = {"dx": "DX: distant continents", "regional": "Regional: by direction"}
+NO_PATHS = "No distant-continent paths in the nearby WSPR."
+NO_PATHS_REGIONAL = "No paths at regional distances in the nearby WSPR."
+
+
+def lane_set(reach="dx", home_cont="NA"):
+    """The lanes of the band cards: (codes in drawing order, {code: name}, {code: colour}, the word for one, the table column that holds it).
+    DX is the other continents (never the one you are on, so a station in Europe has North America as a destination); regional is the eight compass
+    directions, for stations from REGIONAL_MIN_KM out to where DX begins."""
+    if reach == "regional":
+        codes = lf.SECTORS
+        return codes, {c: f"the {lf.SECTOR_NAMES[c].lower()}" for c in codes}, {c: LANE_COLOURS[c] for c in codes}, "direction", "sector"
+    codes = tuple(c for c in CONTINENT_LANES if c != (home_cont or "NA"))
+    return codes, {c: lf.CONTINENT_NAMES[c] for c in codes}, {c: LANE_COLOURS[c] for c in codes}, "continent", "continent"
+
+
+def _cap(text):
+    return text[:1].upper() + text[1:]
 ACTIVITY_GAP_MIN = 15                      # a pause this long between two contacts on a band ends one stretch of logged activity and starts the next
 
 
@@ -373,87 +395,125 @@ def activity_spans(times, gap_min=ACTIVITY_GAP_MIN):
     return [tuple(s) for s in spans]
 
 
-def band_finding(band, opened, own_bins, elsewhere, worked, n_contacts, first, step, rbn_cont=()):
-    """The one useful finding for a band card, in cautious words, and the list of contacts with the distant continents.
+def _when(bins, contact_times, step):
+    """How the bins in which WSPR showed a path to a continent sit against the times you worked it: 'at the time' when a path bin is the contact's own
+    bin or the one next to it (neighbouring bins share most of their hour of WSPR), else 'later', 'earlier' or 'at other times' than every contact."""
+    floor = f"{max(int(step.total_seconds() // 60), 1)}min"
+    near = [any(abs(pd.Timestamp(t).floor(floor) - b) <= step for b in bins) for t in contact_times]
+    if all(near):
+        return "at the time"
+    if any(near):
+        return "at the time of some"
+    last, first = max(contact_times), min(contact_times)
+    if all(b > last for b in bins):
+        return "later"
+    if all(b < first for b in bins):
+        return "earlier"
+    return "at other times"
+
+
+def band_finding(band, opened, own_bins, elsewhere, worked, n_contacts, first, step, rbn_cont=(), names=None):
+    """The finding for a band card, in cautious words: for each distant continent, what your log shows and what the nearby WSPR showed, and when,
+    so a path that appeared hours from a contact is never read as support for it.
     opened     {continent code: [bin starts in which WSPR showed a path there]}
     own_bins   the bins in which this band has logged contacts
     elsewhere  {bin start: [other bands with logged contacts in it]}
     worked     [(time, call, continent code)] contacts with the distant continents on this band
-    rbn_cont   the continents in which an RBN skimmer spotted you on this band (only where RBN applies)"""
-    names = lf.CONTINENT_NAMES
-    if worked:
-        got = _join(dict.fromkeys(names[c] for _, _, c in worked))
-        with_path = {c for _, _, c in worked if opened.get(c)}
-        text = f"Worked {got}."
-        if not with_path:
-            text += " No corresponding nearby WSPR reports in the selected window."
-        elif len(with_path) < len({c for _, _, c in worked}):
-            text += " Nearby WSPR showed a path to some of them."
-        else:
-            text += " Nearby WSPR also showed a path there."
-        spotted = [names[c] for c in dict.fromkeys(c for _, _, c in worked) if c in rbn_cont]
+    rbn_cont   the continents in which an RBN skimmer spotted you on this band (only where RBN applies)
+    names      {lane code: name}, the continents unless the lanes are directions"""
+    names = names or lf.CONTINENT_NAMES
+    when_worked = {}
+    for t, _, c in worked:
+        when_worked.setdefault(c, []).append(t)
+    text, outside_times = "", set()
+    if when_worked:
+        at_time = [c for c, ts in when_worked.items() if opened.get(c) and _when(opened[c], ts, step) in ("at the time", "at the time of some")]
+        other_time = [c for c in when_worked if opened.get(c) and c not in at_time]
+        no_path = [c for c in when_worked if not opened.get(c)]
+        if no_path:
+            text += f"Worked {_join(names[c] for c in no_path)}. No corresponding nearby WSPR reports in the selected window."
+        if at_time:
+            text += (" " if text else "") + f"Worked {_join(names[c] for c in at_time)}; nearby WSPR showed a path there at the time."
+        for c in other_time:
+            text += (" " if text else "") + f"Worked {names[c]} at {_join(f'{t:%H:%M}' for t in when_worked[c][:3])}{' and others' if len(when_worked[c]) > 3 else ''}; "                     f"nearby WSPR showed a path there {_when(opened[c], when_worked[c], step)} ({_ranges(opened[c], step)})."
+        spotted = [names[c] for c in when_worked if c in rbn_cont]
         if spotted:
             text += f" RBN skimmers in {_join(spotted)} also spotted you."
-        return text
-    outside = {c: [t for t in bins if t not in own_bins] for c, bins in opened.items()}
+    not_worked = {c: v for c, v in opened.items() if c not in when_worked}
+    outside = {c: [t for t in v if t not in own_bins] for c, v in not_worked.items()}
     outside = {c: v for c, v in outside.items() if v}
     if outside:
+        groups = {}
+        for c, v in outside.items():
+            groups.setdefault(_ranges(v, step), []).append(c)
+        paths = "; ".join(f"{_join(names[c] for c in cs)} paths appeared {rng}" for rng, cs in groups.items())
+        paths = _cap(paths)                                    # only the first of several is the start of the sentence
         times = sorted({t for v in outside.values() for t in v})
         others = sorted({b for t in times for b in elsewhere.get(t, [])}, key=lambda b: lc._rank(b), reverse=True)
-        text = f"{_join(names[c] for c in outside)} paths appeared {_ranges(times, step)}, outside your logged activity on {band}."
+        text += (" " if text else "") + (f"{paths}; you logged no contact on {band}." if n_contacts == 0 else f"{paths}, outside your logged activity on {band}.")
         text += (f" Your log shows {_join(others)} activity then." if others else " Your log shows no contacts then.")
-        if n_contacts <= 3:                  # a count only helps when it is small enough to be the point
+        if 0 < n_contacts <= 3 and not when_worked:              # a count only helps when it is small enough to be the point
             text += f" Your log has {n_contacts} {band} contact{'s' if n_contacts != 1 else ''}" + (f", at {first:%H:%M} UTC." if n_contacts == 1 else ".")
-        return text
-    if opened:
-        return f"{_join(names[c] for c in opened)} paths appeared during your logged activity on {band}; you logged no contact there."
-    return "No distant-continent paths in the nearby WSPR."
+    elif not_worked:
+        text += (" " if text else "") + f"{_cap(_join(names[c] for c in not_worked))} paths appeared during your logged activity on {band}; you logged no contact there."
+    return text or NO_PATHS
 
 
-def timeline_headline(panels):
-    """One plain sentence for the top of the band cards, from the cards alone: who you worked in distant continents, and the bands on which WSPR near
-    you showed a path to a distant continent at times when your log shows no contact on that band. Checked against UNSUPPORTED."""
+def timeline_headline(panels, names=None, reach="dx"):
+    """One plain sentence for the top of the band cards, from the cards alone: who you worked in the other continents (or, for the regional picture, in
+    which directions), and the bands on which WSPR near you showed a path there at times when your log shows no contact on that band. Checked against
+    UNSUPPORTED."""
     cards = [c for p in panels for c in p["cards"]]
     if not cards:
         return ""
-    names = lf.CONTINENT_NAMES
+    names = names or lf.CONTINENT_NAMES
+    regional = reach == "regional"
     worked = {}
     for c in cards:
         for call, cont in c["worked"]:
             worked.setdefault(cont, set()).add(call)
     n = len({call for v in worked.values() for call in v})
     outside = [c["band"] for c in cards if c["outside"]]
-    parts = [f"You worked {n} station{'s' if n != 1 else ''} in {_join(names[c] for c in worked)}." if worked else "You logged no contact with a distant continent."]
+    path_where = "at regional distances" if regional else "to a distant continent"
+    if worked:
+        place = f"toward {_join(names[c] for c in worked)}" if regional else f"in {_join(names[c] for c in worked)}"
+        parts = [f"You worked {n} station{'s' if n != 1 else ''} {place}."]
+    else:
+        parts = [f"You logged no contact {'at regional distances' if regional else 'with a distant continent'}."]
     if outside:
-        parts.append(f"WSPR near you showed a path to a distant continent on {_join(outside)} at times when your log has no contact on that band.")
+        parts.append(f"WSPR near you showed a path {path_where} on {_join(outside)} at times when your log has no contact on that band.")
     elif not any(c["opened"] for c in cards):
-        parts.append("WSPR near you showed no path to a distant continent on the bands you worked.")
+        parts.append(f"WSPR near you showed no path {path_where} on the bands you worked.")
     text = " ".join(parts)
     assert not unsupported_claims(text), unsupported_claims(text)
     return text
 
 
-def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric="good", rbn_ok=True, only=None):
+def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric="good", rbn_ok=True, only=None, reach="dx", home_cont="NA"):
     """The data for the band-by-band timeline: one entry for each stretch of the log (a panel of the grid) and, in it, one card for each band you
-    worked, highest band first (a fixed order). A card holds, on the same time axis:
-      lanes       for each distant continent (EU, AF, AS, OC, SA), the receivers there in each time bin: `n` by the view's metric (`heard` decoded
-                  WSPR near you; `good` also looked strong enough for you). One receiver is thin evidence, not a weak signal, so the page draws
-                  1 pale and 2 or more solid, and shows the count when asked;
+    worked, highest band first (a fixed order), then one for each band you did not work on which the nearby WSPR showed a path. A card holds, on the same
+    time axis:
+      lanes       for each destination (see lane_set: the other continents, or the eight compass directions for the regional picture), the receivers
+                  there in each time bin: `n` by the view's metric (`heard` decoded WSPR near you; `good` also looked strong enough for you). One
+                  receiver is thin evidence, not a weak signal, so the page draws 1 pale and 2 or more solid, and shows the count when asked;
       thin        the bins in which there was too little WSPR near you to say anything at all;
       spans       the stretches of logged activity on the band (see activity_spans);
-      contacts    your contacts on the band, those with a distant continent marked;
-      rbn         for each continent and bin, the skimmers there that spotted you, only where RBN applies (see opening_cells);
-      finding, worked   the one finding in words, and the calls worked in the distant continents.
-    `only` limits the lanes to one continent code. Bands you did not work are named in `idle` and `thin_bands`."""
+      contacts    your contacts on the band, those with a destination marked (the same distance rule as the receivers and the skimmers);
+      rbn         for each destination and bin, the skimmers there that spotted you, only where RBN applies (see opening_cells);
+      finding, worked   the finding in words, and the calls worked at the destinations; `worked_band` is False for a band you did not work.
+    `only` limits the lanes to one destination code. DX counts stations `min_km` or more away; regional counts those from REGIONAL_MIN_KM to DX_KM.
+    Bands with nothing to show are named in `idle`."""
     bin_min = grid.attrs.get("bin_min", lc.CONDITIONS_SLOT_MIN)
     step = pd.Timedelta(minutes=bin_min)
+    codes, names, colours, word, col = lane_set(reach, home_cont)
+    lo_km, hi_km = (min_km, float("inf")) if reach == "dx" else (REGIONAL_MIN_KM, lc.DX_KM)
     rec = grid.attrs.get("receivers")
     if rec is None or len(rec) == 0:
-        rec = pd.DataFrame(columns=["slot", "band", "km", "continent", "verdict"])
-    rec = rec[rec["km"] >= min_km]
+        rec = pd.DataFrame(columns=["slot", "band", "km", "continent", "sector", "verdict"])
+    rec = rec[(rec["km"] >= lo_km) & (rec["km"] < hi_km)]
     per_bin = {}
-    for (slot, band, cont), g in rec.groupby(["slot", "band", "continent"]):
-        per_bin[(slot, band, cont)] = {"heard": int(len(g)), "good": int((g["verdict"] == "good").sum())}
+    for (slot, band, lane), g in rec.groupby(["slot", "band", col]):
+        per_bin[(slot, band, lane)] = {"heard": int(len(g)), "good": int((g["verdict"] == "good").sum())}
     states = {(r.slot, r.band): r.state for r in grid.itertuples()}
     cells = opening_cells(grid, log, places, spots, locs, home, "continent", None, min_km, metric, rbn_ok)
     rbn_state = {(r.slot, r.band): (r.rbn_state, r.rbn_why) for r in cells.itertuples()}
@@ -461,11 +521,46 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
     if rbn_ok and spots is not None and len(spots):
         sk = skimmer_table(spots, locs, home)
         sp = spots.assign(slot=lf.bin_floor(spots["time"], bin_min)).merge(sk, on="spotter")
-        sp = sp[sp["km"] >= min_km]
-        for (slot, band, cont), g in sp.groupby(["slot", "band", "continent"]):
-            rbn_who[(slot, band, cont)] = sorted(set(g["spotter"]))
+        sp = sp[(sp["km"] >= lo_km) & (sp["km"] < hi_km)]
+        for (slot, band, lane), g in sp.groupby(["slot", "band", col]):
+            rbn_who[(slot, band, lane)] = sorted(set(g["spotter"]))
     pl = places.assign(slot=lf.bin_floor(places["time"], bin_min))
-    panels, worked_all, idle = [], set(), []
+    panels, carded, idle = [], set(), []
+
+    def card_for(band, mine, slots, elsewhere):
+        own_bins = set(mine["slot"])
+        lanes = {}
+        for c in codes:
+            if only and c != only:
+                continue
+            row = [per_bin.get((s, band, c), {"heard": 0, "good": 0}) for s in slots]
+            row = [{"heard": 0, "good": 0} if states.get((s, band)) == lf.SPARSE else r for s, r in zip(slots, row)]       # too little WSPR: no bar, the card marks it
+            ns = [r["good"] if metric == "good" else r["heard"] for r in row]
+            spotted = any(rbn_who.get((s, band, c)) and rbn_state.get((s, band), ("", ""))[0] in (lf.EVIDENCE, lf.NO_REPORTS) for s in slots)
+            if any(ns) or spotted or only:
+                lanes[c] = [{"slot": s, "n": n, "heard": r["heard"], "good": r["good"],
+                             "rbn": rbn_who.get((s, band, c), []) if rbn_state.get((s, band), (lf.NOT_APPLICABLE, ""))[0] in (lf.EVIDENCE, lf.NO_REPORTS) else []}
+                            for s, n, r in zip(slots, ns, row)]
+        opened = {c: [x["slot"] for x in v if x["n"] >= 1] for c, v in lanes.items()}
+        opened = {c: v for c, v in opened.items() if v}
+        if not len(mine) and not opened:
+            return None                                                # a band you did not work gets a card only when there is a path to show
+        contacts = [{"time": t, "call": call, "cont": (c if c in codes and lo_km <= km < hi_km else ""), "km": km}      # the same distance rule as the WSPR and the skimmers
+                    for t, call, c, km in zip(mine["time"], mine["call"], mine[col], mine["c_km"])]
+        worked = [(c["time"], c["call"], c["cont"]) for c in contacts if c["cont"] and (not only or c["cont"] == only)]
+        first = mine["time"].iloc[0] if len(mine) else None
+        rbn_cont = {c for c, v in lanes.items() if any(x["rbn"] for x in v)}
+        finding = band_finding(band, opened, own_bins, elsewhere, worked, len(mine), first, step, rbn_cont, names)
+        if reach == "regional" and finding == NO_PATHS:
+            finding = NO_PATHS_REGIONAL
+        assert not unsupported_claims(finding), unsupported_claims(finding)
+        worked_c = {c for _, _, c in worked}
+        outside = any(t not in own_bins for c, v in opened.items() if c not in worked_c for t in v)
+        return {"band": band, "worked_band": bool(len(mine)), "lanes": lanes, "opened": opened, "outside": outside,
+                "thin": [s for s in slots if states.get((s, band)) == lf.SPARSE], "spans": activity_spans(mine["time"]), "contacts": contacts, "finding": finding,
+                "worked": list(dict.fromkeys((call, cont) for _, call, cont in worked)),
+                "rbn_why": next((rbn_state[(s, band)][1] for s in slots if rbn_state.get((s, band), ("", ""))[1]), "")}
+
     for panel, gp in grid.groupby("panel"):
         slots = sorted(gp["slot"].unique())
         lo_t, hi_t = slots[0], slots[-1] + step
@@ -476,40 +571,21 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
             elsewhere.setdefault(slot, []).append(band)
         cards = []
         for band in bands:
-            mine = here[here["band"] == band].sort_values("time")
-            own_bins = set(mine["slot"])
-            lanes = {}
-            for c in LANES:
-                if only and c != only:
-                    continue
-                row = [per_bin.get((s, band, c), {"heard": 0, "good": 0}) for s in slots]
-                row = [{"heard": 0, "good": 0} if states.get((s, band)) == lf.SPARSE else r for s, r in zip(slots, row)]       # too little WSPR: no bar, the card marks it
-                ns = [r["good"] if metric == "good" else r["heard"] for r in row]
-                spotted = any(rbn_who.get((s, band, c)) and rbn_state.get((s, band), ("", ""))[0] in (lf.EVIDENCE, lf.NO_REPORTS) for s in slots)
-                if any(ns) or spotted or only:
-                    lanes[c] = [{"slot": s, "n": n, "heard": r["heard"], "good": r["good"],
-                                 "rbn": rbn_who.get((s, band, c), []) if rbn_state.get((s, band), (lf.NOT_APPLICABLE, ""))[0] in (lf.EVIDENCE, lf.NO_REPORTS) else []}
-                                for s, n, r in zip(slots, ns, row)]
-            opened = {c: [x["slot"] for x in v if x["n"] >= 1] for c, v in lanes.items()}
-            opened = {c: v for c, v in opened.items() if v}
-            contacts = [{"time": t, "call": call, "cont": cont if cont in LANES else "", "km": km}
-                        for t, call, cont, km in zip(mine["time"], mine["call"], mine["continent"], mine["c_km"])]
-            worked = [(c["time"], c["call"], c["cont"]) for c in contacts if c["cont"] and (not only or c["cont"] == only)]
-            first = mine["time"].iloc[0]
-            rbn_cont = {c for c, v in lanes.items() if any(x["rbn"] for x in v)}
-            finding = band_finding(band, opened, own_bins, elsewhere, worked, len(mine), first, step, rbn_cont)
-            assert not unsupported_claims(finding), unsupported_claims(finding)
-            outside = (not worked) and any(t not in own_bins for v in opened.values() for t in v)
-            cards.append({"band": band, "lanes": lanes, "opened": opened, "outside": outside, "thin": [s for s in slots if states.get((s, band)) == lf.SPARSE],
-                          "spans": activity_spans(mine["time"]), "contacts": contacts, "finding": finding,
-                          "worked": list(dict.fromkeys((call, cont) for _, call, cont in worked)),
-                          "rbn_why": next((rbn_state[(s, band)][1] for s in slots if rbn_state.get((s, band), ("", ""))[1]), "")})
-            worked_all.add(band)
+            card = card_for(band, here[here["band"] == band].sort_values("time"), slots, elsewhere)
+            cards.append(card)
+            carded.add(band)
+        for band in lc.bands_top_down(gp):                      # bands you did not work, with a path to show, after the ones you did
+            if band not in bands:
+                card = card_for(band, here.iloc[0:0], slots, elsewhere)
+                if card:
+                    cards.append(card)
+                    carded.add(band)
         panels.append({"panel": panel, "slots": slots, "bin_min": bin_min, "cards": cards})
     for band in lc.bands_top_down(grid):
-        if band not in worked_all:
+        if band not in carded:
             d = grid[grid["band"] == band]
             has_path = any(v["good" if metric == "good" else "heard"] > 0 for (_, b2, _), v in per_bin.items() if b2 == band)
             idle.append((band, "path" if has_path else "thin" if (d["state"] == lf.SPARSE).any() else "none"))
-    return {"headline": timeline_headline(panels), "panels": panels, "idle": idle, "metric": metric, "min_km": min_km, "only": only, "bin_min": bin_min, "power_w": grid.attrs.get("power_w"),
-            "mode": grid.attrs.get("mode", "CW"), "rbn_line": rbn_line(cells)}
+    return {"headline": timeline_headline(panels, names, reach), "panels": panels, "idle": idle, "metric": metric, "min_km": min_km, "only": only, "bin_min": bin_min,
+            "power_w": grid.attrs.get("power_w"), "mode": grid.attrs.get("mode", "CW"), "rbn_line": rbn_line(cells),
+            "reach": reach, "lane_order": list(codes), "lane_names": names, "lane_colours": colours, "lane_word": word}

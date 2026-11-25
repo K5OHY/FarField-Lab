@@ -712,18 +712,36 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
         got = own.loc[own["band"] == band, "rst_rcvd"].map(s_digit)
         rows.append({"band": band, "contacts": n_cw, "other": int(all_counts[band]) - n_cw, "skimmers": len(spotted_by_band.get(band, ())),
                      "report": float(got.mean()) if got.notna().any() else float("nan"),
-                     "page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(m),
+                     "page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(m), "match_rx": int(match[match["band"] == band]["rx"].nunique()),
+                     "q1": float(m.quantile(0.25)) - TYPICAL_OFFSET_DB if len(m) >= SHOW_MATCHES else float("nan"),
+                     "q3": float(m.quantile(0.75)) - TYPICAL_OFFSET_DB if len(m) >= SHOW_MATCHES else float("nan"),
                      "thin": 0 < len(m) < MIN_MATCHES, "note": note, "tone": tone, "no_picture": band in no_picture})
     bands = pd.DataFrame(rows)
     page, actual, n_listen = _agg(solid)
     offset = float(match["diff"].median()) - TYPICAL_OFFSET_DB if len(match) >= SHOW_MATCHES else float("nan")
     thin_cells = cells[~cells.index.isin(solid.index)]
     thin_listen = int(thin_cells["listening"].sum())
-    overall = {"page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(match),
+    overall = {"page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(match), "match_rx": int(match["rx"].nunique()),
                "spread_db": float(match["diff"].std()) if len(match) > 2 else float("nan"),
                "thin_listening": thin_listen, "thin_spotted": int(thin_cells["spotted"].sum()),
                "typical_offset_db": TYPICAL_OFFSET_DB}
     return {"bands": bands, "regions": _regions(log, mode, cells, solid, on_sets, spot_sets), "overall": overall, "matches": match, "cells": cells}
+
+
+MATCH_COLUMNS = ["Band", "Receiving station", "Matches", "RBN report (dB)", "Estimated from WSPR (dB)", "Above (+) or below (-) the estimate (dB)"]
+
+
+def match_table(match):
+    """The receiving stations behind the strength comparison, one row for each band and station: how many matched stretches it appears in, the
+    median RBN report, the median estimate made for it from the WSPR near you (restated to your power) and the difference with the reference offset
+    (TYPICAL_OFFSET_DB) taken off, as in the bars. Highest band first, then the station with the most matches."""
+    if match is None or len(match) == 0:
+        return pd.DataFrame(columns=MATCH_COLUMNS)
+    g = match.groupby(["band", "rx"]).agg(n=("diff", "size"), obs=("obs", "median"), adj=("adj", "median"), diff=("diff", "median")).reset_index()
+    g["_r"] = g["band"].map(_rank)
+    g = g.sort_values(["_r", "n", "rx"], ascending=[False, False, True])
+    return pd.DataFrame({"Band": g["band"], "Receiving station": g["rx"], "Matches": g["n"].astype(int), "RBN report (dB)": g["obs"].round(1),
+                         "Estimated from WSPR (dB)": g["adj"].round(1), "Above (+) or below (-) the estimate (dB)": (g["diff"] - TYPICAL_OFFSET_DB).round(1)}).reset_index(drop=True)
 
 
 def _regions(log, mode, cells, solid, on_sets, spot_sets):

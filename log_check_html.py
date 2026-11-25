@@ -50,6 +50,7 @@ CSS = """<style>
 .lc-sbar{position:relative;height:10px;background:var(--lane);border-radius:9px}.lc-sbar i{position:absolute;top:0;height:100%;border-radius:9px}
 .lc-sbar .pos{background:var(--b)}.lc-sbar .neg{background:var(--a)}
 .lc-sbar .thin{opacity:.6;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px)}
+.lc-sbar u{position:absolute;top:-2px;height:14px;border:1.5px solid currentColor;border-radius:4px;opacity:.55;text-decoration:none;box-sizing:border-box}
 .lc-sbar .z{position:absolute;top:-3px;width:2px;height:16px;background:currentColor;opacity:.5}.lc-str b{font-size:14px;text-align:right}
 .lc-str.none{font-size:12.5px;opacity:.6}
 .lc-note{font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:99px;justify-self:start;border:1px solid var(--line)}
@@ -118,6 +119,11 @@ CSS = """<style>
 .lc-kp{position:absolute;bottom:6px;border-radius:2px 2px 0 0}.lc-storm{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgb(230,120,40);opacity:.8}
 .lc-fl{position:absolute;top:50%;border-radius:50%;border:1px solid Canvas}.lc-kq{position:absolute;bottom:6px;background:var(--a);border-radius:1.5px 1.5px 0 0}
 .lc-card a{color:inherit;text-decoration:underline}
+[id^="sec-"]{scroll-margin-top:72px}
+.lc-glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:0 0 14px}
+.lc-glance a{display:block;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--soft);text-decoration:none;color:inherit}
+.lc-glance a:hover{border-color:rgb(32,178,170)}.lc-glance .k{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;opacity:.65;text-transform:uppercase}
+.lc-glance b{display:block;margin-top:4px;font-size:14px;line-height:1.35;font-weight:600}.lc-glance .go{display:block;margin-top:6px;font-size:12px;opacity:.6}
 .lc-hero{border:1px solid var(--line);border-left:6px solid rgb(32,178,170);border-radius:14px;padding:16px 20px;margin:0 0 12px}
 .lc-hero .k{font-size:11px;font-weight:700;letter-spacing:.08em;opacity:.65}.lc-hero h3{margin:2px 0 6px;font-size:24px;line-height:1.2}
 .lc-hero p{margin:0;font-size:15px}.lc-hero p.s{margin-top:6px;font-weight:600}
@@ -415,15 +421,16 @@ def band_cards_html(tl, tz_name=None):
     where RBN applies), your contacts as ticks and, for a distant continent, a dot, shading for your logged activity (first to last contact, split at
     pauses), a mark for any bin with too little WSPR to say anything, and one finding in words. There is no callsign on the chart, so nothing overlaps:
     each dot carries its call, time and continent in its tooltip, and the calls are listed under the card."""
-    from log_openings import ACTIVITY_GAP_MIN, LANES
-    names, observed = lf.CONTINENT_NAMES, tl["metric"] == "heard"
+    from log_openings import ACTIVITY_GAP_MIN, LANE_COLOURS, LANES
+    names, observed = tl.get("lane_names") or lf.CONTINENT_NAMES, tl["metric"] == "heard"
+    order, colours, word = tl.get("lane_order") or list(LANES), tl.get("lane_colours") or LANE_COLOURS, tl.get("lane_word", "continent")
     power_w, mode = tl.get("power_w") or 0, tl.get("mode", "CW")
-    legend_swatches = "".join(f'<span style="--c:{CONTINENT_COLOURS[c]};margin-right:12px"><span class="bc-lab" style="display:inline"><i></i>{names[c]}</span></span>' for c in LANES)
-    meaning = ("Bars: receiving stations in that continent that decoded WSPR transmitters near you. Nothing is assumed about your station." if observed else
-               f"Bars: receiving stations in that continent that decoded WSPR transmitters near you and, restated to {power_w:g} W in {escape(mode)}, looked strong enough to hear you.")
+    legend_swatches = "".join(f'<span style="--c:{colours[c]};margin-right:12px"><span class="bc-lab" style="display:inline"><i></i>{names[c]}</span></span>' for c in order)
+    meaning = (f"Bars: receiving stations in that {word} that decoded WSPR transmitters near you. Nothing is assumed about your station." if observed else
+               f"Bars: receiving stations in that {word} that decoded WSPR transmitters near you and, restated to {power_w:g} W in {escape(mode)}, looked strong enough to hear you.")
     legend = (f'<p class="sub" style="margin:0 0 4px">{legend_swatches}</p>'
               f'<p class="sub">{meaning} <b>Solid bar:</b> two or more receiving stations. <b>Pale bar:</b> one receiving station, which is limited evidence, not a weak signal. '
-              '<b>Dot:</b> a contact with that continent. <b>Small tick:</b> any other contact. <b>Ring:</b> an RBN skimmer there spotted you. '
+              f'<b>Dot:</b> a contact in that {word}. <b>Small tick:</b> any other contact. <b>Ring:</b> an RBN skimmer there spotted you. '
               f'<b>Shading:</b> logged activity on the band, from the first to the last contact, split where there was a pause of more than {ACTIVITY_GAP_MIN} minutes; '
               'it is when contacts were logged, not when you were listening or calling.</p>'
               + (f'<p class="sub">{escape(tl["rbn_line"])}</p>' if tl.get("rbn_line") and not tl["rbn_line"].startswith("RBN skimmers") else ""))
@@ -443,7 +450,7 @@ def band_cards_html(tl, tz_name=None):
             for c in card["contacts"]:
                 x = pct(c["time"])
                 if c["cont"]:
-                    dots += f'<i class="bc-dot" style="--c:{CONTINENT_COLOURS[c["cont"]]};left:{x:.2f}%" title="{escape(c["call"])}, {pd.Timestamp(c["time"]):%H:%M} UTC, {names[c["cont"]]}"></i>'
+                    dots += f'<i class="bc-dot" style="--c:{colours[c["cont"]]};left:{x:.2f}%" title="{escape(c["call"])}, {pd.Timestamp(c["time"]):%H:%M} UTC, {names[c["cont"]]}"></i>'
                 else:
                     ticks += f'<i class="bc-tick" style="left:{x:.2f}%"></i>'
             rows = f'<div class="bc-row"><div class="bc-lab">Your contacts</div><div class="bc-trk" style="--n:{n}">{ticks}{dots}</div></div>'
@@ -459,15 +466,17 @@ def band_cards_html(tl, tz_name=None):
                         rings += (f'<i class="bc-ring" style="left:{(i + 0.5) / n * 100:.2f}%" title="RBN: {escape(", ".join(x["rbn"][:6]))} in {names[c]} spotted you, '
                                   f'{x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC"></i>')
                 empty = "" if bars or rings else '<span class="bc-none">no reports from there</span>'
-                rows += f'<div class="bc-row" style="--c:{CONTINENT_COLOURS[c]}"><div class="bc-lab"><i></i>{names[c]}</div><div class="bc-trk" style="--n:{n}">{bars}{rings}{empty}</div></div>'
+                rows += f'<div class="bc-row" style="--c:{colours[c]}"><div class="bc-lab"><i></i>{names[c]}</div><div class="bc-trk" style="--n:{n}">{bars}{rings}{empty}</div></div>'
             # a card with no distant-continent lane has no note inside the chart: the sentence under it already says so, in the same words
             if card["thin"]:
                 thin = "".join(f'<i class="bc-thin" style="left:{pct(s) + 0.35:.2f}%;width:{100 / n - 0.7:.2f}%" title="{s:%H:%M}\u2013{s + step:%H:%M} UTC: too little WSPR near you to say anything"></i>' for s in card["thin"])
                 rows += f'<div class="bc-row"><div class="bc-lab">Too little WSPR</div><div class="bc-trk" style="--n:{n}">{thin}</div></div>'
             ax = "".join(f'<span style="left:{pct(t):.2f}%">{t:%H:%M}</span>' for t in _hour_ticks(start, end, panel["bin_min"]))
             rows += f'<div class="bc-row"><div class="bc-lab">UTC</div><div class="bc-ax">{ax}</div></div>'
-            calls = ("<p class=\"sub\">Contacts there: " + ", ".join(f"{escape(call)} ({names[cont]})" for call, cont in card["worked"]) + ".</p>") if card["worked"] else ""
-            out.append(f'<div class="bc"><h5>{card["band"]}<small>{len(card["contacts"])} contact{"s" if len(card["contacts"]) != 1 else ""}</small></h5>'
+            shown_calls = card["worked"][:8]
+            more = f" and {len(card['worked']) - len(shown_calls)} more" if len(card["worked"]) > len(shown_calls) else ""
+            calls = ("<p class=\"sub\">Contacts there: " + ", ".join(f"{escape(call)} ({names[cont]})" for call, cont in shown_calls) + more + ".</p>") if card["worked"] else ""
+            out.append(f'<div class="bc"><h5>{card["band"]}<small>{(str(len(card["contacts"])) + " contact" + ("s" if len(card["contacts"]) != 1 else "")) if card.get("worked_band", True) else "not worked"}</small></h5>'
                        f'<div class="bc-body"><div class="bc-act">{acts}</div>{rows}</div><p>{escape(card["finding"])}</p>{calls}</div>')
     notes = []
     kinds = {"path": [], "none": [], "thin": []}
@@ -719,6 +728,22 @@ def summit_facts_html(card):
     return '<div class="lc"><div class="lc-card"><h4>About the summit</h4><ul class="lc-says">' + "".join(f"<li>{f}</li>" for f in facts) + "</ul></div></div>"
 
 
+def with_id(html, ident):
+    """`html` with an id on its first card or hero, so a link in the page can jump to it. Unchanged when it has neither."""
+    for start in ('<div class="lc-card">', '<div class="lc-hero">'):
+        if start in html:
+            return html.replace(start, start[:-1] + f' id="{ident}">', 1)
+    return html
+
+
+def glance_html(items):
+    """A row of short findings, each a link to the part of the page it comes from. `items` are (label, sentence, anchor) and a sentence may be empty
+    (that finding is left out). Empty when there are none."""
+    cards = "".join(f'<a href="#{escape(anchor)}"><span class="k">{escape(label)}</span><b>{escape(text)}</b><span class="go">Jump there ↓</span></a>'
+                    for label, text, anchor in items if text)
+    return f'<div class="lc"><div class="lc-glance">{cards}</div></div>' if cards else ""
+
+
 def pota_banner_html(card):
     """The headline of the park or summit card, large: the best day of the log against every activation listed, and where you stand among its
     activators. Empty when no day of the log has a rank."""
@@ -727,7 +752,7 @@ def pota_banner_html(card):
     if h is None:
         return ""
     label = f"{card.get('program', 'POTA')} {card.get('noun', 'park').upper()} "
-    return ('<div class="lc"><div class="lc-hero"><div class="k">' + escape(label + card["ref"]) + f'</div><h3>{escape(h["title"])}</h3><p>{escape(h["line"])}</p>'
+    return ('<div class="lc"><div class="lc-hero" id="sec-park"><div class="k">' + escape(label + card["ref"]) + f'</div><h3>{escape(h["title"])}</h3><p>{escape(h["line"])}</p>'
             + (f'<p class="s">{escape(h["standing"])}</p>' if h["standing"] else "") + "</div></div>")
 
 
@@ -755,6 +780,18 @@ def pota_html(card):
             f'An activation is one UTC day at the {noun}. Ranks are by QSOs, with the most first; a tie shares a rank.</p>' + tiles + says + table_a + table + '</div></div>')
 
 
+def signal_intro_html(offset_db):
+    """The opening of the signal comparison, so the section says what it compares and what it rests on before any number: the matching, the reference
+    correction (an experimental one) and what the bars are not."""
+    return ('<div class="lc"><div class="lc-card" id="sec-signal"><h4>Signal comparison: RBN skimmers against WSPR stations near you</h4>'
+            '<p class="sub">Skimmers that spotted you and also decode WSPR are matched with the WSPR transmitters near you that the same station decoded in the same stretch of '
+            'your log, restated to your power. Each bar is the middle result (the line through it is where the middle half of the matches fell) of how far the RBN reports sat '
+            'above (blue) or below (amber) what that estimate gave.</p>'
+            f'<p class="sub"><b>The reference is experimental.</b> Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {offset_db:.0f} dB higher on '
+            'RBN than on WSPR (found from two checks of stations whose power is known), and that is taken off. A bar is a hint about how you were heard, '
+            'not a measurement of your antenna.</p></div></div>')
+
+
 def band_table_html(bands, min_contacts=3):
     """One row per band: contacts, skimmers, and strength against a typical station. A band with fewer than `min_contacts` contacts is left
     out of the rows and named underneath, because one contact says nothing."""
@@ -769,9 +806,14 @@ def band_table_html(bands, min_contacts=3):
         else:
             pos = (np.clip(r.stronger_db, -15, 20) + 15) / 35 * 100
             left, width = (zero, pos - zero) if r.stronger_db >= 0 else (pos, zero - pos)
-            strength = (f'<div class="lc-str" title="{r.matches} skimmers that spotted you were also heard by WSPR stations near you">'
+            q1, q3 = getattr(r, "q1", float("nan")), getattr(r, "q3", float("nan"))
+            spread = ""
+            if not (np.isnan(q1) or np.isnan(q3)):
+                a, b = (np.clip(q1, -15, 20) + 15) / 35 * 100, (np.clip(q3, -15, 20) + 15) / 35 * 100
+                spread = f'<u style="left:{a:.1f}%;width:{max(b - a, 0.8):.1f}%" title="The middle half of the matches ran from {q1:+.1f} to {q3:+.1f} dB"></u>'
+            strength = (f'<div class="lc-str" title="{r.matches} match{"es" if r.matches != 1 else ""}: {getattr(r, "match_rx", r.matches)} different receiving station{"s" if getattr(r, "match_rx", r.matches) != 1 else ""} that spotted you and also decoded WSPR near you (one heard in two stretches of the log is a match in each)">'
                         f'<div class="lc-sbar"><em class="z" style="left:{zero:.1f}%"></em>'
-                        f'<i class="{"pos" if r.stronger_db >= 0 else "neg"}{" thin" if r.thin else ""}" style="left:{left:.1f}%;width:{width:.1f}%"></i></div>'
+                        f'<i class="{"pos" if r.stronger_db >= 0 else "neg"}{" thin" if r.thin else ""}" style="left:{left:.1f}%;width:{width:.1f}%"></i>{spread}</div>'
                         f'<b>{r.stronger_db:+.1f} dB</b></div>')
         report = (f'<span title="The average S in the reports they gave you on this band">report S{r.report:.1f}</span>'
                   if not np.isnan(r.report) else "")

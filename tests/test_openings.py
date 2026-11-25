@@ -448,7 +448,8 @@ class TheBandTimeline(Session):
     def test_a_skimmer_in_a_continent_you_worked_is_added_to_the_finding(self):
         spots = pd.DataFrame({"spotter": ["JA1SKM"], "band": ["20m"], "snr": [9.0], "time": [T("2026-11-18 21:06")], "mode": ["CQ"], "tx_mode": ["CW"]})
         tl, _ = self.timeline("good", spots=spots, log=log_of(rec("JA1ZZZ", "2105", gridsquare="PM95")))
-        self.assertEqual(self.card(tl)["finding"], "Worked Asia. No corresponding nearby WSPR reports in the selected window. RBN skimmers in Asia also spotted you.")
+        self.assertEqual(self.card(tl)["finding"], "Worked Asia. No corresponding nearby WSPR reports in the selected window. RBN skimmers in Asia also spotted you. "
+                         "Europe paths appeared during your logged activity on 20m; you logged no contact there.")                        # a path to a continent you did not work is still said
         none, _ = self.timeline("good", log=log_of(rec("JA1ZZZ", "2105", gridsquare="PM95")))
         self.assertNotIn("RBN", self.card(none)["finding"])                                         # no spot, no sentence
 
@@ -459,7 +460,8 @@ class TheBandTimeline(Session):
 
     def test_the_finding_for_a_contact_with_no_path_is_short_and_plain(self):
         tl, _ = self.timeline("good", log=log_of(rec("JA1ZZZ", "2105", gridsquare="PM95")))
-        self.assertEqual(self.card(tl)["finding"], "Worked Asia. No corresponding nearby WSPR reports in the selected window.")
+        self.assertEqual(self.card(tl)["finding"], "Worked Asia. No corresponding nearby WSPR reports in the selected window. "
+                                                   "Europe paths appeared during your logged activity on 20m; you logged no contact there.")
         self.assertEqual(self.card(tl)["worked"], [("JA1ZZZ", "AS")])
 
     def test_the_finding_for_a_path_while_you_were_on_another_band_says_what_the_log_shows(self):
@@ -480,6 +482,44 @@ class TheBandTimeline(Session):
         none = wspr[~wspr["rx"].str.startswith(("DL", "JA"))]
         tl, _ = self.timeline(wspr=none, log=log_of(rec("W1AAA", "2010", gridsquare="FN31"), rec("W1BBB", "2105", gridsquare="FN31")))
         self.assertEqual(self.card(tl)["finding"], "No distant-continent paths in the nearby WSPR.")
+
+    def japan(self, contact, path_times=("2026-11-18 20:10", "2026-11-18 20:40", "2026-11-18 21:10"), others=("2010",)):
+        """Japan is strong in the WSPR near you only at `path_times` (the US stations near you are heard at all three times, so there is coverage);
+        you work a US station at each of `others` and Japan at `contact`."""
+        wspr = self.wspr(japan_strong=True)
+        wspr = wspr[~wspr["rx"].str.startswith("JA") | wspr["time"].isin([T(t) for t in path_times])]
+        log = log_of(*[rec(f"W1A{i}", hhmm, gridsquare="FN31") for i, hhmm in enumerate(others)], rec("JA1ZZZ", contact, gridsquare="PM95"))
+        return self.timeline("good", wspr=wspr, log=log)[0]
+
+    def test_a_contact_hours_after_the_path_is_not_described_as_supported_by_it(self):
+        text = self.card(self.japan("2205", path_times=("2026-11-18 20:10",), others=("2010", "2150")))["finding"]
+        self.assertIn("Worked Asia at 22:05; nearby WSPR showed a path there earlier (", text)
+        self.assertNotIn("at the time", text)
+        self.assertNotIn("also showed a path", text)
+
+    def test_a_contact_in_the_hour_of_the_path_is_said_to_be_at_the_time(self):
+        text = self.card(self.japan("2105"))["finding"]
+        self.assertTrue(text.startswith("Worked Asia; nearby WSPR showed a path there at the time."), text)
+
+    def test_a_path_that_came_after_the_contact_is_said_to_be_later(self):
+        text = self.card(self.japan("2005", path_times=("2026-11-18 21:10",), others=("2150", "2210")))["finding"]
+        self.assertIn("Worked Asia at 20:05; nearby WSPR showed a path there later (", text)
+
+    def test_a_contact_nearer_than_the_distance_rule_is_not_a_distant_contact_in_the_cards(self):
+        log = log_of(rec("HK3AAA", "2010", gridsquare="FJ24"), rec("W1AAA", "2040", gridsquare="FN31"))             # Bogota is in South America but about 3,900 km away
+        km = lc.contact_places(log, HOME)["c_km"].iloc[0]
+        self.assertLess(km, DX)
+        near, _ = self.timeline(log=log)
+        self.assertEqual(self.card(near)["worked"], [])                                                          # not worked, by the rule the WSPR and the skimmers follow
+        self.assertEqual([c["cont"] for c in self.card(near)["contacts"]], ["", ""])
+        anywhere, _ = self.timeline(log=log, min_km=0.0)
+        self.assertEqual([cont for _, cont in self.card(anywhere)["worked"]], ["SA"])
+
+    def test_each_destination_keeps_its_own_times(self):
+        text = lo.band_finding("20m", {"EU": [T("2026-11-18 20:00")], "AF": [T("2026-11-18 21:30")]}, {T("2026-11-18 23:00")}, {}, [], 5, T("2026-11-18 23:00"), pd.Timedelta(minutes=30))
+        self.assertIn("Europe paths appeared 20:00–20:30", text)
+        self.assertIn("Africa paths appeared 21:30–22:00", text)
+        self.assertNotIn("Europe and Africa paths appeared", text)                                           # not one pooled set of times for both
 
     def test_a_card_with_no_distant_path_says_so_once_under_the_chart_not_inside_it(self):
         wspr = self.wspr()
@@ -508,8 +548,52 @@ class TheBandTimeline(Session):
         wspr = self.wspr().assign(band="15m")
         both = pd.concat([self.wspr(), wspr], ignore_index=True)
         tl, _ = self.timeline(wspr=both)
-        self.assertEqual(tl["idle"], [("15m", "path")])
-        self.assertIn("15m: you logged no contact; nearby WSPR showed a path to a distant continent.", lh.band_cards_html(tl))
+        self.assertEqual(tl["idle"], [])                                                       # a band with a path to show gets a card of its own, not a footnote
+        card = self.card(tl, "15m")
+        self.assertFalse(card["worked_band"])
+        self.assertEqual(card["contacts"], [])
+        self.assertIn("you logged no contact on 15m.", card["finding"])
+        self.assertNotIn("Your log has 0", card["finding"])
+        self.assertEqual([c["band"] for c in tl["panels"][0]["cards"]], ["20m", "15m"])        # the bands you worked first
+        html = lh.band_cards_html(tl)
+        self.assertIn("<small>not worked</small>", html)
+
+    def test_a_band_you_did_not_work_and_with_no_path_stays_in_the_footnote(self):
+        weak = self.wspr().assign(band="15m", snr=-30.0)
+        tl, _ = self.timeline(wspr=pd.concat([self.wspr(), weak], ignore_index=True))
+        self.assertEqual([c["band"] for c in tl["panels"][0]["cards"]], ["20m"])
+        self.assertEqual(tl["idle"], [("15m", "none")])
+        self.assertIn("15m: you logged no contact; nearby WSPR showed no path to a distant continent.", lh.band_cards_html(tl))
+
+    def test_your_own_continent_is_never_a_destination_but_the_others_are(self):
+        self.assertEqual(lo.lane_set("dx", "NA")[0], ("EU", "AF", "AS", "OC", "SA"))
+        eu = lo.lane_set("dx", "EU")[0]
+        self.assertNotIn("EU", eu)
+        self.assertIn("NA", eu)                                                                # a station in Europe has North America to look at
+        self.assertEqual(lo.lane_set("regional")[0], lf.SECTORS)
+
+    def test_the_regional_picture_has_a_lane_for_each_direction_and_says_so(self):
+        log = log_of(rec("W1AAA", "2010", gridsquare="FN31"), rec("W5BBB", "2040", gridsquare="EM10"))     # one far to the northeast of Texas, one near
+        wspr = self.wspr()
+        east = wspr[wspr["rx"].str.startswith("N")]
+        tl = lo.band_timeline(self.grid(log, east), log, lc.contact_places(log, HOME), None, {}, HOME, DX, "heard", True, None, "regional")
+        self.assertEqual(tl["reach"], "regional")
+        self.assertEqual(tl["lane_order"], list(lf.SECTORS))
+        self.assertEqual(tl["lane_word"], "direction")
+        card = tl["panels"][0]["cards"][0]
+        self.assertTrue(set(card["lanes"]) <= set(lf.SECTORS))
+        self.assertTrue(card["worked"] and card["worked"][0][1] in lf.SECTORS)                 # a contact is placed in a direction, not a continent
+        self.assertNotIn("distant continent", tl["headline"])
+        self.assertIn("toward the northeast", tl["headline"])
+        html = lh.band_cards_html(tl)
+        self.assertIn("in that direction", html)
+
+    def test_a_regional_contact_is_a_contact_between_500_km_and_the_dx_distance(self):
+        log = log_of(rec("W5NEAR", "2010", gridsquare="EM00"), rec("W1FAR", "2020", gridsquare="FN31"), rec("DL1AAA", "2030", gridsquare="JN58"))
+        places = lc.contact_places(log, HOME)
+        tl = lo.band_timeline(self.grid(log, self.wspr()), log, places, None, {}, HOME, DX, "heard", True, None, "regional")
+        dots = [c for c in tl["panels"][0]["cards"][0]["contacts"] if c["cont"]]
+        self.assertEqual([c["call"] for c in dots], ["W1FAR"])                                 # not the one next door, not Germany (that is DX)
 
     def test_a_log_over_several_days_has_a_panel_and_a_date_for_each(self):
         log = log_of(rec("DL1AAA", "2010", gridsquare="JN58"), rec("DL1BBB", "2010", gridsquare="JN58").replace("20261118", "20261120"))
@@ -608,9 +692,9 @@ class TheCardHeadline(Session):
                      rec("W1CCC", "2105", band="20m", gridsquare="FN31"), rec("JA1ZZZ", "2106", band="20m", gridsquare="PM95"))
         wspr = pd.concat([self.wspr(), self.wspr().assign(band="15m")], ignore_index=True)
         tl, _ = self.timeline("heard", log=log, wspr=wspr)
-        self.assertEqual(tl["headline"], "You worked 1 station in Asia. WSPR near you showed a path to a distant continent on 15m at times when your log has no contact on that band.")
+        self.assertEqual(tl["headline"], "You worked 1 station in Asia. WSPR near you showed a path to a distant continent on 15m and 20m at times when your log has no contact on that band.")
         self.assertTrue(self.card(tl, "15m")["outside"])
-        self.assertFalse(self.card(tl, "20m")["outside"])
+        self.assertTrue(self.card(tl, "20m")["outside"])                                                   # Europe paths on 20m, a continent you did not work there
 
     def test_the_headline_for_a_session_with_nothing_distant_is_plain(self):
         wspr = self.wspr()
@@ -623,6 +707,74 @@ class TheCardHeadline(Session):
         html = lh.band_cards_html(tl)
         self.assertLess(html.index(tl["headline"][:30]), html.index('class="bc"'))
         self.assertEqual(lo.unsupported_claims(tl["headline"]), [])
+
+
+class TheSignalComparison(unittest.TestCase):
+    """The comparison with RBN as a section of its own: what it compares, how wide the results ran, and which receiving stations are behind it."""
+
+    def matches(self):
+        rows = [("20m", f"DL{i}SKM", -10.0 + i, -20.0 + i, 10.0 + (i % 3)) for i in range(1, 7)] + [("20m", "DL1SKM", -9.0, -19.0, 11.0), ("15m", "JA1SKM", -12.0, -20.0, 8.0)]
+        return pd.DataFrame(rows, columns=["band", "rx", "adj", "obs", "diff"])
+
+    def test_the_table_has_a_row_for_each_band_and_station_with_the_matches_counted(self):
+        table = lc.match_table(self.matches())
+        self.assertEqual(list(table.columns), lc.MATCH_COLUMNS)
+        self.assertEqual(table["Band"].tolist()[0], "15m")                                       # highest band first (15m is above 20m)
+        dl1 = table[table["Receiving station"] == "DL1SKM"].iloc[0]
+        self.assertEqual(dl1["Matches"], 2)                                                      # one station heard in two stretches is two matches, one row
+        self.assertEqual(len(table), 7)
+        self.assertEqual(len(lc.match_table(None)), 0)
+
+    def test_the_table_takes_off_the_same_reference_the_bars_do(self):
+        match = pd.DataFrame([("20m", "DL1SKM", -10.0, -20.0, 15.0)], columns=["band", "rx", "adj", "obs", "diff"])
+        row = lc.match_table(match).iloc[0]
+        self.assertEqual(row["Above (+) or below (-) the estimate (dB)"], 15.0 - lc.TYPICAL_OFFSET_DB)
+
+    def test_the_section_says_what_it_compares_and_that_the_reference_is_experimental(self):
+        html = lh.signal_intro_html(10.0)
+        self.assertIn('id="sec-signal"', html)
+        self.assertIn("Signal comparison: RBN skimmers against WSPR stations near you", html)
+        self.assertIn("experimental", html)
+        self.assertIn("about 10 dB higher", html)
+        self.assertEqual(lo.unsupported_claims(html), [])
+
+    def test_a_band_with_enough_matches_shows_how_far_the_middle_half_ran(self):
+        row = {"band": "20m", "contacts": 5, "other": 0, "skimmers": 4, "report": 5.0, "page": 0.5, "spotted": 0.5, "listening": 3, "stronger_db": 2.0, "matches": 9,
+               "match_rx": 6, "q1": -1.0, "q3": 5.0, "thin": False, "note": "", "tone": "", "no_picture": False}
+        html = lh.band_table_html(pd.DataFrame([row]))
+        self.assertIn("The middle half of the matches ran from -1.0 to +5.0 dB", html)
+        self.assertIn("6 different receiving stations", html)
+        row.update(stronger_db=float("nan"), q1=float("nan"), q3=float("nan"))
+        self.assertNotIn("middle half", lh.band_table_html(pd.DataFrame([row])))
+
+
+class TheGlanceRow(unittest.TestCase):
+    """The row of short findings under the tiles, each a link to its section."""
+
+    def test_an_id_goes_on_the_first_card_or_hero_and_nothing_else_changes(self):
+        self.assertEqual(lh.with_id('<div class="lc"><div class="lc-card"><h4>x</h4></div></div>', "sec-a"), '<div class="lc"><div class="lc-card" id="sec-a"><h4>x</h4></div></div>')
+        self.assertEqual(lh.with_id('<div class="lc"><div class="lc-hero"><h3>x</h3></div></div>', "sec-b"), '<div class="lc"><div class="lc-hero" id="sec-b"><h3>x</h3></div></div>')
+        self.assertEqual(lh.with_id("<p>no card</p>", "sec-c"), "<p>no card</p>")
+
+    def test_each_finding_is_a_link_to_its_section_and_an_empty_one_is_left_out(self):
+        html = lh.glance_html([("Park", "46th of 468.", "sec-park"), ("RBN", "", "sec-session"), ("Openings", "A <path> showed.", "sec-openings")])
+        self.assertIn('href="#sec-park"', html)
+        self.assertNotIn("sec-session", html)                                                  # no sentence yet, so no card
+        self.assertIn("A &lt;path&gt; showed.", html)                                         # text is escaped
+        self.assertEqual(lh.glance_html([("RBN", "", "sec-session")]), "")
+
+    def test_the_page_builds_the_row_from_what_is_known_so_far(self):
+        from views.log_view import _glance
+        log = log_of(rec("DL1AAA", "2010", band="20m"), rec("DL1AAA", "2020", band="15m"), rec("W1AAA", "2030", band="20m"))
+        rep = lc.repeat_stations(log)
+        early = _glance([], rep, None, {}, HOME, "", None)
+        self.assertIn("sec-hunters", early)
+        self.assertNotIn("sec-session", early)                                                 # RBN not read yet
+        spots = pd.DataFrame({"spotter": ["DL1SKM", "JA1SKM"], "band": ["20m", "15m"], "snr": [12.0, 8.0], "time": [T("2026-11-18 20:12"), T("2026-11-18 20:22")]})
+        later = _glance([], rep, spots, {"DL1SKM": (50.0, 10.0), "JA1SKM": (36.0, 140.0)}, HOME, "Looking at Europe: WSPR showed a path in 2 of 4 boxes.", None)
+        self.assertIn("2 RBN skimmers spotted you, on 20m, 15m.", later.replace("15m, 20m", "20m, 15m"))
+        self.assertIn("The farthest was JA1SKM", later)
+        self.assertIn("sec-openings", later)
 
 
 class TheShareCardMap(unittest.TestCase):
