@@ -670,8 +670,8 @@ def log_page():
         rate = hl.rate_chart(log, BAND_COLORS)
         if rate is not None:
             st.markdown("#### How fast the contacts came in")
-            st.caption("Each bar is a quarter hour, scaled to contacts an hour and stacked by band; the white line is the contacts an hour over the hour around it, counting only the time you were on the air. A pause of more than "
-                       "30 minutes breaks the line. A triangle marks the first contact on each band. Hover for the details.")
+            st.caption("Above, each bar is ten minutes and is as tall as the contacts you made in them, stacked by band; a triangle marks the first contact on each band. Below, the line is "
+                       "the contacts an hour over the hour around each bar, counting only the time you were on the air; a pause of more than 30 minutes breaks it. Hover for the details.")
             st.altair_chart(rate, width="stretch")
             line = hl.rate_line(hl.best_stretch(log))
             if line:

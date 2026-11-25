@@ -92,22 +92,28 @@ class RateAndLink(unittest.TestCase):
         return log_of(*[rec(f"W1A{i}", f"20{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 55, 5))],
                       *[rec(f"W2B{i}", f"22{m:02d}", band="15m", gridsquare="FN31") for i, m in enumerate((20, 24, 28, 32))])
 
-    def test_bars_stack_by_band_and_scale_to_an_hour(self):
+    def test_a_bar_is_ten_minutes_and_its_height_is_the_count_of_contacts(self):
         bars, line = hl.rate_table(self.log())
         first = bars[bars["slot"] == T("2026-11-18 20:00")]
         self.assertEqual(first["band"].tolist(), ["20m"])
-        self.assertEqual(int(first["contacts"].iloc[0]), 3)                                     # 20:00, 20:05 and 20:10
-        self.assertEqual(first["rate"].iloc[0], 12.0)                                           # 3 contacts in 15 minutes is 12 an hour
-        self.assertEqual((first["end"].iloc[0] - first["slot"].iloc[0]), pd.Timedelta(minutes=15))
+        self.assertEqual(int(first["contacts"].iloc[0]), 2)                                     # 20:00 and 20:05
+        self.assertEqual(first["rate"].iloc[0], 12.0)                                           # 2 contacts in 10 minutes is a pace of 12 an hour
+        self.assertEqual(first["pace"].iloc[0], 12.0)
+        self.assertEqual((first["end"].iloc[0] - first["slot"].iloc[0]), pd.Timedelta(minutes=10))
         self.assertEqual(set(bars["band"]), {"20m", "15m"})
+
+    def test_the_pace_of_a_bin_adds_up_every_band_in_it(self):
+        mixed = log_of(rec("W1AAA", "2000", band="20m"), rec("W1BBB", "2002", band="15m"), rec("W1CCC", "2004", band="15m"))
+        bars, _ = hl.rate_table(mixed)
+        self.assertEqual(set(bars["pace"]), {18.0})                                             # three contacts in ten minutes, whichever band each was on
 
     def test_a_pause_breaks_the_line_and_is_not_a_dip_to_zero(self):
         bars, line = hl.rate_table(self.log())
-        self.assertEqual(len(line), 11)                                                         # every quarter hour from 20:00 to 22:30
+        self.assertEqual(len(line), 16)                                                         # every ten minutes from 20:00 to 22:30
         inside = line[(line["mid"] > T("2026-11-18 21:00")) & (line["mid"] < T("2026-11-18 22:00"))]
         self.assertTrue(inside["rolling"].isna().all())                                         # inside the 90 minute pause: no value at all
-        busy = line[line["slot"] == T("2026-11-18 20:15")].iloc[0]
-        self.assertAlmostEqual(busy["rolling"], 13.2)                                           # 11 contacts in the 50 minutes on the air within the hour around 20:22
+        busy = line[line["slot"] == T("2026-11-18 20:20")].iloc[0]
+        self.assertAlmostEqual(busy["rolling"], 13.2)                                           # 11 contacts (20:00 to 20:50) in the 50 minutes on the air within the hour around 20:25
         self.assertEqual(len(hl.rate_table(None)[0]), 0)
 
     def test_the_busiest_stretch_is_a_pace_not_a_rate(self):
@@ -125,13 +131,20 @@ class RateAndLink(unittest.TestCase):
         self.assertEqual(marks["band"].tolist(), ["20m", "15m"])
         self.assertEqual(marks["call"].tolist(), ["W1A0", "W2B0"])
 
-    def test_the_chart_is_layered_and_carries_the_hover_text(self):
+    def test_the_bars_and_the_line_are_two_charts_on_one_time_axis_each_named_for_what_it_shows(self):
         chart = hl.rate_chart(self.log(), {"20m": "#800080", "15m": "#444444"})
         spec = chart.to_dict()
-        self.assertEqual(len(spec["layer"]), 3)                                                 # bars, the hourly line, the band marks
+        self.assertEqual(len(spec["vconcat"]), 2)                                               # the bars above, the line below
+        self.assertEqual(len(spec["vconcat"][0]["layer"]), 2)                                   # the bars and the band marks
         text = str(spec)
-        for part in ("Contacts an hour", "Contacts in these 15 minutes", "Contacts an hour, around this time", "#800080"):
+        for part in ("Contacts in each 10 minutes, by band", "Contacts an hour, over the hour around (time on the air only)", "Contacts in 10 minutes",
+                     "Contacts on this band", "All bands, at that pace", "#800080"):
             self.assertIn(part, text)
+        self.assertNotIn("'stroke': 'white'", text)                                             # no white outline on the bars
+        self.assertEqual(spec["resolve"]["scale"]["x"], "shared")
+        domain = spec["vconcat"][0]["layer"][0]["encoding"]["y"]["scale"]["domain"]
+        tallest = int(hl.rate_table(self.log())[0].groupby("slot")["contacts"].sum().max())
+        self.assertGreaterEqual(domain[1], tallest)                                             # the axis reaches the tallest stack, so no bar is cut off
         self.assertIsNone(hl.rate_chart(self.log().iloc[0:0], {}))
 
     def test_the_link_opens_my_spots_on_the_day_and_the_hours_of_the_session(self):
