@@ -672,14 +672,17 @@ def destination_views(tl, max_lines=3):
                     text = _rbn_only_line(card["band"], names[c])
                 outside = len([t for t in bins if t not in own])
                 at_time = bool(mine and bins and _when(bins, [pd.Timestamp(k["time"]) for k in mine], step).startswith("at the time"))
-                lines.append((0 if at_time else 1 if mine else 2, -outside, -len(bins), lc._rank(card["band"]) * -1, card["band"], text))
+                cb = pd.Timestamp(mine[0]["time"]).floor(floor) if mine else None          # the window the details should open on: where a path was nearest your contact, else the first path
+                focus = (min(bins, key=lambda t: abs(pd.Timestamp(t) - cb)) if bins else cb) if cb is not None else (bins[0] if bins else rbn_bins[0])
+                lines.append((0 if at_time else 1 if mine else 2, -outside, -len(bins), lc._rank(card["band"]) * -1, card["band"], text, focus))
                 v = views[c]
                 v["contacts"] += len(mine)
                 v["paths"] += 1 if bins else 0
                 v["rbn"] = v["rbn"] or bool(rbn_bins)
             lines.sort()
             views[c]["panels"].append({"panel": panel["panel"], "slots": slots, "bin_min": panel["bin_min"], "strip": runs, "lanes": lanes,
-                                       "lines": [(b, t) for *_, b, t in lines[:max_lines]]})
+                                       "lines": [(x[4], x[5]) for x in lines[:max_lines]],
+                                       "focus": (lines[0][4], pd.Timestamp(lines[0][6])) if lines else None})
     shown = [v for v in views.values() if v["contacts"] or v["paths"] or v["rbn"]]
     shown.sort(key=lambda v: (-v["contacts"], -v["paths"], not v["rbn"]))
     empty = [v["name"] for c in codes for v in [views[c]] if not (v["contacts"] or v["paths"] or v["rbn"])]

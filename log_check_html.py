@@ -46,7 +46,9 @@ CSS = """<style>
 .lc-dumb .pg{border:3px solid var(--a);background:Canvas}.lc-dumb .ac{background:var(--t)}
 .lc-dumb .cap{position:absolute;left:0;top:23px;font-size:12px;opacity:.78;white-space:nowrap}.lc-dumb .cap s{text-decoration:none;color:var(--a);font-weight:700}.lc-dumb .cap strong{color:var(--t)}
 .lc-dumb.none{font-size:12.5px;opacity:.6;line-height:38px}
-.lc-str{display:grid;grid-template-columns:1fr 62px;align-items:center;gap:10px}
+.lc-str{display:grid;grid-template-columns:1fr 84px;align-items:center;gap:10px}
+.lc-sv{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2}.lc-sv small{font-size:11px;opacity:.65;white-space:nowrap;font-weight:400}
+.lc-axs{position:relative;height:14px;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0}.lc-axs span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
 .lc-sbar{position:relative;height:10px;background:var(--lane);border-radius:9px}.lc-sbar i{position:absolute;top:0;height:100%;border-radius:9px}
 .lc-sbar .pos{background:var(--b)}.lc-sbar .neg{background:var(--a)}
 .lc-sbar .thin{opacity:.6;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px)}
@@ -138,7 +140,10 @@ CSS = """<style>
 .dv-seg.none{background:repeating-linear-gradient(45deg,transparent 0 6px,rgba(128,128,128,.14) 6px 12px);color:inherit;opacity:.6;font-weight:500;text-shadow:none}
 .dv-track{position:relative;height:28px;background:var(--lane);border-radius:7px}
 .dv-tk{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
-.dv-bar{position:absolute;top:4px;height:20px;border-radius:5px}.dv-bar.pale{opacity:.4}
+.dv-bar{position:absolute;top:4px;height:20px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(128,128,128,.6)}.dv-bar.pale{opacity:.4}
+.dv-tri{position:absolute;top:2px;width:0;height:0;transform:translateX(-50%);z-index:2;cursor:default}
+.dv-tri::before{content:"\\25b3";position:absolute;left:-10px;top:-1px;font-size:20px;line-height:24px;font-weight:700;color:#fff;text-shadow:0 0 2px #000,0 0 3px #000}
+.dv-sel{position:absolute;top:1px;bottom:1px;border:2px dashed #fff;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.6);pointer-events:none;z-index:2}
 .dv-ring{position:absolute;top:6px;width:14px;height:14px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .dv-dot{position:absolute;top:5px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid;z-index:3}
 .dv-call{position:absolute;top:-3px;font-size:11.5px;font-weight:700;background:rgba(20,24,32,.88);color:#fff;padding:1px 5px;border-radius:5px;z-index:4;white-space:nowrap}
@@ -146,7 +151,8 @@ CSS = """<style>
 .dv-axis{position:relative;height:20px;margin-left:92px;font-size:12px;opacity:.7}.dv-axis span{position:absolute;transform:translateX(-50%);top:4px}
 .dv-legend{display:flex;gap:22px;flex-wrap:wrap;font-size:13px;opacity:.8;margin-top:10px;align-items:center}.dv-legend i{display:inline-block;vertical-align:middle;margin-right:7px}
 .dv-sw{width:26px;height:12px;border-radius:4px;background:linear-gradient(90deg,#8a8f98 0 60%,#4a4e55 60%)}.dv-ld{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #8a8f98}
-.dv-lr{width:14px;height:14px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.5);background:#555}
+.dv-lt{display:inline-block;width:16px;height:16px;position:relative;vertical-align:middle;margin-right:7px}
+.dv-lt::before{content:"\\25b3";position:absolute;left:-1px;top:-4px;font-size:20px;line-height:24px;font-weight:700;color:#fff;text-shadow:0 0 2px #000,0 0 3px #000}
 .lc-sec{margin:30px 0 6px;padding-top:14px;border-top:1px solid var(--line)}.lc-sec h3{margin:0;font-size:23px;line-height:1.25}.lc-sec p{margin:3px 0 0;font-size:14px;opacity:.7}
 .lc-glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:0 0 14px}
 .lc-glance a{display:block;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--soft);text-decoration:none;color:inherit}
@@ -810,11 +816,12 @@ def highlights_html(first, far, hours, lines):
     return (f'<div class="lc"><div class="lc-card" id="sec-highlights"><h4>Session highlights</h4>{says}<div class="lc-hl">{a}{b}{c}</div></div></div>')
 
 
-def destination_html(view, tl, colours=None, empty=(), limit_note=""):
-    """One destination as a picture that answers 'when was it reachable, and where were you?': the plain idea in a sentence, the few lines worth a look and, for each
-    stretch of the log, a strip of the band you were on above a lane for each band that has something to show: a bar where the nearby WSPR showed a path to the
-    destination (pale for one receiving station), a circle for a contact with it, a ring where an RBN skimmer there spotted you. `view` is one of
-    log_openings.destination_views, `tl` the timeline it came from. Under it, what has nothing to show and why."""
+def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=None):
+    """One destination as a picture of the reported paths and your contacts: the plain idea in a sentence, the few lines worth a look and, for each stretch of the log, a
+    strip of your logged activity above a lane for each band that has something to show: a bar where the nearby WSPR showed a path to the destination (pale for one
+    receiving station), a filled circle for a contact with it, a hollow triangle where an RBN skimmer there spotted you. `view` is one of log_openings.destination_views,
+    `tl` the timeline it came from; `selected` is the (band, time) the details below the chart describe, drawn as a dashed outline. Under it, what has nothing to
+    show and why."""
     from log_openings import _join
     if colours is None:
         from ui_common import BAND_COLORS as colours
@@ -853,29 +860,37 @@ def destination_html(view, tl, colours=None, empty=(), limit_note=""):
                     marks += (f'<i class="dv-bar{"" if x["n"] >= 2 else " pale"}" style="left:{left:.2f}%;width:calc({width:.2f}% - 2px);background:{colour}" '
                               f'title="{band}, {x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC: {what}"></i>')
                 if x["rbn"]:
-                    marks += f'<i class="dv-ring" style="left:calc({left + width / 2:.2f}% - 8px)" title="{band}, {x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC: RBN skimmers in {escape(name)} spotted you"></i>'
+                    marks += f'<i class="dv-tri" style="left:{left + width / 2:.2f}%" title="{band}, {x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC: RBN skimmers in {escape(name)} spotted you"></i>'
+            last_label = -100.0
             for k in lane["contacts"]:
-                side = "r" if pct(k["time"]) < 78 else "l"
-                marks += (f'<i class="dv-dot" style="left:calc({pct(k["time"]):.2f}% - 8px);border-color:{colour}" title="{escape(k["call"])}, {pd.Timestamp(k["time"]):%H:%M} UTC, {band}"></i>'
-                          f'<span class="dv-call {side}" style="left:{pct(k["time"]):.2f}%">{escape(k["call"])} {pd.Timestamp(k["time"]):%H:%M}</span>')
+                at = pct(k["time"])
+                side = "r" if at < 78 else "l"
+                marks += f'<i class="dv-dot" style="left:calc({at:.2f}% - 8px);border-color:{colour}" title="{escape(k["call"])}, {pd.Timestamp(k["time"]):%H:%M} UTC, {band}"></i>'
+                if len(lane["contacts"]) <= 3 and at - last_label > 9:                 # a crowded lane has no labels (the callsign is on hover), so none overlap
+                    marks += f'<span class="dv-call {side}" style="left:{at:.2f}%">{escape(k["call"])} {pd.Timestamp(k["time"]):%H:%M}</span>'
+                    last_label = at
+            if selected is not None and selected[0] == band and start <= pd.Timestamp(selected[1]) < end:
+                marks += f'<i class="dv-sel" style="left:{pct(selected[1]):.2f}%;width:calc({100 / len(slots):.2f}% - 2px)" title="The window the details below describe"></i>'
             note = "" if lane["worked_band"] else f' <span class="dv-lab" style="font-size:11px;font-weight:400">not worked</span>'
             lanes += f'<div class="dv-row"><div class="dv-name" style="color:{colour}">{band}{note}</div><div class="dv-track">{ticks}{marks}</div></div>'
         head = f'<p class="sub" style="margin:10px 0 4px"><b>{pd.Timestamp(slots[0]):%a %d %b %Y}</b> (UTC)</p>' if many else ""
-        out.append(head + f'<div class="dv-row top"><div class="dv-lab">You were on</div><div class="dv-strip">{strip}</div></div>{lanes}<div class="dv-axis">{axis}</div>')
+        out.append(head + f'<div class="dv-row top"><div class="dv-lab" title="The band with the most logged contacts in each quarter hour. A gap means no contact was logged, not that you were off the air.">Logged activity</div><div class="dv-strip">{strip}</div></div>{lanes}<div class="dv-axis">{axis}</div>')
     nothing = ""
     if empty:
         nothing += f"Not shown: {_join(empty)} (no nearby WSPR path, no RBN skimmer and no contact there). "
     if limit_note:
         nothing += limit_note + " "
     legend = ('<div class="dv-legend"><span><i class="dv-sw"></i>nearby WSPR showed a path to ' + escape(name) + ' (pale: one receiving station)</span>'
-              f'<span><i class="dv-ld"></i>your contact with {escape(name)}</span><span><i class="dv-lr"></i>an RBN skimmer in {escape(name)} spotted you</span></div>')
+              f'<span><i class="dv-ld"></i>your contact with {escape(name)}</span><span><i class="dv-lt"></i>an RBN skimmer in {escape(name)} spotted you</span></div>')
     estimate = ("what WSPR showed" if observed else f"an estimate for {power_w:g} W in {escape(mode)}")
     idea = (f'<p class="sub" style="margin:0 0 6px">Nearby WSPR stations act as test signals from your area. When receivers in {escape(name)} decode them, that shows a path from where you were '
             f'(read as {estimate}). A bar says a path was reported. It does not say whether a contact was possible, or what you were doing at the time.</p>')
     rbn = f'<p class="sub">{escape(tl["rbn_line"])}</p>' if tl.get("rbn_line") and not str(tl["rbn_line"]).startswith("RBN skimmers") else ""
-    return (f'<div class="lc"><div class="lc-card" id="sec-openings"><h4>{escape(name)}: when was it reachable, and where were you?</h4>{idea}'
+    return (f'<div class="lc"><div class="lc-card" id="sec-openings"><h4>{escape(name)}: reported paths and your contacts</h4>{idea}'
             + (f'<p style="margin:10px 0 2px;font-size:12px;font-weight:700;letter-spacing:.08em;opacity:.65">WORTH A LOOK</p>{looks}' if looks else "")
             + '<div style="margin-top:12px">' + "".join(out) + "</div>" + legend
+            + (f'<p class="sub" style="margin-top:8px">The details below describe <b>{escape(str(selected[0]))}, {pd.Timestamp(selected[1]):%H:%M} to {(pd.Timestamp(selected[1]) + pd.Timedelta(minutes=tl["bin_min"])):%H:%M} UTC</b> '
+               '(the dashed outline). Change it under <i>Details for one band and time</i>.</p>' if selected is not None else "")
             + f'<p class="sub" style="margin-top:8px">{escape(nothing.strip())} Each bar covers {tl["bin_min"]} minutes, judged on the hour of WSPR up to its end.</p>{rbn}</div></div>')
 
 
@@ -983,20 +998,36 @@ def signal_math_html(power_w, mode, offset_db, example=None, thresholds=None):
             + (f' ({escape(modes)}, in 2,500 Hz)' if modes else "") + '; changing the mode there changes which receivers count, not these bars.</p>')
 
 
-def signal_intro_html(offset_db, power_w=None, mode="CW", example=None, thresholds=None):
-    """The opening of the signal comparison, so the section says what it compares and what it rests on before any number: the matching, the reference
-    correction (an experimental one), how a bar is worked out from the power and the mode (when `power_w` is given) and what the bars are not."""
-    return ('<div class="lc"><div class="lc-card" id="sec-signal"><h4>Signal comparison: RBN skimmers against WSPR stations near you</h4>'
+def signal_intro_html(offset_db, overall=None, power_w=None):
+    """The opening of the signal comparison, short, so the result comes first: what the bars are, that the reference is experimental, and the overall result with
+    how many matches and different receiving stations it rests on and the spread. The steps, the power, the mode and a worked example are in signal_method_html."""
+    line = ""
+    if overall is not None and overall.get("stronger_db") is not None and overall["stronger_db"] == overall["stronger_db"]:
+        rx = overall.get("match_rx", overall.get("matches"))
+        spread = overall.get("spread_db")
+        line = (f'<p style="margin:2px 0 0;font-size:15px"><b>Overall {overall["stronger_db"]:+.0f} dB</b> from {overall["matches"]} matches with {rx} different receiving stations'
+                + (f"; the receivers spread {spread:.1f} dB" if spread is not None and spread == spread and overall["matches"] > 2 else "") + ".</p>")
+    reference = f"{power_w:g} W" if power_w else "your power"
+    return ('<div class="lc"><div class="lc-card" id="sec-signal"><h4>Signal comparison: RBN skimmers against the nearby WSPR reference</h4>'
+            f'<p class="sub"><b>Experimental.</b> Each bar below is how far the skimmers\' reports of you sat above (blue) or below (amber) what the WSPR stations near you would give at the same '
+            f'receivers, restated to {reference}; the line through a bar is where the middle half of its matches fell. The reference is an estimate with a fixed {offset_db:.0f} dB correction '
+            'between RBN and WSPR, not an established benchmark, and a bar says how you were heard, not how your antenna performs.</p>' + line + '</div></div>')
+
+
+def signal_method_html(power_w, mode, offset_db, example=None, thresholds=None):
+    """How the signal comparison is worked out, for the folded box under the bars: which stations are matched, why the reference is experimental, the steps, what the power
+    and the mode do, and one real match."""
+    return ('<div class="lc"><div class="lc-card" style="border:0;padding:0;margin:0;background:none" id="sec-signal-method">'
             '<p class="sub">Skimmers that spotted you and also decode WSPR are matched with the WSPR transmitters near you that the same station decoded in the same stretch of '
             'your log, restated to your power. Each bar is the middle result (the line through it is where the middle half of the matches fell) of how far the RBN reports sat '
             'above (blue) or below (amber) what that estimate gave.</p>'
             f'<p class="sub"><b>The reference is experimental.</b> Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {offset_db:.0f} dB higher on '
             'RBN than on WSPR (found from two checks of stations whose power is known), and that is taken off. A bar is a hint about how you were heard, '
-            'not a measurement of your antenna.</p>' + (signal_math_html(power_w, mode, offset_db, example, thresholds) if power_w else "") + '</div></div>')
+            'not a measurement of your antenna.</p>' + signal_math_html(power_w, mode, offset_db, example, thresholds) + '</div></div>')
 
 
 def band_table_html(bands, min_contacts=3):
-    """One row per band: contacts, skimmers, and strength against a typical station. A band with fewer than `min_contacts` contacts is left
+    """One row per band: contacts, skimmers, and strength against the nearby WSPR reference. A band with fewer than `min_contacts` contacts is left
     out of the rows and named underneath, because one contact says nothing."""
     few = bands[bands["contacts"] < min_contacts]
     bands = bands[bands["contacts"] >= min_contacts]
@@ -1017,7 +1048,7 @@ def band_table_html(bands, min_contacts=3):
             strength = (f'<div class="lc-str" title="{r.matches} match{"es" if r.matches != 1 else ""}: {getattr(r, "match_rx", r.matches)} different receiving station{"s" if getattr(r, "match_rx", r.matches) != 1 else ""} that spotted you and also decoded WSPR near you (one heard in two stretches of the log is a match in each)">'
                         f'<div class="lc-sbar"><em class="z" style="left:{zero:.1f}%"></em>'
                         f'<i class="{"pos" if r.stronger_db >= 0 else "neg"}{" thin" if r.thin else ""}" style="left:{left:.1f}%;width:{width:.1f}%"></i>{spread}</div>'
-                        f'<b>{r.stronger_db:+.1f} dB</b></div>')
+                        f'<div class="lc-sv"><b>{r.stronger_db:+.1f} dB</b><small>{getattr(r, "match_rx", r.matches)} station{"s" if getattr(r, "match_rx", r.matches) != 1 else ""}</small></div></div>')
         report = (f'<span title="The average S in the reports they gave you on this band">report S{r.report:.1f}</span>'
                   if not np.isnan(r.report) else "")
         extra = getattr(r, "other", 0)
@@ -1026,9 +1057,10 @@ def band_table_html(bands, min_contacts=3):
                     f'<div class="lc-cont"><div class="bar"><i style="width:{r.contacts / top * 100:.1f}%"></i></div><b>{r.contacts}</b><span>CW contacts</span>{other}</div>'
                     f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span>{report}</div>{strength}</div>')
     return ('<div class="lc"><div class="lc-card"><h4>What RBN skimmers heard on each band</h4>'
-            '<p class="sub">What you worked, who heard you, and how strong you were against a typical WSPR station near you.</p>'
-            '<div class="lc-legend"><span>bar: stronger (blue) or weaker (amber) than a typical station at your power; striped means few matches</span></div>'
-            '<div class="lc-bh"><div>Band</div><div>Contacts</div><div>Skimmers</div><div>Strength vs typical</div></div>'
+            '<p class="sub">What you worked, who heard you, and how the skimmers\' reports compare with the nearby WSPR reference.</p>'
+            '<div class="lc-legend"><span>bar: reports above (blue) or below (amber) the nearby WSPR reference at your power; striped means few matches</span></div>'
+            '<div class="lc-bh"><div>Band</div><div>Contacts</div><div>Skimmers</div><div>Against the WSPR reference'
+            '<div class="lc-str"><div class="lc-axs"><span style="left:0;transform:none">below</span><span style="left:42.86%">0</span><span style="right:0;left:auto;transform:none">above</span></div><span></span></div></div></div>'
             + "".join(rows)
             + (f'<p class="sub" style="margin-top:10px">Not shown, with fewer than {min_contacts} CW contacts: '
                + ", ".join(f"{r.band} ({r.contacts} CW" + (f", {r.other} other" if getattr(r, "other", 0) else "") + ")" for r in few.itertuples()) + ".</p>" if len(few) else "")

@@ -324,7 +324,7 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
     metric_view = next(k for k, v in lh.DX_VIEWS.items() if v == show)
     min_km = lf.DISTANCE_CHOICES[distance][1]
     by_dest, cards = layout == LAYOUTS["dest"], layout == LAYOUTS["cards"]
-    pick = None                                 # the tab chosen in the destination view: a continent code, or "regional"
+    pick, focus = None, None                    # the tab chosen in the destination view (a continent code, or "regional") and the band and time its details should open on
     if by_dest:
         base = lo.band_timeline(grid, log, places, None, skimmers, home, min_km, lo.METRIC[metric_view], False, None, "dx", home_cont)
         tabs, _ = lo.destination_views(base)
@@ -337,6 +337,8 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
                                          "Regional shows the eight compass directions instead of the other continents.") or options[0]
         view, dest = "continent", (None if pick == "regional" else pick)
         reach = "regional" if pick == "regional" else "dx"
+        current_tab = next((v for v in tabs if v["code"] == pick), None)
+        focus = current_tab["panels"][0]["focus"] if current_tab and current_tab["panels"] else None
     elif cards:
         lane_codes, lane_names, _, lane_word, _ = lo.lane_set(reach, home_cont)
         options = [("all", f"All {lane_word}s" if lane_word == "continent" else "All directions")] + [(c, lane_names[c][:1].upper() + lane_names[c][1:]) for c in lane_codes]
@@ -360,8 +362,11 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
     lane_codes, lane_names = lo.lane_set(reach, home_cont)[:2] if (cards or by_dest) else ((), {})
     with st.expander("Details for one band and time: the stations, spots and contacts behind it"):
         cols = st.columns(3 if cards else 2)
-        band = cols[0].selectbox("Band", bands, key="log_box_band")
-        slot = cols[1].selectbox("Box (UTC)", slots, format_func=lambda t: f"{pd.Timestamp(t):%d %b %H:%M}Z", key="log_box_slot")
+        stamps = [pd.Timestamp(t) for t in slots]
+        f_band, f_slot = focus if focus else (None, None)          # open on the band and window of the first line worth a look for this destination, not on the first band of the log
+        band = cols[0].selectbox("Band", bands, index=bands.index(f_band) if f_band in bands else 0, key=f"log_box_band_{pick or 'x'}")
+        slot = cols[1].selectbox("Box (UTC)", slots, index=stamps.index(f_slot) if f_slot in stamps else 0, format_func=lambda t: f"{pd.Timestamp(t):%d %b %H:%M}Z",
+                                 key=f"log_box_slot_{pick or 'x'}")
         if cards:
             ev_choice = cols[2].selectbox("Continent" if reach == "dx" else "Direction", ["all"] + list(lane_codes),
                                           format_func=lambda k: "All" if k == "all" else lane_names[k], key=f"log_box_cont_{reach}")
@@ -387,7 +392,7 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
                 extra = [v["name"] for v in tabs if v["code"] not in options]
                 if extra:                          # a destination only the RBN spots found: it has no tab, so it is said here
                     note = (note + " " if note else "") + f"RBN skimmers in {', '.join(extra)} spotted you, though the nearby WSPR showed no path and you logged no contact there."
-                grid_slot.html(lh.CSS + lh.destination_html(current, timeline, BAND_COLORS, empty, note))
+                grid_slot.html(lh.CSS + lh.destination_html(current, timeline, BAND_COLORS, empty, note, (band, pd.Timestamp(slot))))
                 first = current["panels"][0]["lines"][0] if current["panels"] and current["panels"][0]["lines"] else None
                 headline = f"{current['name']}, {first[0]}: {first[1]}" if first else ""
             table_slot.empty()
@@ -554,7 +559,7 @@ def _glance(park_cards, rep, spots, skimmers, home, headline, result):
         items.append(("Band openings", headline, "sec-openings"))
     if result is not None and pd.notna(result["overall"]["stronger_db"]):
         o = result["overall"]
-        items.append(("Signal against WSPR stations near you", f"About {o['stronger_db']:+.0f} dB against a typical station, from {o['matches']} matches with "
+        items.append(("Signal against the WSPR reference", f"About {o['stronger_db']:+.0f} dB against the nearby WSPR reference, from {o['matches']} matches with "
                                                                 f"{o.get('match_rx', o['matches'])} receiving stations.", "sec-signal"))
     return lh.glance_html(items, '<p class="sub" style="margin:-2px 0 10px"><a href="#sec-share">Save a session card to share \u2193</a></p>')
 
@@ -798,13 +803,11 @@ def log_page():
         shown = set(result["bands"].loc[result["bands"]["contacts"] >= 3, "band"])          # the bands that have a bar below
         table = lc.match_table(result["matches"])
         table = table[table["Band"].isin(shown)].reset_index(drop=True)
-        st.html(lh.CSS + lh.signal_intro_html(lc.TYPICAL_OFFSET_DB, power, "CW", lh.signal_example(table), cond.MODES))
-        st.html(lh.CSS + lh.band_table_html(result["bands"]))
         o = result["overall"]
-        notes = [f"Estimated strength against a typical WSPR station near you: {o['stronger_db']:+.0f} dB, from {o['matches']} matches with {o.get('match_rx', o['matches'])} different receiving stations "
-                 "(a station heard in two stretches of the log is a match in each; explained below)." if pd.notna(o["stronger_db"]) else None,
-                 f"Strength spread between receivers: {o['spread_db']:.1f} dB." if o["matches"] > 2 else None]
-        st.caption(" ".join(n for n in notes if n))
+        st.html(lh.CSS + lh.signal_intro_html(lc.TYPICAL_OFFSET_DB, o, power))
+        st.html(lh.CSS + lh.band_table_html(result["bands"]))
+        with st.expander("How this estimate works: the steps, the power, the mode and a worked example"):
+            st.html(lh.CSS + lh.signal_method_html(power, "CW", lc.TYPICAL_OFFSET_DB, lh.signal_example(table), cond.MODES))
         if len(table):
             with st.expander(f"The receiving stations behind these bars ({len(table)})"):
                 st.caption("One row for each band and receiving station. A station that was matched in more than one stretch of the log has more than one match.")

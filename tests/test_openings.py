@@ -794,11 +794,51 @@ class TheDestinationView(Session):
         tl = self.timeline()
         views, empty = lo.destination_views(tl)
         html = lh.destination_html(views[0], tl, {"20m": "#800080", "15m": "#444444"}, empty, "Inside the 3,000 mile limit, so not counted as DX: Aruba.")
-        for text in ("Europe: when was it reachable, and where were you?", "Nearby WSPR stations act as test signals", "WORTH A LOOK", "You were on", "DL1AAA",
+        for text in ("Europe: reported paths and your contacts", "Nearby WSPR stations act as test signals", "WORTH A LOOK", "Logged activity", "DL1AAA",
                      "nearby WSPR showed a path to Europe (pale: one receiving station)", "your contact with Europe", "an RBN skimmer in Europe spotted you",
                      "Not shown: Africa, Oceania and South America (no nearby WSPR path, no RBN skimmer and no contact there).", "not counted as DX: Aruba.", 'id="sec-openings"'):
             self.assertIn(text, html)
         self.assertEqual(lo.unsupported_claims(html), [])
+
+    def test_each_view_says_which_band_and_window_the_details_should_open_on(self):
+        views, _ = lo.destination_views(self.timeline())
+        band, slot = views[0]["panels"][0]["focus"]
+        self.assertEqual(band, "20m")                                                            # the first line worth a look is about 20m
+        self.assertEqual(slot, T("2026-11-18 20:00"))                                            # and the window is the one where the path was nearest the contact (20:10)
+        wspr = self.wspr()
+        late = lo.destination_views(self.timeline(log=log_of(rec("DL1AAA", "2250", gridsquare="JN58")), wspr=wspr.assign(time=wspr["time"] + pd.Timedelta(minutes=30))))[0]
+        self.assertTrue(late and late[0]["panels"][0]["focus"] is not None)
+
+    def test_the_window_the_details_describe_is_outlined_and_named_under_the_chart(self):
+        tl = self.timeline()
+        views, empty = lo.destination_views(tl)
+        band, slot = views[0]["panels"][0]["focus"]
+        html = lh.destination_html(views[0], tl, None, empty, "", (band, slot))
+        self.assertIn('class="dv-sel"', html)
+        self.assertIn(f"The details below describe <b>{band}, {slot:%H:%M} to ", html)
+        self.assertNotIn('class="dv-sel"', lh.destination_html(views[0], tl, None, empty))              # nothing selected, nothing outlined
+        self.assertNotIn('class="dv-sel"', lh.destination_html(views[0], tl, None, empty, "", ("15m", slot)))   # a band with no lane here has nothing to outline
+
+    def test_a_contact_is_a_filled_circle_and_an_rbn_report_a_triangle_not_two_alike_rings(self):
+        spots = pd.DataFrame({"spotter": ["DL1SKM"], "band": ["20m"], "snr": [9.0], "time": [T("2026-11-18 20:12")], "mode": ["CQ"], "tx_mode": ["CW"]})
+        tl = self.timeline(spots=spots)
+        views, empty = lo.destination_views(tl)
+        html = lh.destination_html(views[0], tl, None, empty)
+        self.assertIn('class="dv-dot"', html)
+        self.assertIn('class="dv-tri"', html)
+        self.assertNotIn("dv-ring", html)
+
+    def test_a_crowded_lane_has_no_callsign_labels_to_overlap_and_a_sparse_one_does(self):
+        crowded = {"band": "20m", "cells": [], "worked_band": True, "contacts": [{"time": T(f"2026-11-18 20:{m:02d}"), "call": f"W1A{m}"} for m in (0, 2, 4, 6, 8)]}
+        sparse = dict(crowded, contacts=crowded["contacts"][:2:1])
+        view = {"code": "EU", "name": "Europe", "contacts": 5, "paths": 0, "rbn": False,
+                "panels": [{"panel": 0, "slots": [T("2026-11-18 20:00"), T("2026-11-18 20:30")], "bin_min": 30, "strip": [(T("2026-11-18 20:00"), T("2026-11-18 21:00"), "20m")],
+                            "lanes": [crowded], "lines": [], "focus": None}]}
+        tl = {"power_w": 100.0, "mode": "CW", "metric": "good", "bin_min": 30}
+        self.assertNotIn('class="dv-call', lh.destination_html(view, tl))                         # five contacts, none labelled; each has its callsign on hover
+        self.assertIn('title="W1A0, 20:00 UTC, 20m"', lh.destination_html(view, tl))
+        view["panels"][0]["lanes"] = [sparse]
+        self.assertIn('class="dv-call', lh.destination_html(view, tl))
 
     def test_a_log_over_two_days_has_a_stretch_for_each_and_dated_lines(self):
         log = log_of(rec("DL1AAA", "2010", gridsquare="JN58"), rec("DL1BBB", "2010", gridsquare="JN58").replace("20261118", "20261120"))
@@ -836,14 +876,28 @@ class TheSignalComparison(unittest.TestCase):
     def test_the_section_says_what_it_compares_and_that_the_reference_is_experimental(self):
         html = lh.signal_intro_html(10.0)
         self.assertIn('id="sec-signal"', html)
-        self.assertIn("Signal comparison: RBN skimmers against WSPR stations near you", html)
-        self.assertIn("experimental", html)
-        self.assertIn("about 10 dB higher", html)
+        self.assertIn("Signal comparison: RBN skimmers against the nearby WSPR reference", html)
+        self.assertIn("<b>Experimental.</b>", html)
+        self.assertIn("not an established benchmark", html)
+        self.assertNotIn("typical", html)                                                     # a reference, not a typical station
+        self.assertNotIn("How a bar is worked out", html)                                    # the steps are under the bars, in a folded box
         self.assertEqual(lo.unsupported_claims(html), [])
+
+    def test_the_result_comes_first_with_the_receiving_stations_it_rests_on(self):
+        html = lh.signal_intro_html(10.0, {"stronger_db": 2.4, "matches": 106, "match_rx": 27, "spread_db": 8.5}, 100.0)
+        self.assertIn("<b>Overall +2 dB</b> from 106 matches with 27 different receiving stations; the receivers spread 8.5 dB.", html)
+        self.assertIn("restated to 100 W", html)
+        none = lh.signal_intro_html(10.0, {"stronger_db": float("nan"), "matches": 3, "match_rx": 2, "spread_db": float("nan")}, 100.0)
+        self.assertNotIn("Overall", none)                                                     # no overall result to state, so none is stated
+
+    def test_the_method_says_why_the_reference_is_experimental(self):
+        html = lh.signal_method_html(100.0, "CW", 10.0)
+        self.assertIn("The reference is experimental.", html)
+        self.assertIn("about 10 dB higher", html)
 
     def test_the_section_works_the_arithmetic_through_with_the_power_and_says_what_the_mode_does(self):
         import conditions as cond
-        html = lh.signal_intro_html(10.0, 100.0, "CW", None, cond.MODES)
+        html = lh.signal_method_html(100.0, "CW", 10.0, None, cond.MODES)
         self.assertIn("How a bar is worked out", html)
         self.assertIn("10 × log₁₀(your watts ÷ its watts)", html)
         self.assertIn("-20 + (50 − 37) = -7 dB for your 100 W (50 dBm)", html)           # a 5 W transmitter heard at -20 dB, restated to 100 W
@@ -854,7 +908,7 @@ class TheSignalComparison(unittest.TestCase):
         self.assertIn("<b>Mode.</b> The bars do not use it", html)
         self.assertIn("CW -5 dB", html)                                                       # the threshold the mode does set, in the openings
         self.assertIn("SSB +8 dB", html)
-        half = lh.signal_intro_html(10.0, 50.0, "CW", None, cond.MODES)
+        half = lh.signal_method_html(50.0, "CW", 10.0, None, cond.MODES)
         self.assertIn("every estimate is -3.0 dB from what a 100 W station would get", half)
         self.assertIn("-20 + (47 − 37) = -10 dB for your 50 W (47 dBm)", half)
         self.assertEqual(lo.unsupported_claims(html), [])
@@ -865,7 +919,7 @@ class TheSignalComparison(unittest.TestCase):
         ex = lh.signal_example(table)
         self.assertEqual(ex["rx"], "K1HTV-4")                                                  # a station matched once, so the numbers add up exactly
         self.assertEqual((ex["obs"], ex["est"], ex["diff"], ex["after"]), (-20.0, -10.0, -10.0, -20.0))
-        html = lh.signal_intro_html(10.0, 100.0, "CW", ex, None)
+        html = lh.signal_method_html(100.0, "CW", 10.0, ex, None)
         self.assertIn("K1HTV-4 on 20m", html)
         self.assertIn("-20 − (-10) = -10.0 dB", html)
         self.assertIn("leaves <b>-20.0 dB</b>", html)
@@ -878,6 +932,10 @@ class TheSignalComparison(unittest.TestCase):
         html = lh.band_table_html(pd.DataFrame([row]))
         self.assertIn("The middle half of the matches ran from -1.0 to +5.0 dB", html)
         self.assertIn("6 different receiving stations", html)
+        self.assertIn("<small>6 stations</small>", html)                                      # the receiving stations are written beside the result, not only on hover
+        self.assertIn("Against the WSPR reference", html)
+        self.assertIn(">below</span>", html)                                                  # and the scale says where zero is
+        self.assertNotIn("typical", html)
         row.update(stronger_db=float("nan"), q1=float("nan"), q3=float("nan"))
         self.assertNotIn("middle half", lh.band_table_html(pd.DataFrame([row])))
 
