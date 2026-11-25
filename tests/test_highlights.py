@@ -84,5 +84,76 @@ class Highlights(unittest.TestCase):
         self.assertEqual(lh.highlights_html(first.iloc[0:0], far.iloc[0:0], hours.iloc[0:0], []), "")
 
 
+class RateAndLink(unittest.TestCase):
+    """How fast the contacts came in, and the link to the My spots page for the session."""
+
+    def log(self):
+        # 20:00-20:50 a steady run on 20m (one every 5 minutes); then a 90 minute pause; then 22:20-22:35 on 15m
+        return log_of(*[rec(f"W1A{i}", f"20{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 55, 5))],
+                      *[rec(f"W2B{i}", f"22{m:02d}", band="15m", gridsquare="FN31") for i, m in enumerate((20, 24, 28, 32))])
+
+    def test_bars_stack_by_band_and_scale_to_an_hour(self):
+        bars, line = hl.rate_table(self.log())
+        first = bars[bars["slot"] == T("2026-11-18 20:00")]
+        self.assertEqual(first["band"].tolist(), ["20m"])
+        self.assertEqual(int(first["contacts"].iloc[0]), 3)                                     # 20:00, 20:05 and 20:10
+        self.assertEqual(first["rate"].iloc[0], 12.0)                                           # 3 contacts in 15 minutes is 12 an hour
+        self.assertEqual((first["end"].iloc[0] - first["slot"].iloc[0]), pd.Timedelta(minutes=15))
+        self.assertEqual(set(bars["band"]), {"20m", "15m"})
+
+    def test_a_pause_breaks_the_line_and_is_not_a_dip_to_zero(self):
+        bars, line = hl.rate_table(self.log())
+        self.assertEqual(len(line), 11)                                                         # every quarter hour from 20:00 to 22:30
+        inside = line[(line["mid"] > T("2026-11-18 21:00")) & (line["mid"] < T("2026-11-18 22:00"))]
+        self.assertTrue(inside["rolling"].isna().all())                                         # inside the 90 minute pause: no value at all
+        busy = line[line["slot"] == T("2026-11-18 20:15")].iloc[0]
+        self.assertAlmostEqual(busy["rolling"], 13.2)                                           # 11 contacts in the 50 minutes on the air within the hour around 20:22
+        self.assertEqual(len(hl.rate_table(None)[0]), 0)
+
+    def test_the_busiest_stretch_is_a_pace_not_a_rate(self):
+        best = hl.best_stretch(self.log(), 10)
+        self.assertEqual(best["contacts"], 3)                                                   # three in any ten minutes of the 5 minute run
+        self.assertEqual(best["pace"], 18.0)
+        line = hl.rate_line(best)
+        self.assertIn("a pace of 18 an hour if it had been kept up", line)
+        self.assertEqual(lo.unsupported_claims(line), [])
+        self.assertIsNone(hl.best_stretch(log_of(rec("W1AAA", "2000"), rec("W1BBB", "2001")), 10))
+        self.assertEqual(hl.rate_line(None), "")
+
+    def test_the_first_contact_on_each_band_is_marked(self):
+        marks = hl.band_starts(self.log())
+        self.assertEqual(marks["band"].tolist(), ["20m", "15m"])
+        self.assertEqual(marks["call"].tolist(), ["W1A0", "W2B0"])
+
+    def test_the_chart_is_layered_and_carries_the_hover_text(self):
+        chart = hl.rate_chart(self.log(), {"20m": "#800080", "15m": "#444444"})
+        spec = chart.to_dict()
+        self.assertEqual(len(spec["layer"]), 3)                                                 # bars, the hourly line, the band marks
+        text = str(spec)
+        for part in ("Contacts an hour", "Contacts in these 15 minutes", "Contacts an hour, around this time", "#800080"):
+            self.assertIn(part, text)
+        self.assertIsNone(hl.rate_chart(self.log().iloc[0:0], {}))
+
+    def test_the_link_opens_my_spots_on_the_day_and_the_hours_of_the_session(self):
+        link = lc.spots_link("K5OHY", "DM81wx", self.log())
+        self.assertTrue(link.startswith("./?"))                                                 # My spots is the main page, at the root: a /spots path would say page not found
+        for part in ("call=K5OHY", "src=rbn", "grid=DM81wx", "date=2026-11-18", "t0=19%3A50", "t1=22%3A42", "go=1"):
+            self.assertIn(part, link)                                                           # ten minutes either side of the first and last contact
+        self.assertNotIn("grid=", lc.spots_link("K5OHY", "", self.log()))
+        self.assertIn("call=K5OHY%2FP", lc.spots_link("K5OHY/P", "", self.log()))                # a slash in a callsign is kept safe in the address
+
+    def test_a_log_over_two_days_links_a_date_range_and_no_time_window(self):
+        two = log_of(rec("W1AAA", "2300"), rec("W1BBB", "0100", date="20261119"))
+        link = lc.spots_link("K5OHY", "", two)
+        self.assertIn("date=2026-11-18..2026-11-19", link)
+        self.assertNotIn("t0=", link)
+
+    def test_the_window_stays_inside_the_day(self):
+        edge = log_of(rec("W1AAA", "0003"), rec("W1BBB", "2358"))
+        link = lc.spots_link("K5OHY", "", edge)
+        self.assertIn("t0=00%3A00", link)
+        self.assertIn("t1=23%3A59", link)
+
+
 if __name__ == "__main__":
     unittest.main()

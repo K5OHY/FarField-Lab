@@ -178,6 +178,25 @@ def summary(log):
             "bands": bands_top_down(log)}
 
 
+def spots_link(call, grid, log, pad_min=10):
+    """The web address of the My spots page opened on this session: your callsign, RBN as the source, the day (or days) of the log, the grid square when there is one
+    and, for a log made on one UTC day, the UTC time window from `pad_min` minutes before the first contact to `pad_min` minutes after the last. `go=1` loads the spots at
+    once. It is relative to the page it is shown on (./?...: My spots is the app's main page, so it has no path of its own), so it works on whichever site serves the app."""
+    from urllib.parse import urlencode
+    first, last = pd.Timestamp(log["time"].min()), pd.Timestamp(log["time"].max())
+    q = {"call": call, "src": "rbn"}
+    if grid:
+        q["grid"] = grid
+    d0, d1 = first.date(), last.date()
+    q["date"] = f"{d0:%Y-%m-%d}" + (f"..{d1:%Y-%m-%d}" if d1 != d0 else "")
+    if d0 == d1:
+        pad = pd.Timedelta(minutes=pad_min)
+        lo, hi = max(first - pad, first.normalize()), min(last + pad, first.normalize() + pd.Timedelta(hours=23, minutes=59))
+        q["t0"], q["t1"] = f"{lo:%H:%M}", f"{hi:%H:%M}"
+    q["go"] = "1"
+    return "./?" + urlencode(q)
+
+
 def band_rates(log):
     """One row per band: contacts, first and last contact, and contacts per hour while on the band."""
     g = log.groupby("band")["time"].agg(contacts="size", first="min", last="max")

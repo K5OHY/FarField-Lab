@@ -83,6 +83,18 @@ class MySpotsPage(unittest.TestCase):
         self.assertEqual(at.session_state["units_in"], "km")
         self.assertIsNone(at.session_state["raw"])  # no go=1, so nothing is loaded until you click
 
+    def test_a_link_from_the_log_page_sets_the_utc_time_window(self):
+        from datetime import time
+        at = page("spots_page", call="k5ohy", src="rbn", date="2026-10-23", t0="19:50", t1="22:42").run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["_link_window"], (time(19, 50), time(22, 42)))
+        slider = [s for s in at.sidebar.slider if s.label == "UTC time window"][0]
+        self.assertEqual(slider.value, (time(19, 50), time(22, 42)))                              # the slider opens on the hours of the session
+        bad = page("spots_page", call="k5ohy", src="rbn", date="2026-10-23", t0="22:42", t1="19:50").run()
+        self.assertNotIn("_link_window", bad.session_state)                                      # a window the wrong way round is ignored
+        none = page("spots_page", call="k5ohy", src="rbn", date="2026-10-23", t0="soon", t1="later").run()
+        self.assertEqual(errors(none), [])
+
     def test_the_source_is_rbn_or_wspr_then_download_or_paste(self):
         at = page("spots_page").run()
         net = [r for r in at.sidebar.radio if r.key == "net_in"][0]

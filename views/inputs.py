@@ -34,6 +34,14 @@ def _parse_day(text):
         return None
 
 
+def _parse_clock(text):
+    """A time of day from a link such as 20:15, or None."""
+    try:
+        return datetime.strptime(str(text).strip(), "%H:%M").time()
+    except ValueError:
+        return None
+
+
 def _fill_from_link(ss):
     """Once per visit, set the sidebar from the web address, so a shared link opens on the same view. Anything missing or
     unreadable is ignored. A link with go=1 also loads the spots straight away."""
@@ -55,6 +63,9 @@ def _fill_from_link(ss):
         ss["span_in"], ss["from_in"], ss["to_in"] = "Date range", _parse_day(first), _parse_day(last)
     elif _parse_day(first):
         ss["span_in"], ss["day_in"] = "Single day", _parse_day(first)
+    t0, t1 = _parse_clock(q.get("t0")), _parse_clock(q.get("t1"))
+    if t0 and t1 and t0 < t1:
+        ss["_link_window"] = (t0, t1)          # the UTC time window of a shared link, used by the time slider once
     if q.get("cb"):
         ss["callsign_b_in"] = q["cb"].strip().upper()[:12]
     if q.get("band") in ["All"] + list(BAND_COLORS):
@@ -412,8 +423,9 @@ def view_controls(ss, cfg, pick, kind, comparing=False, band_box=True):
     if kind == "WSPR" and comparing:
         start_t, end_t = time.min, time.max
     else:
+        window = ss.get("_link_window") if kind != "WSPR" else None
         start_t, end_t = st.slider(
-            "UTC time window", min_value=lo_t, max_value=hi_t, value=(lo_t, hi_t), step=timedelta(minutes=1),
+            "UTC time window", min_value=lo_t, max_value=hi_t, value=window if window and lo_t <= window[0] and window[1] <= hi_t else (lo_t, hi_t), step=timedelta(minutes=1),
             format="HH:mm",
             help=("Only show spots between these times. It follows the spots you loaded." if kind == "WSPR" else None))
     min_snr = -100 if kind == "WSPR" else st.slider("Minimum SNR (dB)", 0, 40, cfg.get("min_snr", 0))
@@ -433,6 +445,8 @@ def remember(ss, cfg, where, view, extra=None, slot=None):
     """Keeps the web address and the saved settings in step with the sidebar, and shows the link once spots are loaded.
     `extra` adds parameters to the link (a Compare test's setup); `slot` is the sidebar container to draw the link in, so a page
     that knows its extras only after drawing its results can call this last."""
+    if (view.start_t, view.end_t) != (time(0, 0), time(23, 59)) and where.source != WSPR_SOURCE:       # a narrowed time window goes in the link too
+        extra = dict(extra or {}, t0=f"{view.start_t:%H:%M}", t1=f"{view.end_t:%H:%M}")
     link = _link_for(ss, where.callsign, where.grid, where.source, where.span, where.days, view.units, view.band, extra)
     if where.callsign and dict(st.query_params) != link:
         st.query_params.from_dict(link)

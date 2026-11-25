@@ -18,7 +18,7 @@ from compare_stats import locate as skimmer_location
 from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, load_sota_summit, skimmer_data
 from maps import build_map, great_circle, park_map
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
-from ui_common import BANNER, KM_PER_MILE, page_guide, preview
+from ui_common import BAND_COLORS, BANNER, KM_PER_MILE, page_guide, preview
 from wspr_data import WsprError
 
 MAX_LOG_BYTES = 5_000_000
@@ -452,10 +452,13 @@ def _view_points(home, spots, worked, locs):
     return points
 
 
-def _maps_section(log, result, spots, locs, home, label, who, tiles, units, digest):
+def _maps_section(log, result, spots, locs, home, label, who, tiles, units, digest, spots_url=None):
     """Two maps of one band, side by side and framed alike: the skimmers that spotted you, and the stations you worked. They open on the
     band with the most DX; placing that band's stations takes a few seconds the first time, and each band is only looked up once."""
     st.markdown(f"#### {MAPS_HEADING}")
+    if spots_url:
+        st.link_button("Open this activation on the My spots map", spots_url, icon=":material/open_in_new:",
+                       help="Opens My spots in a new tab, on the day of this log and the hours of this session, with your callsign and RBN spots loaded.")
     st.caption("Skimmers only hear CW, so the maps start with your CW contacts. Where your contacts were is looked up in the background, so each band should be ready when you click it.")
     if result is not None:
         shown = set(result["bands"]["band"])
@@ -627,6 +630,15 @@ def log_page():
         hl_html = lh.highlights_html(hl_first, hl_far, hl_hours, hl.highlight_lines(hl_first, hl_far, hl_hours))
         if hl_html:
             st.html(lh.CSS + hl_html)
+        rate = hl.rate_chart(log, BAND_COLORS)
+        if rate is not None:
+            st.markdown("#### How fast the contacts came in")
+            st.caption("Each bar is a quarter hour, scaled to contacts an hour and stacked by band; the white line is the contacts an hour over the hour around it, counting only the time you were on the air. A pause of more than "
+                       "30 minutes breaks the line. A triangle marks the first contact on each band. Hover for the details.")
+            st.altair_chart(rate, width="stretch")
+            line = hl.rate_line(hl.best_stretch(log))
+            if line:
+                st.caption(line)
         timing_hold = st.empty()           # when RBN first and last spotted you on each band, added when the spots have been read
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
@@ -733,7 +745,7 @@ def log_page():
                     if result is not None:
                         st.session_state["log_result"] = {"signature": signature, "result": result}
     with maps_hold.container():
-        _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest)
+        _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest, lc.spots_link(call, grid, log))
     glance_slot.html(lh.CSS + _glance(park_cards, rep, spots, skimmers, home, headline, result))
     if result is None:
         return
