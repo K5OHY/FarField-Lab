@@ -24,11 +24,11 @@ CSS = """<style>
 .lc-legend i{display:inline-block;width:11px;height:11px;vertical-align:-2px;margin-right:5px;border-radius:3px}
 .lc-legend i.pg{border-radius:50%;border:2.5px solid var(--a)}.lc-legend i.ac{border-radius:50%;background:var(--t)}
 .lc-legend i.dia{width:9px;height:9px;border-radius:0;transform:rotate(45deg);margin-right:7px;background:currentColor}
-.lc-bh,.lc-brow{display:grid;grid-template-columns:44px minmax(120px,1.2fr) 90px minmax(170px,1.6fr);gap:14px;align-items:center}
+.lc-bh,.lc-brow{display:grid;grid-template-columns:44px minmax(110px,.8fr) 78px minmax(260px,2.4fr);gap:16px;align-items:center}
 .lc-bh{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.65;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .lc-brow{padding:10px 0;border-bottom:1px solid var(--line)}.lc-brow:last-child{border-bottom:0}
 .lc-bname{font-size:18px;font-weight:750}
-.lc-cont{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px}
+.lc-cont{display:grid;grid-template-columns:auto 1fr;align-items:baseline;gap:4px 7px}
 .lc-cont .bar{grid-column:1/-1;height:9px;background:var(--lane);border-radius:9px;overflow:hidden}.lc-cont .bar i{display:block;height:100%;background:var(--b);border-radius:9px}
 .lc-cont small{grid-column:1/-1;font-size:11.5px;opacity:.7}
 .lc-rh,.lc-rr{display:grid;grid-template-columns:minmax(160px,1.5fr) 96px 78px 110px 100px minmax(120px,1.2fr) 96px;gap:12px;align-items:center}
@@ -49,12 +49,15 @@ CSS = """<style>
 .lc-str{display:grid;grid-template-columns:1fr 84px;align-items:center;gap:10px}
 .lc-sv{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2}.lc-sv small{font-size:11px;opacity:.65;white-space:nowrap;font-weight:400}
 .lc-axs{position:relative;height:14px;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0}.lc-axs span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
-.lc-sbar{position:relative;height:10px;background:var(--lane);border-radius:9px}.lc-sbar i{position:absolute;top:0;height:100%;border-radius:9px}
+.lc-sbar{position:relative;height:12px;background:var(--lane);border-radius:9px}.lc-sbar i{position:absolute;top:0;height:100%;border-radius:9px}
+.lc-sbar .g{position:absolute;top:1px;bottom:1px;width:1px;background:currentColor;opacity:.2}
+.lc-legend i.lg-pos{background:var(--b);border-radius:6px;width:20px;height:9px}.lc-legend i.lg-neg{background:var(--a);border-radius:6px;width:20px;height:9px}
+.lc-legend i.lg-box{border:1.5px solid currentColor;opacity:.7;border-radius:4px;width:20px;height:11px;box-sizing:border-box}.lc-legend i.lg-thin{background:var(--b) repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px);border-radius:6px;width:20px;height:9px;opacity:.7}
 .lc-sbar .pos{background:var(--b)}.lc-sbar .neg{background:var(--a)}
 .lc-sbar .thin{opacity:.6;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px)}
 .lc-steps{margin:4px 0 8px;padding-left:20px}.lc-steps li{margin:6px 0;font-size:13.5px;line-height:1.45}
-.lc-sbar u{position:absolute;top:-2px;height:14px;border:1.5px solid currentColor;border-radius:4px;opacity:.55;text-decoration:none;box-sizing:border-box}
-.lc-sbar .z{position:absolute;top:-3px;width:2px;height:16px;background:currentColor;opacity:.5}.lc-str b{font-size:14px;text-align:right}
+.lc-sbar u{position:absolute;top:-2px;height:16px;border:1.5px solid currentColor;border-radius:4px;opacity:.55;text-decoration:none;box-sizing:border-box}
+.lc-sbar .z{position:absolute;top:-3px;width:2px;height:18px;background:currentColor;opacity:.5}.lc-str b{font-size:14px;text-align:right}
 .lc-str.none{font-size:12.5px;opacity:.6}
 .lc-note{font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:99px;justify-self:start;border:1px solid var(--line)}
 .lc-note.good{color:var(--g);border-color:var(--g)}.lc-note.warn{color:var(--w);border-color:var(--w)}
@@ -1086,21 +1089,20 @@ def band_table_html(bands, min_contacts=3):
                 a, b = (np.clip(q1, -15, 20) + 15) / 35 * 100, (np.clip(q3, -15, 20) + 15) / 35 * 100
                 spread = f'<u style="left:{a:.1f}%;width:{max(b - a, 0.8):.1f}%" title="The middle half of the matches ran from {q1:+.1f} to {q3:+.1f} dB"></u>'
             strength = (f'<div class="lc-str" title="{r.matches} match{"es" if r.matches != 1 else ""}: {getattr(r, "match_rx", r.matches)} different receiving station{"s" if getattr(r, "match_rx", r.matches) != 1 else ""} that spotted you and also decoded WSPR near you (one heard in two stretches of the log is a match in each)">'
-                        f'<div class="lc-sbar"><em class="z" style="left:{zero:.1f}%"></em>'
+                        f'<div class="lc-sbar"><em class="g" style="left:14.3%"></em><em class="g" style="left:71.4%"></em><em class="z" style="left:{zero:.1f}%"></em>'
                         f'<i class="{"pos" if r.stronger_db >= 0 else "neg"}{" thin" if r.thin else ""}" style="left:{left:.1f}%;width:{width:.1f}%"></i>{spread}</div>'
                         f'<div class="lc-sv"><b>{r.stronger_db:+.1f} dB</b><small>{getattr(r, "match_rx", r.matches)} station{"s" if getattr(r, "match_rx", r.matches) != 1 else ""}</small></div></div>')
-        report = (f'<span title="The average S in the reports they gave you on this band">report S{r.report:.1f}</span>'
-                  if not np.isnan(r.report) else "")
         extra = getattr(r, "other", 0)
         other = f'<small title="Contacts in other modes are in the log but RBN cannot hear them, so they are not compared">+{extra} other mode{"s" if extra != 1 else ""}</small>' if extra else ""
         rows.append(f'<div class="lc-brow"><div class="lc-bname">{r.band}</div>'
-                    f'<div class="lc-cont"><div class="bar"><i style="width:{r.contacts / top * 100:.1f}%"></i></div><b>{r.contacts}</b><span>CW contacts</span>{other}</div>'
-                    f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span>{report}</div>{strength}</div>')
+                    f'<div class="lc-cont"><b>{r.contacts}</b><span>CW contacts</span><div class="bar"><i style="width:{r.contacts / top * 100:.1f}%"></i></div>{other}</div>'
+                    f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span></div>{strength}</div>')
     return ('<div class="lc"><div class="lc-card"><h4>What RBN skimmers heard on each band</h4>'
-            '<p class="sub">What you worked, who heard you, and how the skimmers\' reports compare with the nearby WSPR reference.</p>'
-            '<div class="lc-legend"><span>bar: reports above (blue) or below (amber) the nearby WSPR reference at your power; striped means few matches</span></div>'
+            '<p class="sub">What you worked, how many skimmers heard you, and how their reports compare with the nearby WSPR reference at your power.</p>'
+            '<div class="lc-legend"><span><i class="lg-pos"></i>blue: RBN reports above the WSPR reference</span><span><i class="lg-neg"></i>amber: below it</span>'
+            '<span><i class="lg-box"></i>outline: where the middle half of the matches fell</span><span><i class="lg-thin"></i>striped: few matches</span></div>'
             '<div class="lc-bh"><div>Band</div><div>Contacts</div><div>Skimmers</div><div>Against the WSPR reference'
-            '<div class="lc-str"><div class="lc-axs"><span style="left:0;transform:none">below</span><span style="left:42.86%">0</span><span style="right:0;left:auto;transform:none">above</span></div><span></span></div></div></div>'
+            '<div class="lc-str"><div class="lc-axs"><span style="left:14.3%">−10</span><span style="left:42.86%">0</span><span style="left:71.4%">+10</span><span style="right:0;left:auto;transform:none">+20 dB</span></div><span></span></div></div></div>'
             + "".join(rows)
             + (f'<p class="sub" style="margin-top:10px">Not shown, with fewer than {min_contacts} CW contacts: '
                + ", ".join(f"{r.band} ({r.contacts} CW" + (f", {r.other} other" if getattr(r, "other", 0) else "") + ")" for r in few.itertuples()) + ".</p>" if len(few) else "")

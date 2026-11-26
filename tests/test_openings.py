@@ -970,10 +970,11 @@ class TheSignalComparison(unittest.TestCase):
         self.assertIn("6 different receiving stations", html)
         self.assertIn("<small>6 stations</small>", html)                                      # the receiving stations are written beside the result, not only on hover
         self.assertIn("Against the WSPR reference", html)
-        self.assertIn(">below</span>", html)                                                  # and the scale says where zero is
+        self.assertNotIn("report S", html)                                                    # the S in the reports you were given is not a skimmer figure: it is on the who-hears-whom card
+        self.assertIn(">+10</span>", html)                                                     # and the scale is numbered, with zero marked
         self.assertNotIn("typical", html)
         row.update(stronger_db=float("nan"), q1=float("nan"), q3=float("nan"))
-        self.assertNotIn("middle half", lh.band_table_html(pd.DataFrame([row])))
+        self.assertNotIn("The middle half of the matches ran from", lh.band_table_html(pd.DataFrame([row])))
 
 
 class TheGlanceRow(unittest.TestCase):
