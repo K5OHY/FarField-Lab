@@ -999,13 +999,13 @@ def farthest_contact(places, band=None):
 
 def park_to_park(log, ref, ref_places=None, program="POTA"):
     """The contacts made from the park (or summit) `ref` with another activator, one row for each park (or summit) of theirs that the log names: `ref`, `name`, `lat`, `lon`
-    (NaN when the place of that park is not known), `contacts`, `stations`, `calls`, `bands`, `first` and `last` (times). Only a contact whose log record carries the other
+    (NaN when the place of that park is not known), `contacts`, `stations`, `calls`, `bands`, `first` and `last` (times), and `by_band` ({band: {contacts, calls, first, last}}, highest band first). Only a contact whose log record carries the other
     station's park reference is here: the log is the only place that says it was park to park, so a contact the logging program did not mark is not found. Most contacts
     first. `attrs` has `with_ref` (contacts that name a park or summit), `total` (the contacts made from `ref`) and `unplaced` (parks with no known place)."""
     ref_places = ref_places if ref_places is not None else (getattr(log, "attrs", {}).get("ref_places") or {})
     sota = program == "SOTA"
     mine_col, valid = ("my_sota", SOTA_REF) if sota else ("my_pota", POTA_REF)
-    cols = ["ref", "name", "lat", "lon", "contacts", "stations", "calls", "bands", "first", "last"]
+    cols = ["ref", "name", "lat", "lon", "contacts", "stations", "calls", "bands", "first", "last", "by_band"]
     empty = pd.DataFrame(columns=cols)
     empty.attrs.update(with_ref=0, total=0, unplaced=0)
     if mine_col not in log:
@@ -1028,7 +1028,9 @@ def park_to_park(log, ref, ref_places=None, program="POTA"):
         place = ref_places.get(r)
         out.append({"ref": r, "name": (place[2] if place and len(place) > 2 else ""), "lat": float(place[0]) if place else float("nan"),
                     "lon": float(place[1]) if place else float("nan"), "contacts": len(g), "stations": int(g["call"].nunique()),
-                    "calls": list(dict.fromkeys(g.sort_values("time")["call"])), "bands": sorted(g["band"].unique(), key=_rank), "first": g["time"].min(), "last": g["time"].max()})
+                    "calls": list(dict.fromkeys(g.sort_values("time")["call"])), "bands": sorted(g["band"].unique(), key=_rank), "first": g["time"].min(), "last": g["time"].max(),
+                    "by_band": {b: {"contacts": len(h), "calls": list(dict.fromkeys(h.sort_values("time")["call"])), "first": h["time"].min(), "last": h["time"].max()}
+                                for b, h in sorted(g.groupby("band"), key=lambda kv: _rank(kv[0]))}})
     table = pd.DataFrame(out, columns=cols).sort_values(["contacts", "ref"], ascending=[False, True]).reset_index(drop=True)
     table.attrs.update(with_ref=int(len(d)), total=total, unplaced=int(table["lat"].isna().sum()))
     return table

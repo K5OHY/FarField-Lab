@@ -283,25 +283,50 @@ def park_map(lat, lon, name, tiles="Street"):
 
 def p2p_map(own, parks, tiles="Street", noun="park"):
     """A map of the park (or summit) the log was made from and the others its contacts were at: `own` is (lat, lon, label), `parks` is log_check.park_to_park's table. A green
-    dot for your park, an amber dot for each other park or summit with a line to it, and on hover its reference and name, the stations and bands and when. A place that is
-    not known is left off. Framed on all of them, and never tighter than a few km."""
+    dot for your park, and for each other park or summit a line and a dot in the colour of each band worked there (a place worked on several bands gets a dot for each, fanned
+    round it), with its reference and name, the stations and when on hover, and a legend of the bands shown. A place that is not known is left off. Framed on all of them,
+    and never tighter than a few km."""
+    import math
     m = base_map(own[:2], tiles)
-    points = [(own[0], own[1])]
     placed = parks[parks["lat"].notna()] if len(parks) else parks
+    paths = {r.ref: great_circle(own[:2], (r.lat, r.lon), 40) for r in placed.itertuples()}
+    ends = [p[-1] for p in paths.values()]
+    lats, lons = [own[0]] + [e[0] for e in ends], [own[1]] + [e[1] for e in ends]
+    ring = max(0.004, 0.02 * max(max(lats) - min(lats), (max(lons) - min(lons)) * 0.6))       # how far a dot is fanned from its place, in degrees
+    shown = {}
     for r in placed.itertuples():
-        path = great_circle(own[:2], (r.lat, r.lon), 40)
-        end = path[-1]
-        folium.PolyLine(path, color="#e6a117", weight=2, opacity=0.55).add_to(m)
-        calls = ", ".join(r.calls[:4]) + (f" and {len(r.calls) - 4} more" if len(r.calls) > 4 else "")
-        when = f"{r.first:%H:%M}" + (f"–{r.last:%H:%M}" if r.last != r.first else "") + " UTC"
-        tip = f"<b>{esc(r.ref)}</b> {esc(r.name)}<br>{esc(calls)} on {esc(', '.join(r.bands))}<br>{r.contacts} contact{'s' if r.contacts != 1 else ''}, {when}"
-        folium.CircleMarker(end, radius=5 + min(4, r.contacts ** 0.5), color="#ffffff", weight=1.5, fill=True, fill_color="#e6a117", fill_opacity=1, tooltip=tip).add_to(m)
-        points.append(tuple(end))
+        end = paths[r.ref][-1]
+        bands = list(r.by_band.items())
+        for i, (band, info) in enumerate(bands):
+            colour = BAND_COLORS.get(band, "#888888")
+            at = end
+            if len(bands) > 1:
+                angle = -math.pi / 2 + 2 * math.pi * i / len(bands)
+                at = (end[0] + ring * math.sin(angle) * -1, end[1] + ring * math.cos(angle) / max(0.3, math.cos(math.radians(end[0]))))
+            line = paths[r.ref][:-1] + [at]
+            folium.PolyLine(line, color=colour, weight=2.5, opacity=0.7).add_to(m)
+            calls = ", ".join(info["calls"][:4]) + (f" and {len(info['calls']) - 4} more" if len(info["calls"]) > 4 else "")
+            when = f"{info['first']:%H:%M}" + (f"–{info['last']:%H:%M}" if info["last"] != info["first"] else "") + " UTC"
+            tip = (f"<b>{esc(r.ref)}</b> {esc(r.name)}<br>{esc(calls)} on <b>{esc(band)}</b><br>{info['contacts']} contact{'s' if info['contacts'] != 1 else ''}, {when}")
+            folium.CircleMarker(at, radius=5.5 + min(3.5, info["contacts"] ** 0.5), color="#ffffff", weight=2, fill=True, fill_color=colour, fill_opacity=1, tooltip=tip).add_to(m)
+            shown[band] = colour
     folium.CircleMarker(own[:2], radius=9, color="#ffffff", weight=2, fill=True, fill_color="#2e8b57", fill_opacity=1, tooltip=esc(own[2])).add_to(m)
-    lats, lons = [p[0] for p in points], [p[1] for p in points]
+    if shown:
+        order = sorted(shown, key=_band_order)
+        keys = "".join(f'<span style="display:inline-block;margin:0 8px 2px 0;white-space:nowrap"><i style="display:inline-block;width:11px;height:11px;border-radius:50%;'
+                       f'background:{shown[b]};border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);vertical-align:-1px"></i> {esc(b)}</span>' for b in order)
+        m.get_root().html.add_child(folium.Element(
+            '<div style="position:fixed;right:8px;top:8px;z-index:9999;background:rgba(255,255,255,.88);color:#222;padding:4px 8px;border-radius:6px;font:12px sans-serif;'
+            f'max-width:75%;box-shadow:0 1px 4px rgba(0,0,0,.3)">{keys}</div>'))
     pad_lat, pad_lon = max(0.03, 0.08 * (max(lats) - min(lats))), max(0.04, 0.08 * (max(lons) - min(lons)))
     fit_to(m, [(min(lats) - pad_lat, min(lons) - pad_lon), (max(lats) + pad_lat, max(lons) + pad_lon)])
     return m
+
+
+def _band_order(band):
+    """The position of a band from the lowest frequency up, for lists of bands."""
+    from log_check import _rank
+    return _rank(band)
 
 
 def fit_to(m, bounds):

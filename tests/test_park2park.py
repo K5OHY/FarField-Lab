@@ -77,10 +77,29 @@ class TheMap(unittest.TestCase):
 
     def test_the_map_shows_your_park_and_the_others_with_who_was_there(self):
         html = maps.p2p_map((31.4556, -100.497, "US-3053 San Angelo"), self.table()).get_root().render()
-        for text in ("US-3053 San Angelo", "US-1111", "Valley Forge", "K1AAA, K1BBB", "US-2222", "Rainier View"):
+        for text in ("US-3053 San Angelo", "US-1111", "Valley Forge", "K1AAA on <b>20m</b>", "K1BBB on <b>40m</b>", "US-2222", "Rainier View"):
             self.assertIn(text, html)
         self.assertNotIn("US-0000", html)                                                          # not placed, so not drawn
-        self.assertEqual(html.count("L.polyline("), 2)                                             # a line to each placed park
+        self.assertEqual(html.count("L.polyline("), 3)                                             # a line for each band at each placed park: 20m and 40m at one, 20m at the other
+
+    def test_each_band_has_its_own_colour_a_dot_for_each_and_a_legend(self):
+        from ui_common import BAND_COLORS
+        t = self.table()
+        self.assertEqual(list(t.iloc[0]["by_band"]), ["40m", "20m"])
+        self.assertEqual(t.iloc[0]["by_band"]["40m"]["calls"], ["K1BBB"])
+        html = maps.p2p_map((31.4556, -100.497, "US-3053 San Angelo"), t).get_root().render()
+        self.assertEqual(html.count("L.circleMarker("), 4)                                         # three band dots and your park
+        for band in ("20m", "40m"):
+            self.assertIn(f'"color": "{BAND_COLORS[band]}"', html)                                 # the lines are in the band's colour
+            self.assertIn(f"background:{BAND_COLORS[band]}", html)                                  # and so is its key
+        self.assertNotIn("background:" + BAND_COLORS["15m"], html)                                  # a band that is not there is not in the key
+        self.assertIn("K1BBB on <b>40m</b>", html)
+
+    def test_dots_of_one_park_are_fanned_apart_not_stacked(self):
+        import re
+        html = maps.p2p_map((31.4556, -100.497, "US-3053"), self.table()).get_root().render()
+        spots = re.findall(r"L\.circleMarker\(\s*\[([-0-9.]+), ([-0-9.]+)\]", html)
+        self.assertEqual(len(set(spots)), len(spots), spots)                                       # no two dots at one point
 
     def test_one_nearby_park_does_not_zoom_in_without_limit(self):
         log = log_of(mine("K1AAA", pota_ref="US-1111"))
