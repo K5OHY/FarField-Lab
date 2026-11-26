@@ -794,7 +794,7 @@ class TheDestinationView(Session):
         tl = self.timeline()
         views, empty = lo.destination_views(tl)
         html = lh.destination_html(views[0], tl, {"20m": "#800080", "15m": "#444444"}, empty, "Inside the 3,000 mile limit, so not counted as DX: Aruba.")
-        for text in ("Europe: reported paths and your contacts", "Nearby WSPR stations act as test signals", "WORTH A LOOK", "Logged activity", "DL1AAA",
+        for text in ("Europe: reported paths and your contacts", "Nearby WSPR stations act as test signals", "Logged activity", "DL1AAA",
                      "a receiver in Europe decoded another transmitter near you (pale: one receiver)", "you completed a contact with Europe", "a skimmer in Europe decoded your signal",
                      "<b>Your log</b>", "<b>RBN</b>", "<b>Nearby WSPR</b>",
                      "Not shown: Africa, Oceania and South America (no nearby WSPR path, no RBN skimmer and no contact there).", "not counted as DX: Aruba.", 'id="sec-openings"'):
@@ -982,6 +982,57 @@ class TheSignalComparison(unittest.TestCase):
         self.assertNotIn("typical", html)
         row.update(stronger_db=float("nan"), q1=float("nan"), q3=float("nan"))
         self.assertNotIn("The middle half of the skimmers ran from", lh.band_table_html(pd.DataFrame([row])))
+
+
+class TheNotesUnderEachDaysChart(unittest.TestCase):
+    """The chart leads: under each day's chart only the notes about your contacts are written out, and the rest is one closed line."""
+
+    COLOURS = {"20m": "#800080", "15m": "#444444", "12m": "#00ffff", "10m": "#ff00ff", "17m": "#0000ff"}
+
+    def panel(self, lines, with_contact, day="2026-11-12"):
+        T = pd.Timestamp
+        slots = [T(f"{day} 20:00"), T(f"{day} 20:30")]
+        lanes = [{"band": b, "cells": [], "worked_band": True, "contacts": [{"time": T(f"{day} 20:05"), "call": "A1AAA"}] if b in with_contact else []} for b, _ in lines]
+        return {"panel": 0, "slots": slots, "bin_min": 30, "strip": [(slots[0], T(f"{day} 21:00"), lines[0][0])], "lanes": lanes, "lines": lines, "focus": None}
+
+    def test_only_the_notes_about_contacts_are_written_out_and_at_most_two(self):
+        lines = [("20m", "Africa paths appeared 21:00-22:30, outside your logged activity on 20m."), ("15m", "Worked Africa; nearby WSPR showed a path there at the time."),
+                 ("12m", "Worked Africa. No WSPR path."), ("10m", "Worked Africa; another one."), ("17m", "Africa paths appeared 23:00-00:00, outside your logged activity on 17m.")]
+        html = lh.panel_notes_html(self.panel(lines, {"15m", "12m", "10m"}), self.COLOURS)
+        before_fold = html.split("<details")[0]
+        self.assertIn("Worked Africa; nearby WSPR showed a path there at the time.", before_fold)
+        self.assertIn("Worked Africa. No WSPR path.", before_fold)
+        self.assertNotIn("another one", before_fold)                                              # a third contact note is folded
+        self.assertNotIn("Africa paths appeared", before_fold)
+        folded = html.split("<details")[1]
+        self.assertIn("3 more notes (20m, 10m, 17m)", folded)
+        for text in ("Africa paths appeared 21:00-22:30", "another one", "Africa paths appeared 23:00-00:00"):
+            self.assertIn(text, folded)
+
+    def test_notes_without_any_contact_are_one_closed_line(self):
+        lines = [("20m", "Africa paths appeared 21:00-22:30, outside your logged activity on 20m."), ("15m", "Africa paths appeared 18:30-20:00, outside your logged activity on 15m."),
+                 ("17m", "Africa paths appeared 23:00-00:00, outside your logged activity on 17m.")]
+        html = lh.panel_notes_html(self.panel(lines, set()), self.COLOURS)
+        self.assertIn("<summary>3 paths with no contact on that band (20m, 15m, 17m)</summary>", html)
+        self.assertEqual(html.count("<details"), 1)
+        self.assertNotIn("dv-look", html.split("<details")[0])                                    # nothing written out before it
+
+    def test_a_day_with_nothing_to_fold_has_no_closed_line(self):
+        html = lh.panel_notes_html(self.panel([("15m", "Worked Africa.")], {"15m"}), self.COLOURS)
+        self.assertIn("Worked Africa.", html)
+        self.assertNotIn("<details", html)
+
+    def test_each_days_notes_sit_under_that_days_chart(self):
+        day1 = self.panel([("15m", "Worked Africa day one.")], {"15m"}, "2026-11-12")
+        day2 = self.panel([("10m", "Worked Africa day two.")], {"10m"}, "2026-11-13")
+        view = {"code": "AF", "name": "Africa", "contacts": 2, "paths": 0, "rbn": False, "panels": [day1, day2]}
+        tl = {"power_w": 100.0, "mode": "CW", "metric": "good", "bin_min": 30}
+        html = lh.destination_html(view, tl, self.COLOURS)
+        a, b = html.index("Thu 12 Nov 2026"), html.index("Fri 13 Nov 2026")
+        one, two = html.index("Worked Africa day one."), html.index("Worked Africa day two.")
+        self.assertTrue(a < one < b < two)                                                        # day one's note is before day two's chart, day two's after it
+        self.assertNotIn("12 Nov: Worked", html)                                                  # no date prefix: it is under its own day
+        self.assertNotIn("WORTH A LOOK", html)
 
 
 class TheNoPathSentenceAndTheTwoRowLane(unittest.TestCase):

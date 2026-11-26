@@ -159,6 +159,7 @@ CSS = """<style>
 .dv-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:10px 0 4px}
 .dv-ki{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:9px}.dv-ki .mk{flex:0 0 28px;display:flex;justify-content:center;padding-top:2px}
 .dv-ki b{display:block;font-size:13.5px}.dv-ki span{font-size:12.5px;opacity:.78;line-height:1.35}.dv-ki .mk i{margin:0}
+.dv-more{margin:8px 0 2px}.dv-more summary{cursor:pointer;font-size:13px;opacity:.78}.dv-more[open] summary{margin-bottom:2px}
 .dv-row.sel .dv-chip{box-shadow:0 0 0 2px #fff,0 0 0 3px rgba(0,0,0,.5)}
 .dv-track.two{height:56px}.dv-track.two .dv-bar{top:4px;height:48px}.dv-track.two .dv-tri{top:2px}.dv-track.two .dv-dot{top:31px}
 .dv-track.two.lab{height:80px}.dv-track.two.lab .dv-bar{height:72px}.dv-track.two.lab .dv-call{top:57px;margin-left:0;transform:translateX(-50%)}
@@ -872,6 +873,28 @@ def source_key_html(name):
             '</div>')
 
 
+NOTES_SHOWN = 2        # the notes about your contacts that a day's chart shows as sentences; the rest are folded under it
+
+
+def panel_notes_html(panel, colours, keep=NOTES_SHOWN):
+    """The notes under one day's chart: the lines about bands on which you made contact with the destination are written out (the first `keep`), and every other line, a path or a
+    skimmer on a band with no contact, is folded into one closed line saying how many and on which bands, so the chart leads and the text is only what you did. `panel` is one of
+    log_openings.destination_views' panels."""
+    has_contact = {lane["band"] for lane in panel["lanes"] if lane["contacts"]}
+    shown, folded = [], []
+    for band, text in panel["lines"]:
+        (shown if band in has_contact and len(shown) < keep else folded).append((band, text))
+    line = lambda b, t: f'<div class="dv-look"><b>{band_chip(b, colours.get(b, "#888"))}</b><div>{escape(t)}</div></div>'
+    html = "".join(line(b, t) for b, t in shown)
+    if folded:
+        bands = ", ".join(dict.fromkeys(b for b, _ in folded))
+        n = len(folded)
+        paths = all("paths appeared" in t or "path" in t.split(";")[0] for _, t in folded) and all(b not in has_contact for b, _ in folded)
+        label = f"{n} path{'s' if n != 1 else ''} with no contact on that band ({bands})" if paths else f"{n} more note{'s' if n != 1 else ''} ({bands})"
+        html += f'<details class="dv-more"><summary>{escape(label)}</summary>{"".join(line(b, t) for b, t in folded)}</details>'
+    return html
+
+
 def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=None):
     """One destination as a picture of the reported paths and your contacts: the plain idea in a sentence, the few lines worth a look and, for each stretch of the log, a
     strip of your logged activity above a lane for each band that has something to show: a bar where the nearby WSPR showed a path to the destination (pale for one
@@ -883,10 +906,6 @@ def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=N
         from ui_common import BAND_COLORS as colours
     name, many = view["name"], len(view["panels"]) > 1
     power_w, mode, observed = tl.get("power_w") or 0, tl.get("mode", "CW"), tl["metric"] == "heard"
-    looks = ""
-    for panel in view["panels"]:
-        stamp = f"{pd.Timestamp(panel['slots'][0]):%d %b}: " if many else ""
-        looks += "".join(f'<div class="dv-look"><b>{band_chip(b, colours.get(b, "#888"))}</b><div>{escape(stamp + t)}</div></div>' for b, t in panel["lines"])
     out = []
     for panel in view["panels"]:
         slots, step = panel["slots"], pd.Timedelta(minutes=panel["bin_min"])
@@ -941,7 +960,7 @@ def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=N
             lanes += (f'<div class="dv-row{" sel" if on else ""}"><div class="dv-name">{band_chip(band, colour)}{note}</div>'
                       f'<div class="dv-track{" two" if two else ""}{" lab" if labelled else ""}">{ticks}{marks}</div></div>')
         head = f'<p class="sub" style="margin:10px 0 4px"><b>{pd.Timestamp(slots[0]):%a %d %b %Y}</b> (UTC)</p>' if many else ""
-        out.append(head + f'<div class="dv-row top"><div class="dv-lab" title="The band with the most logged contacts in each quarter hour. A gap means no contact was logged, not that you were off the air.">Logged activity</div><div class="dv-strip">{strip}</div></div>{lanes}<div class="dv-axis">{axis}</div>')
+        out.append(head + f'<div class="dv-row top"><div class="dv-lab" title="The band with the most logged contacts in each quarter hour. A gap means no contact was logged, not that you were off the air.">Logged activity</div><div class="dv-strip">{strip}</div></div>{lanes}<div class="dv-axis">{axis}</div>' + panel_notes_html(panel, colours))
     nothing = ""
     if empty:
         nothing += f"Not shown: {_join(empty)} (no nearby WSPR path, no RBN skimmer and no contact there). "
@@ -954,7 +973,6 @@ def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=N
     rbn = f'<p class="sub">{escape(tl["rbn_line"])}</p>' if tl.get("rbn_line") and not str(tl["rbn_line"]).startswith("RBN skimmers") else ""
     return (f'<div class="lc"><div class="lc-card" id="sec-openings"><h4>{escape(name)}: reported paths and your contacts</h4>{idea}'
             + source_key_html(name)
-            + (f'<p style="margin:10px 0 2px;font-size:12px;font-weight:700;letter-spacing:.08em;opacity:.65">WORTH A LOOK</p>{looks}' if looks else "")
             + '<div style="margin-top:12px">' + "".join(out) + "</div>" + legend
             + (f'<p class="sub" style="margin-top:8px">The details below describe <b>{escape(str(selected[0]))}, {pd.Timestamp(selected[1]):%H:%M} to {(pd.Timestamp(selected[1]) + pd.Timedelta(minutes=tl["bin_min"])):%H:%M} UTC</b> '
                '(the dashed outline). Change it under <i>Details for one band and time</i>.</p>' if selected is not None else "")
