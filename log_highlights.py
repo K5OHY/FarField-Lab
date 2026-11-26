@@ -122,18 +122,20 @@ def _farthest_line(far):
             f"about {top['km']:,.0f} km ({top['km'] / 1.609344:,.0f} mi) away. The log gives no grid square, so each is placed at the centre of its country and the distance is rough.")
 
 
-def highlight_lines(first, far, repeats=None):
+def highlight_lines(first, far, repeats=None, dated=False):
     """The few sentences that lead the highlights, from the tables above and nothing else. The repeat line is written only when `repeats` (repeat_contacts) says at least
     REPEAT_MIN_SHARE of the contacts were with a station again on a band already worked with it. Stations that came back on another band are the multiband hunters, which the
-    page shows on their own, and on most logs they are a tenth of the contacts, so they alone do not make a line. Checked against the wording guard."""
+    page shows on their own, and on most logs they are a tenth of the contacts, so they alone do not make a line. With `dated` (a log over more than one UTC day) a time
+    carries its day, since the same clock time comes twice. Checked against the wording guard."""
     lines = []
+    clock = "%d %b %H:%M" if dated else "%H:%M"
     if len(first):
         r = first.iloc[0]
-        lines.append(f"The first contact outside your continent was {r['name']}: {r['call']} on {r['band']} at {r['time']:%H:%M} UTC, "
+        lines.append(f"The first contact outside your continent was {r['name']}: {r['call']} on {r['band']} at {r['time']:{clock}} UTC, "
                      + ("the first contact of the session." if r["since"] < 1 else f"{_hm(r['since'])} into the session."))
         if len(first) > 1:
             last = first.iloc[-1]
-            lines.append(f"{last['name']} came last, at {last['time']:%H:%M} UTC ({last['call']} on {last['band']}).")
+            lines.append(f"{last['name']} came last, at {last['time']:{clock}} UTC ({last['call']} on {last['band']}).")
     if len(far):
         lines.append(_farthest_line(far))
     if repeats and repeats["total"] and repeats["same_band"] / repeats["total"] >= REPEAT_MIN_SHARE:

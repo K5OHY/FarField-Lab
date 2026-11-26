@@ -20,7 +20,7 @@ from data_sources import (download_rbn_day, load_contact_places, load_nearby, lo
                           skimmer_data)
 from maps import build_map, great_circle, p2p_map, park_map, reach_map
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
-from ui_common import BAND_COLORS, BANNER, KM_PER_MILE, page_guide, preview
+from ui_common import BAND_COLORS, BANNER, KM_PER_MILE, brand_strip, page_guide, preview
 from wspr_data import WsprError
 
 MAX_LOG_BYTES = 5_000_000
@@ -53,20 +53,36 @@ def _sota_summit(ref):
 
 
 def _log_grids(log):
-    """The grid square the log gives each station, by callsign (the first one given), so those stations are placed with no lookup."""
+    """The place the log itself gives each station, by callsign, as a grid square: the grid it logged (the one most of its contacts carry, so a station that moved is placed where it
+    spent most of the log) or, when it logged none, the grid its own LAT and LON fall in. Those stations are placed with no lookup."""
     if "their_grid" not in log:
         return {}
-    given = log[log["their_grid"] != ""].drop_duplicates("call")
-    grids = dict(zip(given["call"], given["their_grid"]))
-    refs = log.attrs.get("ref_places") or {}
-    if refs:                                    # a station at another park or summit is placed at that park or summit (as the grid square it falls in), so the maps place it too
+    given = log[log["their_grid"] != ""]
+    grids = {call: g["their_grid"].value_counts().index[0] for call, g in given.groupby("call")}
+    if "their_lat" in log and "their_lon" in log:
         from conditions import latlon_to_maidenhead
-        for call, pota_cell, sota_cell in zip(log["call"], log["pota_ref"] if "pota_ref" in log else [""] * len(log), log["sota_ref"] if "sota_ref" in log else [""] * len(log)):
+        coords = log[log["their_lat"].notna() & log["their_lon"].notna()].drop_duplicates("call")
+        for call, lat, lon in zip(coords["call"], coords["their_lat"], coords["their_lon"]):
             if call not in grids:
-                point, _ = lc._reference_point(pota_cell, sota_cell, refs)
-                if point:
-                    grids[call] = latlon_to_maidenhead(point[0], point[1])
+                grids[call] = latlon_to_maidenhead(float(lat), float(lon))
     return grids
+
+
+def _ref_grids(log):
+    """The place of the park or summit each other station was at, as {callsign: (grid square, 'park' or 'summit')}, for a station whose log record carries no grid of its own:
+    the maps place it at that park or summit, and say so."""
+    refs = log.attrs.get("ref_places") or {}
+    out = {}
+    if not refs or "their_grid" not in log:
+        return out
+    from conditions import latlon_to_maidenhead
+    logged = _log_grids(log)
+    for call, pota_cell, sota_cell in zip(log["call"], log["pota_ref"] if "pota_ref" in log else [""] * len(log), log["sota_ref"] if "sota_ref" in log else [""] * len(log)):
+        if call not in logged and call not in out:
+            point, kind = lc._reference_point(pota_cell, sota_cell, refs)
+            if point:
+                out[call] = (latlon_to_maidenhead(point[0], point[1]), kind)
+    return out
 
 
 @st.cache_data(ttl=86400, show_spinner="Looking up where the stations outside North America are…")
@@ -101,7 +117,8 @@ def _p2p_block(col, log, ref, program, own, noun):
     stations = int(p2p["calls"].explode().nunique())
     col.caption(f"{len(placed)} {noun}{'s' if len(placed) != 1 else ''} reached, {n['with_ref']} contact{'s' if n['with_ref'] != 1 else ''} with {stations} station{'s' if stations != 1 else ''}. "
                 f"This shows only the contacts where your log names the other station's {noun} ({n['with_ref']} of the {n['total']:,} made from {ref}); a contact the log does not "
-                f"mark is not found." + (f" {n['unplaced']} could not be placed." if n["unplaced"] else ""))
+                f"mark is not found." + (f" {n['same']} more named {ref} itself, which is not {title.lower()} and is left off." if n.get("same") else "")
+                + (f" {n['unplaced']} could not be placed." if n["unplaced"] else ""))
 
 
 def _pota_cards(log, call):
@@ -521,7 +538,7 @@ def _default_band(bands, regions):
     return int(bands.index(dx.idxmax())) if len(dx) and dx.max() > 0 and dx.idxmax() in bands else 0
 
 
-def _places_for(rows, digest, skimmers, grids=None, dx_places=None):
+def _places_for(rows, digest, skimmers, grids=None, dx_places=None, ref_grids=None):
     """Where the stations on one band were, looked up only for the ones not looked up before. Kept for this log, so each station is
     only looked up once however often you change band."""
     saved = st.session_state.get("log_places")
@@ -530,7 +547,7 @@ def _places_for(rows, digest, skimmers, grids=None, dx_places=None):
     todo = [r for r in rows if r[0] not in saved["tried"]]
     if todo:
         bar = st.progress(0.0, text="Looking up where your contacts were…")
-        found = load_contact_places(todo, skimmers, progress=lambda done, total: bar.progress(done / total, text=f"Looked up {done} of {total}…"), grids=grids, dx_places=dx_places)
+        found = load_contact_places(todo, skimmers, progress=lambda done, total: bar.progress(done / total, text=f"Looked up {done} of {total}…"), grids=grids, dx_places=dx_places, ref_grids=ref_grids)
         bar.empty()
         if len(found):
             saved["places"] = pd.concat([saved["places"], found]) if len(saved["places"]) else found
@@ -548,12 +565,12 @@ def _prefetch_places(log, skimmers, digest):
     jobs = [list(log[log["band"] == band].drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
             for band in log["band"].value_counts().index]
 
-    grids, dx_places = _log_grids(log), log.attrs.get("call_places")
+    grids, dx_places, ref_grids = _log_grids(log), log.attrs.get("call_places"), _ref_grids(log)
 
     def run():
         for rows in jobs:
             try:
-                load_contact_places(rows, skimmers, workers=4, grids=grids, dx_places=dx_places)
+                load_contact_places(rows, skimmers, workers=4, grids=grids, dx_places=dx_places, ref_grids=ref_grids)
             except Exception:
                 pass
     threading.Thread(target=run, daemon=True, name="log-places").start()
@@ -604,7 +621,7 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
         mine = log[log["band"] == pick]
         shown_log = mine[mine["mode"] == "CW"] if cw_only else mine
         rows = list(shown_log.drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
-        places = _places_for(rows, digest, locs, _log_grids(log), log.attrs.get("call_places"))
+        places = _places_for(rows, digest, locs, _log_grids(log), log.attrs.get("call_places"), _ref_grids(log))
         worked = lc.where_worked(shown_log, places)
         worked = worked.assign(bands_worked=worked["call"].map(log.groupby("call")["band"].nunique()))
         t_lo, t_hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
@@ -651,17 +668,15 @@ def _glance(park_cards, rep, spots, skimmers, home, headline, result):
         items.append(("Band openings", headline, "sec-openings"))
     if result is not None and pd.notna(result["overall"]["stronger_db"]):
         o = result["overall"]
-        items.append(("Signal against the WSPR reference", f"About {o['stronger_db']:+.0f} dB against the nearby WSPR reference, from {o['matches']} matches with "
-                                                                f"{o.get('match_rx', o['matches'])} receiving stations.", "sec-signal"))
+        items.append(("Signal against the WSPR reference", f"Experimental: about {o['stronger_db']:+.0f} dB against the nearby WSPR reference, from "
+                                                                f"{o.get('match_rx', o['matches'])} skimmers.", "sec-signal"))
     return lh.glance_html(items)
 
 
 def log_page():
     """The page."""
-    if BANNER.exists():
-        st.image(str(BANNER), width="stretch")
-    else:
-        st.title("FarField Lab")
+    brand_strip()
+    st.title(":material/fact_check: Log analysis")
     st.markdown('<p class="subtitle">Upload the log of a session and see it beside the skimmers that heard you and the WSPR stations around you.</p>',
                 unsafe_allow_html=True)
     guide = st.container()
@@ -775,7 +790,8 @@ def log_page():
     with highlights_slot:
         hl_places = lc.contact_places(log, home)
         hl_first, hl_far = hl.first_by_continent(hl_places, home_cont), hl.farthest_by_band(hl_places)
-        hl_html = lh.highlights_html(hl_first, hl_far, hl.highlight_lines(hl_first, hl_far, hl.repeat_contacts(log)))
+        dated = log["time"].dt.date.nunique() > 1                 # a log over more than one UTC day: a time of day comes twice, so it carries its date
+        hl_html = lh.highlights_html(hl_first, hl_far, hl.highlight_lines(hl_first, hl_far, hl.repeat_contacts(log), dated), dated)
         if hl_html:
             st.html(lh.CSS + hl_html)
         rate = hl.rate_chart(log, BAND_COLORS)
@@ -909,8 +925,8 @@ def log_page():
         with st.expander("How this estimate works: the steps, the power, the mode and a worked example"):
             st.html(lh.CSS + lh.signal_method_html(power, "CW", lc.TYPICAL_OFFSET_DB, lh.signal_example(table), cond.MODES))
         if len(table):
-            with st.expander(f"The receiving stations behind these bars ({len(table)})"):
-                st.caption("One row for each band and receiving station. A station that was matched in more than one stretch of the log has more than one match; in the bars it still counts once.")
+            with st.expander(f"The {len(table)} receiver-band comparisons behind these bars ({table['Receiving station'].nunique()} receiving stations)"):
+                st.caption("One row for each band and receiving station (a comparison). A station that was matched in more than one stretch of the log has more than one match in its row; in the bars a skimmer still counts once, however many rows it has.")
                 st.dataframe(table, hide_index=True, width="stretch", height=min(420, 38 + 35 * len(table)))
         st.caption(f"With fewer than {lc.MIN_MATCHES} skimmers behind it a bar is striped, and it is a hint, not a score. "
                    "A log shows who worked you; RBN only shows who a skimmer decoded. "

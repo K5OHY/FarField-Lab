@@ -51,6 +51,23 @@ def _rank(band):
 
 # ----------------------------------------------------------------------------------------------------- reading the log
 
+def adif_coordinate(text):
+    """A latitude or longitude from an ADIF LAT or LON field as signed decimal degrees, or None. ADIF writes 'N031 28.750' or 'W100 29.250' (a hemisphere letter, whole degrees,
+    decimal minutes); a plain decimal such as '31.4792' or '-100.4875', which some programs write, is accepted too. Anything out of range is None."""
+    t = str(text).strip().upper()
+    m = re.match(r"^([NSEW])\s*(\d{1,3})\s+(\d{1,2}(?:\.\d+)?)$", t)
+    if m:
+        value = int(m.group(2)) + float(m.group(3)) / 60.0
+        value = -value if m.group(1) in "SW" else value
+        limit = 90 if m.group(1) in "NS" else 180
+        return value if abs(value) <= limit and float(m.group(3)) < 60 else None
+    try:
+        value = float(t)
+    except ValueError:
+        return None
+    return value if abs(value) <= 180 else None
+
+
 def _fields(record):
     """The fields of one ADIF record. A value is as long as its length says, so '<' inside a value is not a problem."""
     out, pos = {}, 0
@@ -105,6 +122,7 @@ def parse_adif(text):
                      "country": f.get("COUNTRY", ""), "cont": f.get("CONT", "").upper(), "pota_ref": f.get("POTA_REF", ""),
                      "my_sota": (f.get("MY_SOTA_REF") or (f.get("MY_SIG_INFO", "") if f.get("MY_SIG", "").upper() == "SOTA" else "")).upper(),
                      "sota_ref": f.get("SOTA_REF", "").strip().upper(), "their_grid": f.get("GRIDSQUARE", "").strip().upper(),
+                     "their_lat": adif_coordinate(f.get("LAT", "")), "their_lon": adif_coordinate(f.get("LON", "")),
                      "dxcc": f.get("DXCC", "").strip(), "cqz": f.get("CQZ", "").strip(), "ituz": f.get("ITUZ", "").strip(),
                      "my_pota": (f.get("MY_POTA_REF") or (f.get("MY_SIG_INFO", "") if f.get("MY_SIG", "").upper() == "POTA" else "")).upper(),
                      "rst_sent": f.get("RST_SENT", ""), "rst_rcvd": f.get("RST_RCVD", ""),
@@ -176,9 +194,28 @@ def summary(log):
             "countries": int(log.loc[log["country"] != "", "country"].nunique()), "first": t.iloc[0], "last": t.iloc[-1],
             "per_hour": per_hour, "on_air_hours": float(on_air.sum() / 3600), "median_gap_s": float(gaps.median()) if len(gaps) else float("nan"),
             "longest_gap_min": float(gaps.max() / 60) if len(gaps) else float("nan"), "best_hour": n_best, "best_hour_start": start_best,
-            "park_to_park": int(log["pota_ref"].ne("").sum()), "parks": int(log.loc[log["pota_ref"] != "", "pota_ref"].nunique()),
+            **_park_counts(log),
             "summit_to_summit": int((_summits_of(log) != "").sum()), "summits": int(_summits_of(log).replace("", pd.NA).dropna().nunique()),
             "bands": bands_top_down(log)}
+
+
+def _park_counts(log):
+    """The park-to-park figures of the summary, counted the way the park map counts them: `park_to_park` is the contacts whose record names a park of the other station that
+    is not one of the parks the log was made from, `parks` is how many different such parks (a two-fer names two), and `park_same` is the contacts that named the park the log
+    was made from, which are not park to park and are not on the map."""
+    if "pota_ref" not in log or not len(log):
+        return {"park_to_park": 0, "parks": 0, "park_same": 0}
+    own = set(pota_refs(log))
+    others, contacts, same = set(), 0, 0
+    for cell in log["pota_ref"]:
+        refs = {r for r in _cell_refs(cell, "POTA") if POTA_REF.match(r)}
+        if refs & own:
+            same += 1
+        far = refs - own
+        if far:
+            contacts += 1
+            others |= far
+    return {"park_to_park": contacts, "parks": len(others), "park_same": same}
 
 
 def spots_link(call, grid, log, pad_min=10):
@@ -618,8 +655,13 @@ def finish_place(found, state="", country=""):
 
 def place_note(level, source):
     """How a contact's place was found, in words for the map popup."""
-    return {"grid": f"centre of its grid square ({source})", "state": f"centre of the state ({source})",
-            "area": f"centre of its call area ({source})", "country": f"centre of the country ({source})"}.get(level, source)
+    if level == "grid":
+        if str(source).startswith("grid square in the log"):
+            return "Logged grid: the centre of its grid square"
+        return f"Registered home location ({source}); where it operated is not confirmed. Shown as the centre of its grid square"
+    return {"park": "Park or summit reference: the place of the park or summit the log names", "summit": "Park or summit reference: the place of the summit the log names",
+            "area": f"Approximate: the centre of its call area ({source})", "state": f"Approximate: the centre of its state ({source})",
+            "country": f"Approximate: the centre of its country ({source})"}.get(level, source)
 
 
 def where_worked(log, places):
@@ -982,7 +1024,7 @@ def coverage_table(grid):
         "What it can say": d["state"].tolist()}, columns=COVERAGE_COLUMNS)
 
 
-PRECISE_SOURCES = ("grid", "park", "summit", "home")      # a contact placed by one of these is at a known place (a station's HamQTH home is its own 4 character grid); a call area, a state or a country is only a centre, which can be hundreds of km away
+PRECISE_SOURCES = ("grid", "coords", "park", "summit", "home")      # a contact placed by one of these is at a known place (a station's HamQTH home is its own 4 character grid); a call area, a state or a country is only a centre, which can be hundreds of km away
 AREA_SECTOR_MIN_KM = 2500                          # a call area (Kinki, a Brazilian state) is a region's centre, off by a few hundred km: far enough away that is too little to change the sector it is in
 ROUGH_MARGIN_KM = 1500                             # a centre placed farther than this beyond the farthest known place is certainly farther (a small country's centre is wrong by far less)
 
@@ -1028,26 +1070,30 @@ def park_to_park(log, ref, ref_places=None, program="POTA"):
     """The contacts made from the park (or summit) `ref` with another activator, one row for each park (or summit) of theirs that the log names: `ref`, `name`, `lat`, `lon`
     (NaN when the place of that park is not known), `contacts`, `stations`, `calls`, `bands`, `first` and `last` (times), and `by_band` ({band: {contacts, calls, first, last}}, highest band first). Only a contact whose log record carries the other
     station's park reference is here: the log is the only place that says it was park to park, so a contact the logging program did not mark is not found. Most contacts
-    first. `attrs` has `with_ref` (contacts that name a park or summit), `total` (the contacts made from `ref`) and `unplaced` (parks with no known place)."""
+    first. `attrs` has `with_ref` (contacts that name another park or summit, each counted once even when it names two), `total` (the contacts made from `ref`), `same` (contacts
+    that named `ref` itself, which are not park to park and are left off the map) and `unplaced` (parks with no known place)."""
     ref_places = ref_places if ref_places is not None else (getattr(log, "attrs", {}).get("ref_places") or {})
     sota = program == "SOTA"
     mine_col, valid = ("my_sota", SOTA_REF) if sota else ("my_pota", POTA_REF)
     cols = ["ref", "name", "lat", "lon", "contacts", "stations", "calls", "bands", "first", "last", "by_band"]
     empty = pd.DataFrame(columns=cols)
-    empty.attrs.update(with_ref=0, total=0, unplaced=0)
+    empty.attrs.update(with_ref=0, total=0, unplaced=0, same=0)
     if mine_col not in log:
         return empty
     theirs = _summits_of(log) if sota else (log["pota_ref"] if "pota_ref" in log else pd.Series("", index=log.index))
-    rows, total = [], 0
+    rows, total, same, named = [], 0, 0, 0
     for call, band, time, mine, other in zip(log["call"], log["band"], log["time"], log[mine_col], theirs):
         if ref not in _cell_refs(mine, program):
             continue
         total += 1
-        for r in sorted(_cell_refs(other, program)):
-            if valid.match(r) and r != ref:
-                rows.append((r, call, band, time))
+        refs = [r for r in sorted(_cell_refs(other, program)) if valid.match(r)]
+        same += int(ref in refs)
+        far = [r for r in refs if r != ref]
+        named += int(bool(far))
+        for r in far:
+            rows.append((r, call, band, time))
     if not rows:
-        empty.attrs.update(total=total)
+        empty.attrs.update(total=total, same=same)
         return empty
     d = pd.DataFrame(rows, columns=["ref", "call", "band", "time"])
     out = []
@@ -1059,7 +1105,7 @@ def park_to_park(log, ref, ref_places=None, program="POTA"):
                     "by_band": {b: {"contacts": len(h), "calls": list(dict.fromkeys(h.sort_values("time")["call"])), "first": h["time"].min(), "last": h["time"].max()}
                                 for b, h in sorted(g.groupby("band"), key=lambda kv: _rank(kv[0]))}})
     table = pd.DataFrame(out, columns=cols).sort_values(["contacts", "ref"], ascending=[False, True]).reset_index(drop=True)
-    table.attrs.update(with_ref=int(len(d)), total=total, unplaced=int(table["lat"].isna().sum()))
+    table.attrs.update(with_ref=named, total=total, unplaced=int(table["lat"].isna().sum()), same=same)
     return table
 
 
@@ -1107,20 +1153,26 @@ def contact_places(log, home, ref_places=None):
     """Where each contact was, as columns added to the log. The place comes from the contact's own grid square when the log gives a valid one
     (the 6 character grid when there is one), read for each contact, so a station that moved is placed where it was each time; failing that, for a contact with another
     park or summit, from that park or summit's own place (`ref_places`, or the log's `attrs['ref_places']`, {reference: (lat, lon)}); failing that
-    the centre of its state (North America), then the centre of its country by its callsign. `c_source` says which ('grid', 'park', 'summit', 'home' (a station
+    the centre of its state (North America), then the centre of its country by its callsign. `c_source` says which ('grid', 'coords' (the station's own LAT and LON in the log), 'park', 'summit', 'home' (a station
     outside North America placed by its HamQTH callbook home, from `attrs['call_places']`), 'area' (the same, by its call area), 'state', 'country' or '' when it could not be placed), `c_approx` is True for the last two, `c_km` and `c_bearing` are the distance and the bearing from
     `home` to the place, `sector` is the compass sector of that bearing and `continent` comes from the log's CONT field, else from the callsign.
     `sector_whole` is the sector the contact can be counted in: the sector of its grid, park or summit, or, for a contact placed only by its state, the sector
-    the whole state lies in (None when the state spreads over more than one, and for a country's centre); `sector_basis` says 'grid', 'park', 'summit', 'home', 'area' or 'state'. A call area counts in a sector only when it is AREA_SECTOR_MIN_KM or more away."""
+    the whole state lies in (None when the state spreads over more than one, and for a country's centre); `sector_basis` says 'grid', 'coords', 'park', 'summit', 'home', 'area' or 'state'. A call area counts in a sector only when it is AREA_SECTOR_MIN_KM or more away."""
     ref_places = ref_places if ref_places is not None else (getattr(log, "attrs", {}).get("ref_places") or {})
     call_places = getattr(log, "attrs", {}).get("call_places") or {}
     pota_cells = log["pota_ref"] if "pota_ref" in log else pd.Series("", index=log.index)
     sota_cells = log["sota_ref"] if "sota_ref" in log else pd.Series("", index=log.index)
-    keys = list(zip(log["call"], log["state"], log["their_grid"], log["cont"], log["country"], pota_cells, sota_cells))
+    if "their_lat" in log and "their_lon" in log:                       # the other station's own coordinates, when the log carries them (ADIF LAT and LON)
+        coords = [(round(float(a), 5), round(float(b), 5)) if a == a and b == b and a is not None and b is not None else None for a, b in zip(log["their_lat"], log["their_lon"])]
+    else:
+        coords = [None] * len(log)
+    keys = list(zip(log["call"], log["state"], log["their_grid"], log["cont"], log["country"], pota_cells, sota_cells, coords))
     found = {}
     for key in set(keys):
-        call, state, grid, cont, country, pota_cell, sota_cell = key
+        call, state, grid, cont, country, pota_cell, sota_cell, logged = key
         point, source = lf.grid_point(grid), "grid"
+        if point is None and logged is not None:
+            point, source = logged, "coords"
         if point is None and ref_places:
             point, source = _reference_point(pota_cell, sota_cell, ref_places)
             point = point or None

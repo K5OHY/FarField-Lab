@@ -103,14 +103,19 @@ class LookingUpReferences(unittest.TestCase):
         self.assertEqual(ds.load_reference_places([], []), {})
         ds._REF_PLACES.clear()
 
-    def test_the_maps_place_a_contact_at_its_park_as_a_grid_square(self):
-        from views.log_view import _log_grids
+    def test_the_maps_place_a_contact_at_its_park_and_say_so_and_the_logged_grid_wins(self):
+        from views.log_view import _log_grids, _ref_grids
         log = log_of(rec("W1PARK", pota_ref="US-1234"), rec("W1GRID", "2011", pota_ref="US-1234", gridsquare="FN31"), rec("W1NONE", "2012"))
         log.attrs["ref_places"] = PARKS
-        grids = _log_grids(log)
-        self.assertEqual(grids["W1GRID"], "FN31")                                                  # the log's own grid wins
-        self.assertEqual(len(grids["W1PARK"]), 6)                                                  # the park, as the grid square it is in
-        self.assertNotIn("W1NONE", grids)
+        self.assertEqual(_log_grids(log), {"W1GRID": "FN31"})                                      # only what the log itself gives is a logged grid
+        refs = _ref_grids(log)
+        self.assertEqual(len(refs["W1PARK"][0]), 6)                                                # the park, as the grid square it is in
+        self.assertEqual(refs["W1PARK"][1], "park")
+        self.assertNotIn("W1GRID", refs)                                                           # it has a grid of its own
+        self.assertNotIn("W1NONE", refs)
+        placed = ds.load_contact_places([("W1PARK", "PA", "United States"), ("W1GRID", "PA", "United States")], {}, grids=_log_grids(log), ref_grids=refs)
+        self.assertEqual((placed.loc["W1PARK", "level"], placed.loc["W1PARK", "source"]), ("park", "park reference"))
+        self.assertEqual(placed.loc["W1GRID", "level"], "grid")
 
 
 class FarthestIsNeverDecidedByACentre(unittest.TestCase):

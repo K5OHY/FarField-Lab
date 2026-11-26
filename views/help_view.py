@@ -119,7 +119,7 @@ def _start_here():
                 st.caption(blurb)
                 if key in PAGES:
                     st.page_link(PAGES[key], label=action, icon=icon)
-    st.markdown("**Just looking?** My spots has a **Try an example** button, Band conditions has **Try an example location**, and Compare antennas "
+    st.markdown("**Just looking?** My spots has a **Try an example** button, and Compare antennas "
                 "opens with six real tests (listed below).")
 
 

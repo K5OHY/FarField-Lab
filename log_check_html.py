@@ -800,15 +800,16 @@ def summit_facts_html(card):
     return '<div class="lc"><div class="lc-card"><h4>About the summit</h4><ul class="lc-says">' + "".join(f"<li>{f}</li>" for f in facts) + "</ul></div></div>"
 
 
-def highlights_html(first, far, lines):
+def highlights_html(first, far, lines, dated=False):
     """The session's highlights: a few plain sentences, then when each other continent first answered and the farthest contact on each band (log_highlights has the
-    tables). Empty when there is nothing to show."""
+    tables). With `dated` (a log over more than one UTC day) the times carry their day. Empty when there is nothing to show."""
     if not (len(first) or len(far)):
         return ""
     from log_highlights import _hm
+    clock = "%d %b %H:%M" if dated else "%H:%M"
     says = ('<ul class="lc-says">' + "".join(f"<li>{escape(x)}</li>" for x in lines) + "</ul>") if lines else ""
     if len(first):
-        rows = "".join(f"<tr><td><b>{escape(r.name)}</b></td><td>{escape(r.call)}</td><td>{r.band}</td><td>{r.time:%H:%M}</td><td class=\"n\">{escape(_hm(r.since)) if r.since >= 1 else 'first'}</td></tr>"
+        rows = "".join(f"<tr><td><b>{escape(r.name)}</b></td><td>{escape(r.call)}</td><td>{r.band}</td><td>{r.time:{clock}}</td><td class=\"n\">{escape(_hm(r.since)) if r.since >= 1 else 'first'}</td></tr>"
                        for r in first.itertuples())
         a = f'<div><h5>When each other continent first answered</h5><table><tr><th>Continent</th><th>Station</th><th>Band</th><th>UTC</th><th>Into the session</th></tr>{rows}</table></div>'
     else:
@@ -1371,8 +1372,11 @@ def followers_html(log, summary, rows=LADDER_ROWS):
     when = f"{summary['best_hour_start']:%d %b %H:%M}Z" if spans_days else f"{summary['best_hour_start']:%H:%M}Z"
     facts.append(_fact("Busiest stretch", f"<b>{summary['best_hour']} contacts</b> in the hour from {when}. "
                                         f"Longest quiet gap: {_long_time(summary['longest_gap_min'])}."))
-    if summary["park_to_park"]:
-        facts.append(_fact("Park to park", f"<b>{summary['park_to_park']} contacts</b> with {summary['parks']} park{'s' if summary['parks'] != 1 else ''}."))
+    if summary["park_to_park"] or summary.get("park_same"):
+        same = summary.get("park_same", 0)
+        text = (f"<b>{summary['park_to_park']} contact{'s' if summary['park_to_park'] != 1 else ''}</b> with {summary['parks']} other park{'s' if summary['parks'] != 1 else ''}"
+                if summary["park_to_park"] else "No contact named another park")
+        facts.append(_fact("Park to park", text + (f"; {same} more named your own park." if same else ".")))
     if summary.get("summit_to_summit"):
         facts.append(_fact("Summit to summit", f"<b>{summary['summit_to_summit']} contacts</b> with {summary['summits']} summit{'s' if summary['summits'] != 1 else ''}."))
     dupes = same_band_repeats(log)

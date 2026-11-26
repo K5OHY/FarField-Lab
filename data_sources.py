@@ -333,18 +333,33 @@ def _place_from_log_grid(call, state, country, grids):
     return None
 
 
-def load_contact_places(rows, skimmers, progress=None, workers=6, grids=None, dx_places=None):
+def _place_from_reference(call, ref_grids):
+    """A contact placed at the park or summit the log says it was made from, or None: `ref_grids` maps a call to (grid square, 'park' or 'summit'), and the place is the centre of
+    that grid square (about 5 km), said to be a park or summit reference and not the station's own grid."""
+    from rbn_data import maidenhead_to_latlon
+    found = (ref_grids or {}).get(call)
+    if not found:
+        return None
+    grid, kind = found
+    try:
+        lat, lon = maidenhead_to_latlon(str(grid)[:6])
+    except ValueError:
+        return None
+    return {"lat": lat, "lon": lon, "source": f"{kind} reference", "level": kind, "grid": str(grid)[:6]}
+
+
+def load_contact_places(rows, skimmers, progress=None, workers=6, grids=None, dx_places=None, ref_grids=None):
     """Where each station in a log was, as a table indexed by call (lat, lon, level, source, grid). `rows` is a list of
     (call, state, country). Exact answers are shown at the centre of the 4 character grid square, a miss falls back to the centre of
     the state in the log, and a call that cannot be placed at all is left out. Stations the log puts outside North America are placed at
     the centre of their country without a lookup. `grids` maps a call to the grid square the log gives it: such a contact is placed from that, with no
-    lookup at all. `dx_places` is callbook.load_places' answer for the stations outside North America. A few lookups run at once; `progress(done, total)` is called as they finish."""
+    lookup at all. `dx_places` is callbook.load_places' answer for the stations outside North America, and `ref_grids` maps a call to the (grid, 'park' or 'summit') of the park or summit the log says it was at, which places it there (not at its own grid). A few lookups run at once; `progress(done, total)` is called as they finish."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     done, out = 0, {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {}
         for call, state, country in rows:
-            from_log = _place_from_log_grid(call, state, country, grids)
+            from_log = _place_from_log_grid(call, state, country, grids) or _place_from_reference(call, ref_grids)
             if from_log:
                 out[call] = from_log
                 done += 1
