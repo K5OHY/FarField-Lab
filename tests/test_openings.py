@@ -921,7 +921,7 @@ class TheSignalComparison(unittest.TestCase):
 
     def test_the_result_comes_first_with_the_receiving_stations_it_rests_on(self):
         html = lh.signal_intro_html(10.0, {"stronger_db": 2.4, "matches": 106, "match_rx": 27, "spread_db": 8.5}, 100.0)
-        self.assertIn("<b>Overall +2 dB</b> from 106 matches with 27 different receiving stations; the receivers spread 8.5 dB.", html)
+        self.assertIn("<b>Overall +2 dB</b> from 27 skimmers (106 matches); the receivers spread 8.5 dB.", html)
         self.assertIn("restated to 100 W", html)
         none = lh.signal_intro_html(10.0, {"stronger_db": float("nan"), "matches": 3, "match_rx": 2, "spread_db": float("nan")}, 100.0)
         self.assertNotIn("Overall", none)                                                     # no overall result to state, so none is stated
@@ -962,19 +962,25 @@ class TheSignalComparison(unittest.TestCase):
         self.assertIsNone(lh.signal_example(table[table["Matches"] > 1]))
         self.assertIsNone(lh.signal_example(None))
 
+    def test_the_worked_example_is_a_typical_match_not_the_most_extreme(self):
+        rows = [("20m", "EXTREME", -17.0, 29.0, 46.0), ("20m", "TYPICAL", 5.0, 20.0, 15.0), ("20m", "NEAR1", 4.0, 20.0, 16.0), ("20m", "NEAR2", 3.0, 18.0, 15.0), ("20m", "LOW", 9.0, 14.0, 5.0)]
+        table = lc.match_table(pd.DataFrame(rows, columns=["band", "rx", "adj", "obs", "diff"]))
+        ex = lh.signal_example(table)
+        self.assertIn(ex["rx"], ("TYPICAL", "NEAR1", "NEAR2"))                                  # the one 36 dB above is not the example
+
     def test_a_band_with_enough_matches_shows_how_far_the_middle_half_ran(self):
         row = {"band": "20m", "contacts": 5, "other": 0, "skimmers": 4, "report": 5.0, "page": 0.5, "spotted": 0.5, "listening": 3, "stronger_db": 2.0, "matches": 9,
                "match_rx": 6, "q1": -1.0, "q3": 5.0, "thin": False, "note": "", "tone": "", "no_picture": False}
         html = lh.band_table_html(pd.DataFrame([row]))
-        self.assertIn("The middle half of the matches ran from -1.0 to +5.0 dB", html)
-        self.assertIn("6 different receiving stations", html)
-        self.assertIn("<small>6 stations</small>", html)                                      # the receiving stations are written beside the result, not only on hover
+        self.assertIn("The middle half of the skimmers ran from -1.0 to +5.0 dB", html)
+        self.assertIn("6 skimmers that spotted you and also decoded WSPR near you, each counted once", html)
+        self.assertIn("<small>6 skimmers</small>", html)                                      # the receiving stations are written beside the result, not only on hover
         self.assertIn("Against the WSPR reference", html)
         self.assertNotIn("report S", html)                                                    # the S in the reports you were given is not a skimmer figure: it is on the who-hears-whom card
         self.assertIn(">+10</span>", html)                                                     # and the scale is numbered, with zero marked
         self.assertNotIn("typical", html)
         row.update(stronger_db=float("nan"), q1=float("nan"), q3=float("nan"))
-        self.assertNotIn("The middle half of the matches ran from", lh.band_table_html(pd.DataFrame([row])))
+        self.assertNotIn("The middle half of the skimmers ran from", lh.band_table_html(pd.DataFrame([row])))
 
 
 class TheSignalComparisonCountsEachSkimmerOnce(unittest.TestCase):
@@ -1023,6 +1029,18 @@ class TheSignalComparisonCountsEachSkimmerOnce(unittest.TestCase):
         self.assertIn("Skimmers under 1,500 km (932 mi): <b>+13.0 dB</b> (2) &middot; farther: <b>+18.0 dB</b> (7)", html)
         self.assertNotIn("lc-bsplit", lh.band_table_html(self.row(near_db=float("nan"), near_n=1)))
         self.assertNotIn("lc-bsplit", lh.band_table_html(self.row(far_db=float("nan"), far_n=0)))
+
+    def test_the_folded_box_explains_a_match_a_skimmer_and_the_outline_in_plain_words(self):
+        html = lh.signal_method_html(100.0, "CW", 10.0)
+        for text in ("In plain words", "a <b>match</b>: one receiving station in one stretch", "One skimmer, one vote", "K5TR and K5TR-1",
+                     "<b>The outline</b> is the middle half of the skimmers", "With fewer than 8 skimmers the bar is striped, and under 3 there is no bar",
+                     "the page corrects for their power, not their antennas", "Count each skimmer once"):
+            self.assertIn(text, html)
+        self.assertEqual(lo.unsupported_claims(html), [])
+        legend = lh.band_table_html(self.row())
+        self.assertIn("outline: where the middle half of the skimmers fell", legend)
+        self.assertIn("striped: few skimmers", legend)
+        self.assertNotIn("middle half of the matches", legend)
 
     def test_a_table_built_before_these_columns_existed_still_draws(self):
         old = self.row().drop(columns=["near_db", "near_n", "far_db", "far_n"])

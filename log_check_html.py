@@ -998,14 +998,17 @@ def pota_html(card):
 
 def signal_example(table):
     """One real match from the table of receiving stations (log_check.match_table) to work the arithmetic through: a station matched once, so that the
-    numbers add up exactly, preferring the band and station with the most reports to work from. None when there is no such row."""
+    numbers add up exactly, and of those the one whose result is nearest the middle of all the results, so the example is a typical one and not the most extreme.
+    None when there is no such row."""
     from log_check import TYPICAL_OFFSET_DB
     if table is None or len(table) == 0:
         return None
     once = table[table["Matches"] == 1]
     if len(once) == 0:
         return None
-    r = once.iloc[0]
+    col = "Above (+) or below (-) the estimate (dB)"
+    middle = float(table[col].median()) if col in table else 0.0
+    r = once.iloc[(once[col] - middle).abs().argsort().iloc[0]] if col in once else once.iloc[0]
     obs, est = float(r["RBN report (dB)"]), float(r["Estimated from WSPR (dB)"])
     return {"band": r["Band"], "rx": r["Receiving station"], "obs": obs, "est": est, "diff": obs - est, "after": obs - est - TYPICAL_OFFSET_DB}
 
@@ -1022,17 +1025,18 @@ def signal_math_html(power_w, mode, offset_db, example=None, thresholds=None):
     if example:
         real = (f'<p class="sub"><b>One match from your log:</b> {escape(str(example["rx"]))} on {escape(str(example["band"]))}. The skimmer reported you at {example["obs"]:g} dB. '
                 f'The WSPR estimate for {power_w:g} W at that receiver was {example["est"]:g} dB. The difference is {example["obs"]:g} \u2212 ({example["est"]:g}) = {example["diff"]:+.1f} dB, '
-                f'and taking off the {offset_db:g} dB reference leaves <b>{example["after"]:+.1f} dB</b>. A band\'s bar is the middle of such results across its receiving stations.</p>')
+                f'and taking off the {offset_db:g} dB reference leaves <b>{example["after"]:+.1f} dB</b>. A band\'s bar is the middle of such results across its skimmers, each counted once.</p>')
     modes = ", ".join(f"{m} {t:+g} dB" for m, t in (thresholds or {}).items() if m in ("CW", "SSB", "FT8"))
     return ('<h5 style="margin:10px 0 4px">How a bar is worked out</h5><ol class="lc-steps">'
             f'<li><b>Restate each WSPR report to your power.</b> A WSPR transmitter near you gives its power in its report, and a receiver gives the signal-to-noise ratio (SNR) it decoded it at. '
             f'The estimate for you is that SNR plus the difference between your power and the transmitter\'s, in dB: SNR + 10 \u00d7 log\u2081\u2080(your watts \u00f7 its watts). '
             f'For example, a {tx_w} W ({tx_dbm:.0f} dBm) transmitter decoded at {tx_snr:g} dB becomes {tx_snr:g} + ({dbm:.0f} \u2212 {tx_dbm:.0f}) = {restated:+.0f} dB for your {power_w:g} W ({dbm:.0f} dBm). '
             'Transmitters declare their own power, and it is not checked.</li>'
-            '<li><b>Take the middle estimate for each receiving station</b> that also spotted you, over the stretch of the log.</li>'
+            '<li><b>Take the middle estimate for each receiving station</b> that also spotted you, over the stretch of the log (its reports from the hour before the middle of the stretch).</li>'
             '<li><b>Take the skimmer\'s middle reported SNR of you</b> over the same stretch.</li>'
             f'<li><b>Subtract, then take off the reference.</b> RBN report \u2212 WSPR estimate, minus {offset_db:g} dB, because an ordinary station reads about {offset_db:g} dB higher on RBN than on WSPR '
-            '(the two services measure noise differently). That fixed correction is the only thing added or taken off by hand; it is not tied to power or mode.</li></ol>'
+            '(the two services measure noise differently). That fixed correction is the only thing added or taken off by hand; it is not tied to power or mode.</li>'
+            '<li><b>Count each skimmer once.</b> A skimmer’s results across stretches (and names of one callsign) are reduced to their middle; a band’s bar is the middle across its skimmers, and the line through it is the middle half of them.</li></ol>'
             + real +
             f'<p class="sub"><b>Power.</b> You entered {power_w:g} W, so ' + (f'every estimate is {10 * math.log10(power_w / 100):+.1f} dB from what a 100 W station would get. ' if power_w != 100 else
                                                                          'the estimates are the ones a 100 W station would get, the power the reference was found for. ')
@@ -1050,25 +1054,36 @@ def signal_intro_html(offset_db, overall=None, power_w=None):
     if overall is not None and overall.get("stronger_db") is not None and overall["stronger_db"] == overall["stronger_db"]:
         rx = overall.get("match_rx", overall.get("matches"))
         spread = overall.get("spread_db")
-        line = (f'<p style="margin:2px 0 0;font-size:15px"><b>Overall {overall["stronger_db"]:+.0f} dB</b> from {overall["matches"]} matches with {rx} different receiving stations'
+        line = (f'<p style="margin:2px 0 0;font-size:15px"><b>Overall {overall["stronger_db"]:+.0f} dB</b> from {rx} skimmers ({overall["matches"]} matches)'
                 + (f"; the receivers spread {spread:.1f} dB" if spread is not None and spread == spread and overall["matches"] > 2 else "") + ".</p>")
     reference = f"{power_w:g} W" if power_w else "your power"
     return ('<div class="lc"><div class="lc-card" id="sec-signal"><h4>Signal comparison: RBN skimmers against the nearby WSPR reference</h4>'
             f'<p class="sub"><b>Experimental.</b> Each bar below is how far the skimmers\' reports of you sat above (blue) or below (amber) what the WSPR stations near you would give at the same '
-            f'receivers, restated to {reference}; the line through a bar is where the middle half of its matches fell. The reference is an estimate with a fixed {offset_db:.0f} dB correction '
+            f'receivers, restated to {reference}; the line through a bar is where the middle half of its skimmers fell. The reference is an estimate with a fixed {offset_db:.0f} dB correction '
             'between RBN and WSPR, not an established benchmark, and a bar says how you were heard, not how your antenna performs.</p>' + line + '</div></div>')
 
 
 def signal_method_html(power_w, mode, offset_db, example=None, thresholds=None):
-    """How the signal comparison is worked out, for the folded box under the bars: which stations are matched, why the reference is experimental, the steps, what the power
-    and the mode do, and one real match."""
+    """How the signal comparison is worked out, for the folded box under the bars: in plain words first (what is matched, what a match and a skimmer are, what the bar and its
+    outline show, what it cannot tell), then the steps, what the power and the mode do, and one real match."""
     return ('<div class="lc"><div class="lc-card" style="border:0;padding:0;margin:0;background:none" id="sec-signal-method">'
-            '<p class="sub">Skimmers that spotted you and also decode WSPR are matched with the WSPR transmitters near you that the same station decoded in the same stretch of '
-            'your log, restated to your power. Each bar is the middle result (the line through it is where the middle half of the matches fell) of how far the RBN reports sat '
-            'above (blue) or below (amber) what that estimate gave.</p>'
-            f'<p class="sub"><b>The reference is experimental.</b> Skimmers and WSPR receivers are different equipment, so an ordinary station reads about {offset_db:.0f} dB higher on '
-            'RBN than on WSPR (found from two checks of stations whose power is known), and that is taken off. A bar is a hint about how you were heard, '
-            'not a measurement of your antenna.</p>' + signal_math_html(power_w, mode, offset_db, example, thresholds) + '</div></div>')
+            '<h5 style="margin:2px 0 4px">In plain words</h5>'
+            '<ul class="lc-steps">'
+            '<li><b>The question.</b> Were your signals stronger or weaker at the skimmers than a typical station’s would be, judged by WSPR?</li>'
+            '<li><b>The test transmitters.</b> WSPR stations near you act as test signals. Each WSPR report gives the transmitter’s power and how strongly a receiver decoded it, so '
+            'it can be restated to <i>your</i> power: an estimate of the signal a station at your power, set up like your neighbours, shows at that receiver.</li>'
+            '<li><b>Which skimmers count.</b> Only a skimmer that spotted you <i>and</i> also decoded those WSPR neighbours in the same stretch of your log (an unbroken run of contacts on '
+            'one band). That is a <b>match</b>: one receiving station in one stretch, with its estimate (the middle of what it decoded from your neighbours in the hour before) '
+            'beside what it reported for you.</li>'
+            '<li><b>One skimmer, one vote.</b> A skimmer heard in two stretches, or listed under two names of one callsign (K5TR and K5TR-1), makes several matches but is one skimmer: its '
+            'matches are reduced to their middle before anything is counted. Nodes with a <i>-1</i> or <i>-4</i> after a callsign are treated as that callsign.</li>'
+            '<li><b>The bar</b> is the middle skimmer (the median), how far above (blue) or below (amber) the estimate the skimmers reported you. <b>The outline</b> is the middle half of the '
+            'skimmers: a quarter fell below its left end, a quarter above its right end. A wide outline means the skimmers disagreed, so the single figure is shaky; a narrow one means '
+            'they agreed. With fewer than 8 skimmers the bar is striped, and under 3 there is no bar.</li>'
+            f'<li><b>What it cannot tell.</b> The reference is experimental. It is other people’s stations, and the page corrects for their power, not their antennas, so a better antenna than theirs reads high and a '
+            f'worse one reads low, and a band at +15 dB or more gets a note saying so. Skimmers and WSPR receivers are also different equipment, so an ordinary station reads about {offset_db:.0f} dB '
+            'higher on RBN than on WSPR (found from two checks of stations whose power is known), and that is taken off. It is a hint about how you were heard, not a '
+            'measurement of your antenna.</li></ul>' + signal_math_html(power_w, mode, offset_db, example, thresholds) + '</div></div>')
 
 
 def band_table_html(bands, min_contacts=3):
@@ -1089,11 +1104,11 @@ def band_table_html(bands, min_contacts=3):
             spread = ""
             if not (np.isnan(q1) or np.isnan(q3)):
                 a, b = (np.clip(q1, -15, 20) + 15) / 35 * 100, (np.clip(q3, -15, 20) + 15) / 35 * 100
-                spread = f'<u style="left:{a:.1f}%;width:{max(b - a, 0.8):.1f}%" title="The middle half of the matches ran from {q1:+.1f} to {q3:+.1f} dB"></u>'
-            strength = (f'<div class="lc-str" title="{r.matches} match{"es" if r.matches != 1 else ""}: {getattr(r, "match_rx", r.matches)} different receiving station{"s" if getattr(r, "match_rx", r.matches) != 1 else ""} that spotted you and also decoded WSPR near you (one heard in two stretches of the log is a match in each)">'
+                spread = f'<u style="left:{a:.1f}%;width:{max(b - a, 0.8):.1f}%" title="The middle half of the skimmers ran from {q1:+.1f} to {q3:+.1f} dB"></u>'
+            strength = (f'<div class="lc-str" title="{r.matches} match{"es" if r.matches != 1 else ""}: {getattr(r, "match_rx", r.matches)} skimmer{"s" if getattr(r, "match_rx", r.matches) != 1 else ""} that spotted you and also decoded WSPR near you, each counted once (a skimmer heard in two stretches of the log, or under two names of one callsign, is several matches but one skimmer)">'
                         f'<div class="lc-sbar"><em class="g" style="left:14.3%"></em><em class="g" style="left:71.4%"></em><em class="z" style="left:{zero:.1f}%"></em>'
                         f'<i class="{"pos" if r.stronger_db >= 0 else "neg"}{" thin" if r.thin else ""}" style="left:{left:.1f}%;width:{width:.1f}%"></i>{spread}</div>'
-                        f'<div class="lc-sv"><b>{r.stronger_db:+.1f} dB</b><small>{getattr(r, "match_rx", r.matches)} station{"s" if getattr(r, "match_rx", r.matches) != 1 else ""}</small></div></div>')
+                        f'<div class="lc-sv"><b>{r.stronger_db:+.1f} dB</b><small>{getattr(r, "match_rx", r.matches)} skimmer{"s" if getattr(r, "match_rx", r.matches) != 1 else ""}</small></div></div>')
         notes = ""
         if not np.isnan(r.stronger_db) and r.stronger_db >= HIGH_DB:
             notes += (f'<div class="lc-bnote"><b>{r.band} reads well above the WSPR reference ({r.stronger_db:+.1f} dB).</b> The usual reason is a better antenna than most of the WSPR stations '
@@ -1111,7 +1126,7 @@ def band_table_html(bands, min_contacts=3):
     return ('<div class="lc"><div class="lc-card"><h4>What RBN skimmers heard on each band</h4>'
             '<p class="sub">What you worked, how many skimmers heard you, and how their reports compare with the nearby WSPR reference at your power.</p>'
             '<div class="lc-legend"><span><i class="lg-pos"></i>blue: RBN reports above the WSPR reference</span><span><i class="lg-neg"></i>amber: below it</span>'
-            '<span><i class="lg-box"></i>outline: where the middle half of the matches fell</span><span><i class="lg-thin"></i>striped: few matches</span></div>'
+            '<span><i class="lg-box"></i>outline: where the middle half of the skimmers fell</span><span><i class="lg-thin"></i>striped: few skimmers</span></div>'
             '<div class="lc-bh"><div>Band</div><div>Contacts</div><div>Skimmers</div><div>Against the WSPR reference'
             '<div class="lc-str"><div class="lc-axs"><span style="left:14.3%">−10</span><span style="left:42.86%">0</span><span style="left:71.4%">+10</span><span style="right:0;left:auto;transform:none">+20 dB</span></div><span></span></div></div></div>'
             + "".join(rows)
