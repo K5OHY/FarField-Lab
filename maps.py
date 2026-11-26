@@ -252,6 +252,27 @@ def base_map(home, tiles):
     return m
 
 
+def reach_map(points, contacts, home, band, tiles="Street"):
+    """A heat map of where the WSPR receivers that decoded the stations near you on one band were (log_check.reach_points: the more half hours a place decoded them, the hotter),
+    with your station as a star and your contacts on the band as white dots. Framed on all of them, and never tighter than a region."""
+    from folium.plugins import HeatMap
+    m = base_map(home, tiles)
+    heat = [[float(r.lat), float(r.lon), float(r.windows)] for r in points.itertuples()]
+    if heat:
+        HeatMap(heat, radius=22, blur=18, min_opacity=0.35, gradient={0.2: "#3b4cc0", 0.45: "#2bb3c0", 0.65: "#7bd36b", 0.82: "#f5d142", 1.0: "#e8452c"}).add_to(m)
+    folium.Marker(home, icon=folium.Icon(icon="star", color="red"), tooltip="You").add_to(m)
+    seen = [tuple(home)]
+    for c in contacts.itertuples():
+        if pd.notna(c.c_lat) and pd.notna(c.c_lon):
+            folium.CircleMarker((float(c.c_lat), float(c.c_lon)), radius=4, color="#111111", weight=1.5, fill=True, fill_color="#ffffff", fill_opacity=1,
+                                tooltip=f"{esc(str(c.call))} on {esc(band)}").add_to(m)
+            seen.append((float(c.c_lat), float(c.c_lon)))
+    seen += [(float(r.lat), float(r.lon)) for r in points.itertuples()]
+    lats, lons = [p[0] for p in seen], [p[1] for p in seen]
+    fit_to(m, [(min(lats) - 2, min(lons) - 3), (max(lats) + 2, max(lons) + 3)])
+    return m
+
+
 def park_map(lat, lon, name, tiles="Street"):
     """A small map of one park: a green dot at its position, framed on about ten kilometres around it."""
     m = base_map((lat, lon), tiles)

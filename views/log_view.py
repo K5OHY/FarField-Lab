@@ -16,7 +16,7 @@ import share_card as sc
 import space_weather as sw
 from compare_stats import locate as skimmer_location
 from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, load_sota_summit, skimmer_data
-from maps import build_map, great_circle, park_map
+from maps import build_map, great_circle, park_map, reach_map
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
 from ui_common import BAND_COLORS, BANNER, KM_PER_MILE, page_guide, preview
 from wspr_data import WsprError
@@ -297,6 +297,35 @@ def _home_continent(call):
         return "NA"
 
 
+def _reach_map(grid, places, home, metric, f_band_default=None, digest=""):
+    """A heat map of where nearby WSPR reached on one band, in a folded box: the receiving stations that decoded the WSPR transmitters near you (as you chose to read them: what
+    was decoded, or what looked strong enough for your power), hotter where a place decoded them in more half hours, with your station and your contacts on that band. It can be
+    limited to the half hours you logged a contact on the band, to set the reach beside where you were, and to receivers farther than ground-wave distance."""
+    with st.expander("Map: where nearby WSPR reached on one band"):
+        bands = list(dict.fromkeys(grid["band"]))
+        if not bands:
+            st.caption("There is no WSPR picture for this log.")
+            return
+        c1, c2 = st.columns([1, 2])
+        band = c1.selectbox("Band", bands, index=bands.index(f_band_default) if f_band_default in bands else 0, key=f"log_reach_band_{digest[:8]}")
+        when = c2.radio("When", ["The whole session", "Only the half hours I logged a contact on this band"], horizontal=True, key="log_reach_when")
+        far = st.checkbox(f"Leave out receivers within {lo.REGIONAL_MIN_KM} km", value=True, key="log_reach_far",
+                          help="Receivers this close can hear you by ground wave and cover the map in heat, so they are left out unless you untick this.")
+        mine = places[places["band"] == band]
+        slots = None
+        if when != "The whole session":
+            slots = {pd.Timestamp(t).floor(f"{grid.attrs.get('bin_min', lc.CONDITIONS_SLOT_MIN)}min") for t in mine["time"]}
+        points = lc.reach_points(grid, home, band, metric, slots, lo.REGIONAL_MIN_KM if far else 0.0)
+        if points.empty:
+            st.caption(f"No receiving station decoded WSPR near you on {band} in that time" + (", with the distance set above." if far else "."))
+            return
+        st.iframe(reach_map(points, mine, home, band).get_root().render(), height=470)
+        what = "decoded WSPR transmitters near you" if metric == "heard" else "decoded WSPR transmitters near you and, restated to your power, looked strong enough to hear you"
+        st.caption(f"Heat: receiving stations that {what} on {band}. The hotter a place, the more half hours of the session its stations did so ({len(points)} receiving stations; "
+                   f"at most {int(points['windows'].max())} half hours). The star is you and the white dots are your {band} contacts. Heat says where a path was reported, "
+                   "not where you could have worked, and a place with no heat may simply have no receiver.")
+
+
 def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, digest, home_cont="NA"):
     """How you used the openings. The default is *By destination*: one destination at a time (only those with a path in the nearby WSPR, an RBN skimmer or a
     contact get a tab, and the rest are named in a line), shown as a strip of the band you were on above a lane for each band. *Regional* is the last tab: the eight
@@ -377,6 +406,7 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
             ev_view, ev_dest = view, dest
         box_slot = st.empty()
     ev_km = lo.REGIONAL_MIN_KM if (regional and (cards or by_dest)) else min_km
+    _reach_map(grid, places, home, lo.METRIC[metric_view], f_band_default=(focus[0] if focus else None), digest=digest)
 
     def draw(spots, rbn_ok):
         metric = lo.METRIC[metric_view]

@@ -197,6 +197,31 @@ def spots_link(call, grid, log, pad_min=10):
     return "./?" + urlencode(q)
 
 
+REACH_COLUMNS = ["rx", "lat", "lon", "km", "windows"]
+
+
+def reach_points(grid, home, band, metric="good", slots=None, min_km=0.0):
+    """Where the WSPR receivers that decoded the stations near you on `band` were, for a heat map of where the signal reached. One row for each receiving station:
+    its place (found again from the distance and bearing the grid keeps, which came from its own position), its distance and `windows`, the number of half hours of the
+    session in which it decoded WSPR near you (the heat). `metric` is 'heard' (it decoded WSPR near you) or 'good' (it also looked strong enough for your power);
+    `slots` limits it to those half hours; `min_km` leaves out the receivers nearer than that."""
+    rec = grid.attrs.get("receivers") if grid is not None else None
+    if rec is None or len(rec) == 0:
+        return pd.DataFrame(columns=REACH_COLUMNS)
+    r = rec[rec["band"] == band]
+    if metric == "good":
+        r = r[r["verdict"] == "good"]
+    if slots is not None:
+        r = r[r["slot"].isin(set(pd.Timestamp(s) for s in slots))]
+    r = r[r["km"] >= min_km]
+    if r.empty:
+        return pd.DataFrame(columns=REACH_COLUMNS)
+    g = r.groupby("rx").agg(km=("km", "median"), bearing=("bearing", "first"), windows=("slot", "nunique")).reset_index()
+    places = [Geodesic.WGS84.Direct(float(home[0]), float(home[1]), float(b), float(k) * 1000) for k, b in zip(g["km"], g["bearing"])]
+    g["lat"], g["lon"] = [p["lat2"] for p in places], [p["lon2"] for p in places]
+    return g[REACH_COLUMNS]
+
+
 def band_rates(log):
     """One row per band: contacts, first and last contact, and contacts per hour while on the band."""
     g = log.groupby("band")["time"].agg(contacts="size", first="min", last="max")
