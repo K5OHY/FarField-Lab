@@ -76,7 +76,7 @@ def _country(call, named):
 
 def map_facts(places, home):
     """What the map needs, from lc.contact_places' table and the station's (lat, lon): the station, and one point for each place a contact was, with how
-    many contacts were there, the bands worked there and how many on each (busiest first), a call, the country and the distance. Also the farthest
+    many contacts and how many different stations were there, the bands worked there and how many on each (busiest first), a call, the country and the distance. Also the farthest
     contact, one entry for each contact (where and on which band) and how many contacts could be placed. None when there is no place to draw."""
     if places is None or home is None:
         return None
@@ -88,8 +88,9 @@ def map_facts(places, home):
     for (lat, lon), g in d.groupby(["plat", "plon"]):
         first = g.iloc[0]
         counts = g["band"].value_counts()
-        points.append({"lat": float(lat), "lon": float(lon), "n": int(len(g)), "km": float(g["c_km"].max()), "bands": list(counts.index),
-                       "band_n": {b: int(n) for b, n in counts.items()}, "call": str(first["call"]), "country": _country(first["call"], first["country"])})
+        points.append({"lat": float(lat), "lon": float(lon), "n": int(len(g)), "stations": int(g["call"].nunique()), "km": float(g["c_km"].max()), "bands": list(counts.index),
+                       "band_n": {b: int(n) for b, n in counts.items()},
+                       "band_calls": {b: g[g["band"] == b]["call"].value_counts().to_dict() for b in counts.index}, "call": str(first["call"]), "country": _country(first["call"], first["country"])})
     far = lc.farthest_contact(d)
     return {"home": (float(home[0]), float(home[1])), "points": points, "placed": int(len(d)), "total": int(len(places)),
             "farthest": {"call": far["call"], "calls": far["calls"], "country": far["place"] if far["approx"] else _country(far["call"], d[d["call"] == far["call"]]["country"].iloc[0]),
@@ -241,39 +242,48 @@ def _draw_world(fig, m, rect=(0, 0, 1, 1), size=SIZE, box=(0.31, 0.97, 0.10, 0.9
     lines, ends, bounds = _paths(m) if m else ([], {}, (-165.0, 165.0, -55.0, 78.0))
     x0, x1, y0, y1 = _extent(bounds, box, size)
     ax = fig.add_axes(list(rect))
-    ax.set_facecolor(BG)
-    ax.axis("off")
+    ax.axis("off")                                                        # (which also hides the axes' own background, so the sea is painted below)
+    ax.axhspan(-1000, 1000, facecolor=_hex(wm.OCEAN), edgecolor="none", zorder=-1)       # a wide log makes the frame taller than the world is: the rest is open sea, not an empty strip
     image = _world_image()
     for offset in range(-720, 721, 360):
         if offset + 180 > x0 and offset - 180 < x1:
             ax.imshow(image, extent=[offset - 180, offset + 180, -90, 90], origin="upper", interpolation="antialiased", aspect="auto", zorder=0)
     for lon in range(int(math.floor(x0 / 30) * 30), int(x1) + 31, 30):
-        ax.plot([lon, lon], [-90, 90], color="#ffffff", alpha=0.05, linewidth=0.5, zorder=1)
-    for lat in range(-60, 91, 30):
+        ax.plot([lon, lon], [-400, 400], color="#ffffff", alpha=0.05, linewidth=0.5, zorder=1)
+    for lat in range(-300, 301, 30):
         ax.plot([x0 - 720, x1 + 720], [lat, lat], color="#ffffff", alpha=0.05, linewidth=0.5, zorder=1)
     for band, xs, ys in lines:                                            # a soft glow under each path, then the path itself
         colour = _lighten(BAND_COLORS.get(band, "#3388ff"))
         ax.plot(xs, ys, color=colour, linewidth=3.6, alpha=0.10, solid_capstyle="round", zorder=2)
         ax.plot(xs, ys, color=colour, linewidth=1.1, alpha=0.8, solid_capstyle="round", zorder=3)
-    ring = 0.0045 * (x1 - x0)                                             # a place worked on several bands: a diamond for each, round the place
+    ring = 0.0045 * (x1 - x0)                                             # several stations or bands at one place: a diamond for each, fanned round the place
     for p in sorted(m["points"] if m else [], key=lambda q: -len(q["bands"])):
-        k = len(p["bands"])
-        for i, band in enumerate(p["bands"]):
+        items = _fan(p)
+        k = len(items)
+        radius = ring * (1.0 if k <= 4 else 0.5 + 0.25 * k)               # more diamonds need a wider ring, so they do not sit on each other
+        for i, (band, n) in enumerate(items):
             ey, ex = ends[(p["lat"], p["lon"], band)]                       # a path's end is (latitude, longitude)
             if k > 1:
                 angle = -math.pi / 2 + 2 * math.pi * i / k
-                ex, ey = ex + ring * math.cos(angle), ey + ring * math.sin(angle)
-            ax.scatter([ex], [ey], marker="D", s=40 + 14 * math.sqrt(p["band_n"][band]), color=BAND_COLORS.get(band, "#3388ff"),
-                       edgecolors="#ffffff", linewidths=0.9, zorder=6)
+                ex, ey = ex + radius * math.cos(angle), ey + radius * math.sin(angle)
+            ax.scatter([ex], [ey], marker="D", s=24 + 8 * math.sqrt(n), color=BAND_COLORS.get(band, "#3388ff"),
+                       edgecolors="#ffffff", linewidths=0.7, zorder=6)
     far = sorted([p for p in (m["points"] if m else []) if p["km"] >= lc.DX_KM and p["country"]], key=lambda q: -q["km"])
-    seen = set()
+    seen, labelled = set(), []
+    stations = {}                                                         # how many different stations each far country has, over all its places
+    for p in m["points"] if m else []:
+        if p["km"] >= lc.DX_KM and p["country"]:
+            stations[p["country"]] = stations.get(p["country"], 0) + p.get("stations", 1)
     for p in far:
         if p["country"] in seen or len(seen) >= 5:
             continue
         seen.add(p["country"])
         ey, ex = ends[(p["lat"], p["lon"], p["bands"][0])]
         left_of = ex > x0 + 0.86 * (x1 - x0)                              # near the right edge the name goes to the left of its diamond, so it is not cut off
-        text = ax.annotate(p["country"], (ex, ey), xytext=(-9 if left_of else 9, 7), textcoords="offset points", ha="right" if left_of else "left",
+        crowd = sum(1 for qx, qy in labelled if abs(qx - ex) < 0.07 * (x1 - x0) and abs(qy - ey) < 0.03 * (y1 - y0))      # a name close to another is put lower, so they do not overprint
+        labelled.append((ex, ey))
+        name = p["country"] + (f" ×{stations[p['country']]}" if stations[p["country"]] > 1 else "")      # 'Japan ×5': the number of stations, so five are not mistaken for one
+        text = ax.annotate(name, (ex, ey), xytext=(-9 if left_of else 9, 13 - 13 * crowd), textcoords="offset points", ha="right" if left_of else "left",
                            color=FG, fontsize=8.5, fontweight="bold", zorder=8)
         text.set_path_effects([patheffects.withStroke(linewidth=2.6, foreground=BG)])
     if m:
@@ -285,9 +295,26 @@ def _draw_world(fig, m, rect=(0, 0, 1, 1), size=SIZE, box=(0.31, 0.97, 0.10, 0.9
     return ax
 
 
+FAN_MAX = 8        # a place with up to this many stations (each on each band) gets a diamond for each, so five stations are not mistaken for one
+
+
+def _fan(p):
+    """The diamonds to draw at one place, as (band, contacts): one for each station on each band when there are only a few (so five stations show as five, spread round
+    the place), else one for each band, as a crowded place such as a state's centre would be a heap of overlapping diamonds."""
+    each = [(band, n) for band in p["bands"] for n in sorted((p.get("band_calls") or {}).get(band, {}).values(), reverse=True)]
+    if 1 < len(each) <= FAN_MAX:
+        return each
+    return [(band, p["band_n"][band]) for band in p["bands"]]
+
+
 def _lighten(hex_colour, amount=0.45):
     """A colour mixed part of the way to white, so a band's path shows on the dark map."""
     return "#" + "".join(f"{int(round((c + (1 - c) * amount) * 255)):02x}" for c in _rgb(hex_colour))
+
+
+def _hex(rgb):
+    """A colour given as 0 to 1 red, green, blue as a '#rrggbb' string."""
+    return "#" + "".join(f"{int(round(float(c) * 255)):02x}" for c in rgb)
 
 
 def _rgb(hex_colour):

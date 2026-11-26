@@ -6,6 +6,7 @@ import threading
 import pandas as pd
 import streamlit as st
 
+import callbook
 import conditions as cond
 import log_check as lc
 import log_check_html as lh
@@ -66,6 +67,13 @@ def _log_grids(log):
                 if point:
                     grids[call] = latlon_to_maidenhead(point[0], point[1])
     return grids
+
+
+@st.cache_data(ttl=86400, show_spinner="Looking up where the stations outside North America are…")
+def _dx_places(calls):
+    """Where the stations outside North America with no grid in the log are, kept for a day: {call: {'lat', 'lon', 'source', 'where'}} from HamQTH (their call area, or
+    their home when the app has a HamQTH key). Only callsigns are sent."""
+    return callbook.load_places(calls)
 
 
 @st.cache_data(ttl=86400, show_spinner="Looking up where the parks and summits you contacted are…")
@@ -239,7 +247,7 @@ def _foundations_section(grid, log, home, places):
         st.dataframe(by_region, hide_index=True, width="stretch")
     n = by_region.attrs
     if view == "sector":
-        st.caption(f"{n['counted']} of the {n['total']} contacts can be placed in one direction: {n['counted'] - n['by_state']} by their own grid square and "
+        st.caption(f"{n['counted']} of the {n['total']} contacts can be placed in one direction: {n['counted'] - n['by_state']} by where the station was (its grid square, park or summit, or its call area when that is far away) and "
                    f"{n['by_state']} by their state, because the whole state lies in that direction from you. {n['between']} are between directions: "
                    "their state spreads over more than one, or they are placed only at the centre of their country, which can be hundreds of km from the station. "
                    + (f"{n['unplaced']} could not be placed at all." if n["unplaced"] else ""))
@@ -490,7 +498,7 @@ def _default_band(bands, regions):
     return int(bands.index(dx.idxmax())) if len(dx) and dx.max() > 0 and dx.idxmax() in bands else 0
 
 
-def _places_for(rows, digest, skimmers, grids=None):
+def _places_for(rows, digest, skimmers, grids=None, dx_places=None):
     """Where the stations on one band were, looked up only for the ones not looked up before. Kept for this log, so each station is
     only looked up once however often you change band."""
     saved = st.session_state.get("log_places")
@@ -499,7 +507,7 @@ def _places_for(rows, digest, skimmers, grids=None):
     todo = [r for r in rows if r[0] not in saved["tried"]]
     if todo:
         bar = st.progress(0.0, text="Looking up where your contacts were…")
-        found = load_contact_places(todo, skimmers, progress=lambda done, total: bar.progress(done / total, text=f"Looked up {done} of {total}…"), grids=grids)
+        found = load_contact_places(todo, skimmers, progress=lambda done, total: bar.progress(done / total, text=f"Looked up {done} of {total}…"), grids=grids, dx_places=dx_places)
         bar.empty()
         if len(found):
             saved["places"] = pd.concat([saved["places"], found]) if len(saved["places"]) else found
@@ -517,12 +525,12 @@ def _prefetch_places(log, skimmers, digest):
     jobs = [list(log[log["band"] == band].drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
             for band in log["band"].value_counts().index]
 
-    grids = _log_grids(log)
+    grids, dx_places = _log_grids(log), log.attrs.get("call_places")
 
     def run():
         for rows in jobs:
             try:
-                load_contact_places(rows, skimmers, workers=4, grids=grids)
+                load_contact_places(rows, skimmers, workers=4, grids=grids, dx_places=dx_places)
             except Exception:
                 pass
     threading.Thread(target=run, daemon=True, name="log-places").start()
@@ -549,7 +557,8 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     if spots_url:
         st.link_button("Open this activation on the My spots map", spots_url, icon=":material/open_in_new:",
                        help="Opens My spots in a new tab, on the day of this log and the hours of this session, with your callsign and RBN spots loaded.")
-    st.caption("Skimmers only hear CW, so the maps start with your CW contacts. Where your contacts were is looked up in the background, so each band should be ready when you click it.")
+    st.caption("Skimmers only hear CW, so the maps start with your CW contacts. Where your contacts were is looked up in the background, so each band should be ready when you click it."
+               + (f" {callbook.ATTRIBUTION}." if log.attrs.get("call_places") else ""))
     if result is not None:
         shown = set(result["bands"]["band"])
         bands = [b for b in lc.bands_top_down(log) if b in shown] or lc.bands_top_down(log)
@@ -572,7 +581,7 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
         mine = log[log["band"] == pick]
         shown_log = mine[mine["mode"] == "CW"] if cw_only else mine
         rows = list(shown_log.drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
-        places = _places_for(rows, digest, locs, _log_grids(log))
+        places = _places_for(rows, digest, locs, _log_grids(log), log.attrs.get("call_places"))
         worked = lc.where_worked(shown_log, places)
         worked = worked.assign(bands_worked=worked["call"].map(log.groupby("call")["band"].nunique()))
         t_lo, t_hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
@@ -668,6 +677,9 @@ def log_page():
     contacted_parks, contacted_summits = lc.contact_references(log)
     if contacted_parks or contacted_summits:      # a contact with another park or summit is placed at that park or summit, not at its state's centre
         log.attrs["ref_places"] = _reference_places(tuple(sorted(contacted_parks)), tuple(sorted(contacted_summits)))
+    dx_calls = lc.contact_dx_calls(log)
+    if dx_calls:                                  # a station outside North America with no grid is placed by its call area (or its HamQTH home), not at its country's centre
+        log.attrs["call_places"] = _dx_places(tuple(dx_calls))
     read_slot = st.container()
     cw = log[log["mode"] == "CW"]
     summary, rep = lc.summary(log), lc.repeat_stations(log)

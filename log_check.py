@@ -616,7 +616,7 @@ def finish_place(found, state="", country=""):
 def place_note(level, source):
     """How a contact's place was found, in words for the map popup."""
     return {"grid": f"centre of its grid square ({source})", "state": f"centre of the state ({source})",
-            "country": f"centre of the country ({source})"}.get(level, source)
+            "area": f"centre of its call area ({source})", "country": f"centre of the country ({source})"}.get(level, source)
 
 
 def where_worked(log, places):
@@ -955,7 +955,8 @@ def coverage_table(grid):
         "What it can say": d["state"].tolist()}, columns=COVERAGE_COLUMNS)
 
 
-PRECISE_SOURCES = ("grid", "park", "summit")      # a contact placed by one of these is at a known place; a state or a country is only a centre, which can be hundreds of km away
+PRECISE_SOURCES = ("grid", "park", "summit", "home")      # a contact placed by one of these is at a known place (a station's HamQTH home is its own 4 character grid); a call area, a state or a country is only a centre, which can be hundreds of km away
+AREA_SECTOR_MIN_KM = 2500                          # a call area (Kinki, a Brazilian state) is a region's centre, off by a few hundred km: far enough away that is too little to change the sector it is in
 ROUGH_MARGIN_KM = 1500                             # a centre placed farther than this beyond the farthest known place is certainly farther (a small country's centre is wrong by far less)
 
 
@@ -996,6 +997,22 @@ def farthest_contact(places, band=None):
     return best
 
 
+def contact_dx_calls(log):
+    """The stations that need a place looked up beyond the log: no usable grid square, no park or summit place, and outside North America (those are placed by the log's
+    state). A contact's country is the log's, else the one its callsign gives."""
+    refs = log.attrs.get("ref_places") or {}
+    calls = []
+    pota = log["pota_ref"] if "pota_ref" in log else [""] * len(log)
+    sota = log["sota_ref"] if "sota_ref" in log else [""] * len(log)
+    for call, grid, country, pc, sc in zip(log["call"], log["their_grid"], log["country"], pota, sota):
+        if lf.grid_point(grid) is not None or _reference_point(pc, sc, refs)[0] is not None:
+            continue
+        name = country or (country_location(call) or (0, 0, ""))[2]
+        if name and name not in _NORTH_AMERICA:
+            calls.append(call)
+    return sorted(set(calls))
+
+
 def contact_references(log):
     """The parks and summits the other stations were at (the POTA_REF and SOTA_REF of a contact; a two-fer lists two), as (set of POTA references, set of SOTA references),
     so their places can be looked up."""
@@ -1024,12 +1041,13 @@ def contact_places(log, home, ref_places=None):
     """Where each contact was, as columns added to the log. The place comes from the contact's own grid square when the log gives a valid one
     (the 6 character grid when there is one), read for each contact, so a station that moved is placed where it was each time; failing that, for a contact with another
     park or summit, from that park or summit's own place (`ref_places`, or the log's `attrs['ref_places']`, {reference: (lat, lon)}); failing that
-    the centre of its state (North America), then the centre of its country by its callsign. `c_source` says which ('grid', 'park', 'summit', 'state', 'country'
-    or '' when it could not be placed), `c_approx` is True for the last two, `c_km` and `c_bearing` are the distance and the bearing from
+    the centre of its state (North America), then the centre of its country by its callsign. `c_source` says which ('grid', 'park', 'summit', 'home' (a station
+    outside North America placed by its HamQTH callbook home, from `attrs['call_places']`), 'area' (the same, by its call area), 'state', 'country' or '' when it could not be placed), `c_approx` is True for the last two, `c_km` and `c_bearing` are the distance and the bearing from
     `home` to the place, `sector` is the compass sector of that bearing and `continent` comes from the log's CONT field, else from the callsign.
     `sector_whole` is the sector the contact can be counted in: the sector of its grid, park or summit, or, for a contact placed only by its state, the sector
-    the whole state lies in (None when the state spreads over more than one, and for a country's centre); `sector_basis` says 'grid', 'park', 'summit' or 'state'."""
+    the whole state lies in (None when the state spreads over more than one, and for a country's centre); `sector_basis` says 'grid', 'park', 'summit', 'home', 'area' or 'state'. A call area counts in a sector only when it is AREA_SECTOR_MIN_KM or more away."""
     ref_places = ref_places if ref_places is not None else (getattr(log, "attrs", {}).get("ref_places") or {})
+    call_places = getattr(log, "attrs", {}).get("call_places") or {}
     pota_cells = log["pota_ref"] if "pota_ref" in log else pd.Series("", index=log.index)
     sota_cells = log["sota_ref"] if "sota_ref" in log else pd.Series("", index=log.index)
     keys = list(zip(log["call"], log["state"], log["their_grid"], log["cont"], log["country"], pota_cells, sota_cells))
@@ -1041,6 +1059,13 @@ def contact_places(log, home, ref_places=None):
             point, source = _reference_point(pota_cell, sota_cell, ref_places)
             point = point or None
         guess = country_location(call)
+        if point is None and call in call_places:            # a station outside North America with no grid in the log: its HamQTH home, else its call area
+            found_at = call_places[call]
+            if found_at["source"] == "home":
+                from conditions import latlon_to_maidenhead
+                point, source = maidenhead_to_latlon(latlon_to_maidenhead(found_at["lat"], found_at["lon"])[:4]), "home"     # only the centre of its 4 character grid, as for every other home
+            else:
+                point, source = (found_at["lat"], found_at["lon"]), "area"
         if point is None and state in STATE_CENTRES and country in _NORTH_AMERICA:
             point, source = STATE_CENTRES[state], "state"
         if point is None and guess:
@@ -1052,7 +1077,8 @@ def contact_places(log, home, ref_places=None):
         inv = Geodesic.WGS84.Inverse(home[0], home[1], float(point[0]), float(point[1]))
         bearing = inv["azi1"] % 360
         sector = lf.sector_of(bearing)
-        whole, basis = (sector, source) if source in PRECISE_SOURCES else ((lf.state_sector(state, home), "state") if source == "state" else (None, ""))
+        far_area = source == "area" and inv["s12"] / 1000 >= AREA_SECTOR_MIN_KM
+        whole, basis = (sector, source) if source in PRECISE_SOURCES or far_area else ((lf.state_sector(state, home), "state") if source == "state" else (None, ""))
         found[key] = (float(point[0]), float(point[1]), source, source not in PRECISE_SOURCES, inv["s12"] / 1000, bearing, sector, continent, whole if whole else None,
                       basis if whole else "")
     cols = ["c_lat", "c_lon", "c_source", "c_approx", "c_km", "c_bearing", "sector", "continent", "sector_whole", "sector_basis"]

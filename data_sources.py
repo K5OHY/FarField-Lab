@@ -304,9 +304,15 @@ def _found(call, skimmers):
     return found
 
 
-def _place_without_lookup(call, state, country):
-    """A contact the FCC and HamDB cannot know about (the log says it is outside North America) at the centre of its country, or None.
-    Asking those two services about a European callsign only costs the time of two failed requests."""
+def _place_without_lookup(call, state, country, dx_places=None):
+    """A contact the FCC and HamDB cannot know about (the log says it is outside North America), or None. It is placed from `dx_places` ({call: {'lat', 'lon', 'source',
+    'where'}} from callbook.load_places) when that has it: its HamQTH home as the centre of its 4 character grid square, or its call area; failing that at the centre of
+    its country. Asking the FCC and HamDB about a European callsign only costs the time of two failed requests."""
+    known = (dx_places or {}).get(call)
+    if known and known["source"] == "home":
+        return finish_place((known["lat"], known["lon"], None, "HamQTH callbook"), state, country)
+    if known:
+        return {"lat": known["lat"], "lon": known["lon"], "source": "HamQTH call area" + (f", {known['where']}" if known.get("where") else ""), "level": "area", "grid": ""}
     guess = country_location(call)
     return finish_place((guess[0], guess[1], None, f"center of {guess[2]}") if guess else None, state, country)
 
@@ -327,12 +333,12 @@ def _place_from_log_grid(call, state, country, grids):
     return None
 
 
-def load_contact_places(rows, skimmers, progress=None, workers=6, grids=None):
+def load_contact_places(rows, skimmers, progress=None, workers=6, grids=None, dx_places=None):
     """Where each station in a log was, as a table indexed by call (lat, lon, level, source, grid). `rows` is a list of
     (call, state, country). Exact answers are shown at the centre of the 4 character grid square, a miss falls back to the centre of
     the state in the log, and a call that cannot be placed at all is left out. Stations the log puts outside North America are placed at
     the centre of their country without a lookup. `grids` maps a call to the grid square the log gives it: such a contact is placed from that, with no
-    lookup at all. A few lookups run at once; `progress(done, total)` is called as they finish."""
+    lookup at all. `dx_places` is callbook.load_places' answer for the stations outside North America. A few lookups run at once; `progress(done, total)` is called as they finish."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     done, out = 0, {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -345,7 +351,7 @@ def load_contact_places(rows, skimmers, progress=None, workers=6, grids=None):
             elif country in _NORTH_AMERICA:
                 futures[pool.submit(_found, call, skimmers)] = (call, state, country)
             else:
-                placed = _place_without_lookup(call, state, country)
+                placed = _place_without_lookup(call, state, country, dx_places)
                 if placed:
                     out[call] = placed
                 done += 1

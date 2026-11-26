@@ -12,3 +12,5 @@ collector/out/
 *.db-shm
 
 .test_timings.json
+
+.streamlit/secrets.toml

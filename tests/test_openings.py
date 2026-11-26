@@ -840,6 +840,42 @@ class TheDestinationView(Session):
         view["panels"][0]["lanes"] = [sparse]
         self.assertIn('class="dv-call', lh.destination_html(view, tl))
 
+    def view_with(self, contacts, slots=("2026-11-18 20:00", "2026-11-18 20:30")):
+        lane = {"band": "20m", "cells": [], "worked_band": True, "contacts": contacts}
+        view = {"code": "EU", "name": "Europe", "contacts": len(contacts), "paths": 0, "rbn": False,
+                "panels": [{"panel": 0, "slots": [T(x) for x in slots], "bin_min": 30, "strip": [(T(slots[0]), T("2026-11-18 21:00"), "20m")], "lanes": [lane], "lines": [], "focus": None}]}
+        return view, {"power_w": 100.0, "mode": "CW", "metric": "good", "bin_min": 30}
+
+    def test_contacts_too_close_to_draw_apart_are_one_marker_with_a_count_and_the_calls_on_hover(self):
+        close = [{"time": T(f"2026-11-18 20:{m:02d}"), "call": f"W1A{m}"} for m in (0, 1, 2, 3, 4)] + [{"time": T("2026-11-18 20:40"), "call": "DL1FAR"}]
+        html = lh.destination_html(*self.view_with(close, ("2026-11-18 20:00", "2026-11-19 00:00")))                  # a stretch of 4 to 5 hours, as in a real log
+        self.assertEqual(html.count('class="dv-dot multi"'), 1)                                   # five within a few minutes: one marker
+        self.assertIn(">5</i>", html)
+        for call in ("W1A0", "W1A4"):
+            self.assertIn(call, html.split('class="dv-dot multi"')[1].split("</i>")[0])           # who is in it, on hover
+        self.assertEqual(html.count('class="dv-dot"'), 1)                                         # the one far away keeps its own dot
+        self.assertIn('title="DL1FAR, 20:40 UTC, 20m"', html)
+
+    def test_no_two_markers_in_a_lane_are_closer_than_a_marker_is_wide(self):
+        times = [T("2026-11-18 20:00") + pd.Timedelta(minutes=2 * i) for i in range(30)]
+        start = T("2026-11-18 20:00")
+        pct = lambda t: (pd.Timestamp(t) - start).total_seconds() / 3600 * 100
+        groups = lh.contact_clusters([{"time": t, "call": f"W{i}"} for i, t in enumerate(times)], pct)
+        self.assertEqual(sum(len(g) for _, g in groups), 30)                                      # every contact is in one marker
+        gaps = [b[0] - a[0] for a, b in zip(groups, groups[1:])]
+        self.assertTrue(gaps and min(gaps) >= lh.CONTACT_CLUSTER_PCT, gaps)
+
+    def test_a_band_name_is_a_chip_in_the_bands_colour_with_lettering_that_can_be_read(self):
+        from ui_common import BAND_COLORS
+        self.assertEqual(BAND_COLORS["15m"], "#444444")                                           # the colour the RBN website uses for 15m
+        dark, light = lh.band_chip("15m", BAND_COLORS["15m"]), lh.band_chip("12m", BAND_COLORS["12m"])
+        self.assertIn("background:#444444;color:#fff", dark)                                      # dark grey: white lettering
+        self.assertIn("background:#00ffff;color:#000", light)                                     # cyan: black lettering
+        self.assertIn("background:#800080;color:#fff", lh.band_chip("20m", BAND_COLORS["20m"]))
+        html = lh.destination_html(*self.view_with([]))
+        self.assertIn('<div class="dv-name"><span class="dv-chip"', html)
+        self.assertNotIn('class="dv-name" style="color', html)                                     # no longer lettering in a dark colour on a dark page
+
     def test_a_log_over_two_days_has_a_stretch_for_each_and_dated_lines(self):
         log = log_of(rec("DL1AAA", "2010", gridsquare="JN58"), rec("DL1BBB", "2010", gridsquare="JN58").replace("20261118", "20261120"))
         wspr = self.wspr()

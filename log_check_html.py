@@ -135,6 +135,7 @@ CSS = """<style>
 .dv-look b{font-size:17px}.dv-look div{font-size:14.5px}
 .dv-row{display:grid;grid-template-columns:92px 1fr;align-items:center;margin-top:7px}.dv-row.top{margin-top:2px}
 .dv-lab{color:inherit;opacity:.65;font-size:12.5px}.dv-name{font-weight:800;font-size:16px}
+.dv-chip{display:inline-block;padding:0 9px;border-radius:7px;font-weight:800;line-height:1.5;border:1px solid rgba(128,128,128,.55)}
 .dv-strip{position:relative;height:28px;border-radius:7px;overflow:hidden;background:var(--lane)}
 .dv-seg{position:absolute;top:0;height:100%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12.5px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);border-right:1px solid rgba(0,0,0,.3);overflow:hidden}
 .dv-seg.none{background:repeating-linear-gradient(45deg,transparent 0 6px,rgba(128,128,128,.14) 6px 12px);color:inherit;opacity:.6;font-weight:500;text-shadow:none}
@@ -146,6 +147,7 @@ CSS = """<style>
 .dv-sel{position:absolute;top:1px;bottom:1px;border:2px dashed #fff;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.6);pointer-events:none;z-index:2}
 .dv-ring{position:absolute;top:6px;width:14px;height:14px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .dv-dot{position:absolute;top:5px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid;z-index:3}
+.dv-dot.multi{font-style:normal;width:auto;min-width:16px;padding:0 3px;box-sizing:content-box;border-radius:11px;color:#111;font-size:11.5px;font-weight:800;line-height:16px;text-align:center;cursor:default}
 .dv-call{position:absolute;top:-3px;font-size:11.5px;font-weight:700;background:rgba(20,24,32,.88);color:#fff;padding:1px 5px;border-radius:5px;z-index:4;white-space:nowrap}
 .dv-call.r{margin-left:12px}.dv-call.l{transform:translateX(calc(-100% - 12px))}
 .dv-axis{position:relative;height:20px;margin-left:92px;font-size:12px;opacity:.7}.dv-axis span{position:absolute;transform:translateX(-50%);top:4px}
@@ -820,6 +822,33 @@ def highlights_html(first, far, lines):
     return (f'<div class="lc"><div class="lc-card" id="sec-highlights"><h4>Session highlights</h4>{says}<div class="lc-hl">{a}{b}</div></div></div>')
 
 
+def band_chip(band, colour):
+    """A band's name as a chip in the band's own colour with black or white lettering, whichever reads better on it. A band's colour is the one the RBN website uses, and some
+    of those (15m is dark grey, 20m dark purple) cannot be read as lettering on a dark page, nor the pale ones on a light page; on a chip they can be, on both."""
+    h = str(colour).lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(h) == 6 else (0.5, 0.5, 0.5)
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in (r, g, b)]
+    luminance = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    ink = "#000" if luminance > 0.18 else "#fff"
+    return f'<span class="dv-chip" style="background:{colour};color:{ink}">{escape(band)}</span>'
+
+
+CONTACT_CLUSTER_PCT = 2.0      # contacts closer together than this share of a lane (about 12 minutes of a 4 hour stretch) are drawn as one marker with a count, as their dots would overlap
+
+
+def contact_clusters(contacts, pct):
+    """The contacts of one lane gathered into markers: a list of (position in percent, [contacts]). A marker starts at a contact and takes the ones that follow it within
+    CONTACT_CLUSTER_PCT, so two markers are never closer than that and none sits on another."""
+    out = []
+    for k in sorted(contacts, key=lambda c: pd.Timestamp(c["time"])):
+        at = pct(k["time"])
+        if out and at - out[-1][0] < CONTACT_CLUSTER_PCT:
+            out[-1][1].append(k)
+        else:
+            out.append((at, [k]))
+    return out
+
+
 def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=None):
     """One destination as a picture of the reported paths and your contacts: the plain idea in a sentence, the few lines worth a look and, for each stretch of the log, a
     strip of your logged activity above a lane for each band that has something to show: a bar where the nearby WSPR showed a path to the destination (pale for one
@@ -834,7 +863,7 @@ def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=N
     looks = ""
     for panel in view["panels"]:
         stamp = f"{pd.Timestamp(panel['slots'][0]):%d %b}: " if many else ""
-        looks += "".join(f'<div class="dv-look"><b style="color:{colours.get(b, "#888")}">{b}</b><div>{escape(stamp + t)}</div></div>' for b, t in panel["lines"])
+        looks += "".join(f'<div class="dv-look"><b>{band_chip(b, colours.get(b, "#888"))}</b><div>{escape(stamp + t)}</div></div>' for b, t in panel["lines"])
     out = []
     for panel in view["panels"]:
         slots, step = panel["slots"], pd.Timedelta(minutes=panel["bin_min"])
@@ -866,17 +895,24 @@ def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=N
                 if x["rbn"]:
                     marks += f'<i class="dv-tri" style="left:{left + width / 2:.2f}%" title="{band}, {x["slot"]:%H:%M}\u2013{x["slot"] + step:%H:%M} UTC: RBN skimmers in {escape(name)} spotted you"></i>'
             last_label = -100.0
-            for k in lane["contacts"]:
-                at = pct(k["time"])
+            clusters = contact_clusters(lane["contacts"], pct)
+            for at, group in clusters:
                 side = "r" if at < 78 else "l"
-                marks += f'<i class="dv-dot" style="left:calc({at:.2f}% - 8px);border-color:{colour}" title="{escape(k["call"])}, {pd.Timestamp(k["time"]):%H:%M} UTC, {band}"></i>'
-                if len(lane["contacts"]) <= 3 and at - last_label > 9:                 # a crowded lane has no labels (the callsign is on hover), so none overlap
-                    marks += f'<span class="dv-call {side}" style="left:{at:.2f}%">{escape(k["call"])} {pd.Timestamp(k["time"]):%H:%M}</span>'
-                    last_label = at
+                if len(group) == 1:
+                    k = group[0]
+                    marks += f'<i class="dv-dot" style="left:calc({at:.2f}% - 11px);border-color:{colour}" title="{escape(k["call"])}, {pd.Timestamp(k["time"]):%H:%M} UTC, {band}"></i>'
+                    if len(clusters) <= 3 and at - last_label > 9:                     # a crowded lane has no labels (the callsign is on hover), so none overlap
+                        marks += f'<span class="dv-call {side}" style="left:{at:.2f}%">{escape(k["call"])} {pd.Timestamp(k["time"]):%H:%M}</span>'
+                        last_label = at
+                else:                                                                  # contacts too close to draw apart: one marker with how many, and who on hover
+                    who = "\n".join(f'{pd.Timestamp(k["time"]):%H:%M}  {k["call"]}' for k in group[:15]) + (f"\nand {len(group) - 15} more" if len(group) > 15 else "")
+                    first, last = pd.Timestamp(group[0]["time"]), pd.Timestamp(group[-1]["time"])
+                    marks += (f'<i class="dv-dot multi" style="left:calc({at:.2f}% - 11px);border-color:{colour}" '
+                              f'title="{len(group)} contacts on {band}, {first:%H:%M}\u2013{last:%H:%M} UTC\n{escape(who)}">{len(group) if len(group) < 100 else "99+"}</i>')
             if selected is not None and selected[0] == band and start <= pd.Timestamp(selected[1]) < end:
                 marks += f'<i class="dv-sel" style="left:{pct(selected[1]):.2f}%;width:calc({100 / len(slots):.2f}% - 2px)" title="The window the details below describe"></i>'
             note = "" if lane["worked_band"] else f' <span class="dv-lab" style="font-size:11px;font-weight:400">not worked</span>'
-            lanes += f'<div class="dv-row"><div class="dv-name" style="color:{colour}">{band}{note}</div><div class="dv-track">{ticks}{marks}</div></div>'
+            lanes += f'<div class="dv-row"><div class="dv-name">{band_chip(band, colour)}{note}</div><div class="dv-track">{ticks}{marks}</div></div>'
         head = f'<p class="sub" style="margin:10px 0 4px"><b>{pd.Timestamp(slots[0]):%a %d %b %Y}</b> (UTC)</p>' if many else ""
         out.append(head + f'<div class="dv-row top"><div class="dv-lab" title="The band with the most logged contacts in each quarter hour. A gap means no contact was logged, not that you were off the air.">Logged activity</div><div class="dv-strip">{strip}</div></div>{lanes}<div class="dv-axis">{axis}</div>')
     nothing = ""
