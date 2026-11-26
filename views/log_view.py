@@ -395,13 +395,15 @@ def _reach_map(grid, places, home, metric, f_band_default=None, digest=""):
                    "not where you could have worked, and a place with no heat may simply have no receiver.")
 
 
-def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, digest, home_cont="NA"):
+@st.fragment
+def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, digest, home_cont="NA", spots=None, rbn_ok=False):
     """How you used the openings. The default is *By destination*: one destination at a time (only those with a path in the nearby WSPR, an RBN skimmer or a
     contact get a tab, and the rest are named in a line), shown as a strip of the band you were on above a lane for each band. *Regional* is the last tab: the eight
     compass directions, band by band. Under More options the earlier views remain: *Band by band* (a card for each band you worked, with a lane for each distant
     continent) and *Grid* (a box for each band and time bin, read for one destination). All can be read as what WSPR showed or as an estimate for your station, and all
-    are followed by 'look at one box', which shows the evidence behind a bar or box. Returns draw(spots, rbn_ok), which draws it all again: it is called once
-    without RBN and again when the spots have been read; it returns the sentence for the row of findings."""
+    are followed by 'look at one box', which shows the evidence behind a bar or box. It is a fragment, so choosing a destination, a band or a time redraws only this section and
+    not the whole page; it is drawn once, with the RBN spots when they have been read (`spots`, `rbn_ok`). The sentence for the row of findings is left in session_state
+    for the page to read on its next full run."""
     places = lc.contact_places(log, home)
     names_shown = list(lh.DX_VIEWS.values())
     show = st.segmented_control("Nearby WSPR shows", names_shown, default=names_shown[0], key="log_dx_view",
@@ -529,12 +531,11 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
             box_slot.empty()
         return headline
 
-    draw(None, False)
+    st.session_state["log_openings_headline"] = draw(spots, rbn_ok) or ""
     with st.expander("Another view: the percent of stations that could have heard you"):
         st.html(lh.CSS + lh.conditions_html(grid, lc.conditions_notes(grid), power, mode, zone))
     with st.expander("What each box rests on: the time bins, the WSPR behind them and where your contacts were"):
         _foundations_section(grid, log, home, places)
-    return draw
 
 
 def _busiest_dx_band(log, bands):
@@ -852,11 +853,12 @@ def log_page():
             st.caption("Nothing here is saved or sent anywhere. The picture and the text are made on this page from your log.")
     glance_slot.html(lh.CSS + _glance(park_cards, rep, None, skimmers, home, "", None))
     mode, zone = lc.condition_mode(log), _visitor_timezone()
-    draw_openings = None
+    openings_note = None
     with conditions_slot:
         grid_of_conditions = _conditions(log, home, power, label, digest, radius_km) if len(days) <= MAX_DAYS else None
         if grid_of_conditions is not None and len(grid_of_conditions) > 0:
-            draw_openings = _openings_section(grid_of_conditions, log, home, power, mode, zone, radius_km, skimmers, digest, home_cont)
+            openings_note = st.empty()
+            openings_note.caption("How you used the openings is drawn once the RBN spots have been read (the first time a day can take a minute).")
     with reports_slot:      # who hears whom comes from the log alone, so it is drawn at once
         balance = lh.balance_html(lc.reports_balance(log))
         if balance:
@@ -895,8 +897,11 @@ def log_page():
                 st.dataframe(show.rename(columns={"band": "Band", "first_contact": "First contact", "last_contact": "Last contact", "first_spot": "First RBN spot",
                                                   "last_spot": "Last RBN spot", "spots": "Spots"}), hide_index=True, width="stretch", height=min(300, 38 + 35 * len(show)))
     headline = ""
-    if draw_openings is not None:   # the skimmers that spotted you are added to the openings, now the spots have been read (or are known to be missing)
-        headline = draw_openings(spots, not cw.empty and len(missing) < len(days)) or ""
+    if openings_note is not None:   # the openings, with the skimmers that spotted you now the spots have been read (or are known to be missing)
+        openings_note.empty()
+        with conditions_slot:
+            _openings_section(grid_of_conditions, log, home, power, mode, zone, radius_km, skimmers, digest, home_cont, spots, not cw.empty and len(missing) < len(days))
+        headline = st.session_state.get("log_openings_headline", "")
     glance_slot.html(lh.CSS + _glance(park_cards, rep, spots, skimmers, home, headline, None))
     result = None
     with work:
