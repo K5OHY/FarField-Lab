@@ -237,7 +237,7 @@ def _extent(bounds, box, size=SIZE):
 
 def _draw_world(fig, m, rect=(0, 0, 1, 1), size=SIZE, box=(0.31, 0.97, 0.10, 0.90)):
     """The map filling `rect` (x, y, width, height as fractions of the picture; `size` inches across): the dark world, a faint grid, a path to each place in
-    its band's colour, a diamond at each place in the band's colour, the names of the farthest countries, and your station. With no `m` it is the world and
+    its band's colour, a diamond for each station (or for each band, at a crowded place) round its place in the band's colour, and your station. There are no country names: the fanned diamonds show how many stations are at a place, and a name over a crowd of paths is clutter. With no `m` it is the world and
     nothing on it."""
     lines, ends, bounds = _paths(m) if m else ([], {}, (-165.0, 165.0, -55.0, 78.0))
     x0, x1, y0, y1 = _extent(bounds, box, size)
@@ -268,24 +268,6 @@ def _draw_world(fig, m, rect=(0, 0, 1, 1), size=SIZE, box=(0.31, 0.97, 0.10, 0.9
                 ex, ey = ex + radius * math.cos(angle), ey + radius * math.sin(angle)
             ax.scatter([ex], [ey], marker="D", s=24 + 8 * math.sqrt(n), color=BAND_COLORS.get(band, "#3388ff"),
                        edgecolors="#ffffff", linewidths=0.7, zorder=6)
-    far = sorted([p for p in (m["points"] if m else []) if p["km"] >= lc.DX_KM and p["country"]], key=lambda q: -q["km"])
-    seen, labelled = set(), []
-    stations = {}                                                         # how many different stations each far country has, over all its places
-    for p in m["points"] if m else []:
-        if p["km"] >= lc.DX_KM and p["country"]:
-            stations[p["country"]] = stations.get(p["country"], 0) + p.get("stations", 1)
-    for p in far:
-        if p["country"] in seen or len(seen) >= 5:
-            continue
-        seen.add(p["country"])
-        ey, ex = ends[(p["lat"], p["lon"], p["bands"][0])]
-        left_of = ex > x0 + 0.86 * (x1 - x0)                              # near the right edge the name goes to the left of its diamond, so it is not cut off
-        crowd = sum(1 for qx, qy in labelled if abs(qx - ex) < 0.07 * (x1 - x0) and abs(qy - ey) < 0.03 * (y1 - y0))      # a name close to another is put lower, so they do not overprint
-        labelled.append((ex, ey))
-        name = p["country"] + (f" ×{stations[p['country']]}" if stations[p["country"]] > 1 else "")      # 'Japan ×5': the number of stations, so five are not mistaken for one
-        text = ax.annotate(name, (ex, ey), xytext=(-9 if left_of else 9, 13 - 13 * crowd), textcoords="offset points", ha="right" if left_of else "left",
-                           color=FG, fontsize=8.5, fontweight="bold", zorder=8)
-        text.set_path_effects([patheffects.withStroke(linewidth=2.6, foreground=BG)])
     if m:
         hx, hy = m["home"][1], m["home"][0]
         ax.scatter([hx], [hy], marker="o", s=520, color=TEAL, alpha=0.18, zorder=7)

@@ -213,7 +213,7 @@ class TheShareCardMap(unittest.TestCase):
         self.assertEqual(sorted(p["stations"] for p in m["points"]), [1, 1, 1])                       # three places, one station each
         self.assertEqual(sum(p["stations"] for p in m["points"]), 3)
 
-    def test_the_card_names_a_country_with_how_many_stations_and_draws(self):
+    def test_the_map_has_no_country_names_but_still_draws_each_station(self):
         m = self.facts()
         for p in m["points"]:
             p["country"] = "Japan"
@@ -223,8 +223,7 @@ class TheShareCardMap(unittest.TestCase):
         from matplotlib.figure import Figure
         fig = Figure(figsize=sc.SIZE)
         ax = sc._draw_world(fig, m)
-        names = [t.get_text() for t in ax.texts]
-        self.assertIn("Japan ×3", names)
+        self.assertEqual([t.get_text() for t in ax.texts], [])                                    # no names over the paths and diamonds
         buf = io.BytesIO()
         fig.savefig(buf, format="png")
         self.assertGreater(len(buf.getvalue()), 1000)
@@ -246,14 +245,6 @@ class TheShareCardMap(unittest.TestCase):
         ax = sc._draw_world(Figure(figsize=sc.SIZE), m)
         sizes = [float(s) for c in ax.collections for s in c.get_sizes()]
         self.assertEqual(sorted(sizes)[:3], [32.0, 32.0, 32.0], sizes)                                    # three diamonds of one contact each (the star and its glow are larger)
-
-    def test_a_single_station_is_named_without_a_count(self):
-        m = self.facts()
-        m["points"] = m["points"][:1]
-        m["points"][0]["country"] = "Japan"
-        from matplotlib.figure import Figure
-        ax = sc._draw_world(Figure(figsize=sc.SIZE), m)
-        self.assertIn("Japan", [t.get_text() for t in ax.texts])
 
 
 if __name__ == "__main__":
