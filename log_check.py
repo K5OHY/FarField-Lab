@@ -26,8 +26,11 @@ from session_report import BAND_ORDER, region_of
 import log_foundations as lf
 
 TYPICAL_OFFSET_DB = 10.0   # an ordinary 100 W station reads about this much above the page's figure on RBN (two known-power checks)
-MIN_MATCHES = 8            # fewer matched receivers than this and the strength is shown as a hint only
+MIN_MATCHES = 8            # fewer matched skimmers than this and the strength is shown as a hint only
 SHOW_MATCHES = 3           # fewer than this and no strength is shown at all
+SPLIT_KM = 1500            # the strength of a band is also given for the skimmers nearer than this and for the ones farther, when each group has SPLIT_MIN of them
+SPLIT_MIN = 2
+HIGH_DB = 15               # a band that reads this far above the WSPR reference gets a note: more likely a better antenna than the stations on WSPR near you than a mistake in the data
 SESSION_GAP_MIN = 30       # a pause this long on a band starts a new stretch
 WINDOW_PAD_MIN = 5         # spots this long before the first contact and after the last still belong to the stretch
 LOOKBACK_MIN = lf.WSPR_LOOKBACK_MIN   # the WSPR picture is built from the hour before the middle of the stretch
@@ -692,6 +695,24 @@ def _note(contacts, page, actual):
     return "", "neutral"
 
 
+def _per_skimmer(match, locs=None, home=None):
+    """One value for each skimmer from the matches of a band: the median of how far its RBN reports sat from the estimate (`diff`), the matches it was in and, when `locs` and
+    `home` are given, its distance from you in km (NaN when its place is not known). A skimmer matched with three WSPR stations (or heard at two sites of one callsign) is one
+    skimmer, so it counts once in the middle result and in the number of stations."""
+    if match is None or len(match) == 0:
+        return pd.DataFrame(columns=["diff", "n", "km"])
+    base = match["rx"].map(_base)
+    g = match.assign(b=base).groupby("b").agg(diff=("diff", "median"), n=("diff", "size"))
+    km = {}
+    if locs is not None and home is not None:
+        for rx, b in zip(match["rx"], base):
+            if b not in km or np.isnan(km[b]):
+                place = locate_skimmer(rx, locs)
+                km[b] = Geodesic.WGS84.Inverse(home[0], home[1], float(place[0]), float(place[1]))["s12"] / 1000 if place else float("nan")
+    g["km"] = g.index.map(lambda b: km.get(b, float("nan")))
+    return g
+
+
 def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", antenna_db=0.0):
     """Sets the log beside the spots and the WSPR picture, band by band.
 
@@ -750,23 +771,29 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
     for band in bands_top_down(log):
         n_cw = int(counts.get(band, 0))
         page, actual, n_listen = _agg(solid[solid["band"] == band])
-        m = match[match["band"] == band]["diff"]
+        mb = match[match["band"] == band]
+        per = _per_skimmer(mb, locs, home)                   # one value for each skimmer, so one with several matches does not count several times
+        m = per["diff"]
         offset = float(m.median()) - TYPICAL_OFFSET_DB if len(m) >= SHOW_MATCHES else float("nan")
+        near, far = per[per["km"] < SPLIT_KM]["diff"], per[per["km"] >= SPLIT_KM]["diff"]
         note, tone = _note(n_cw, page, actual)
         got = own.loc[own["band"] == band, "rst_rcvd"].map(s_digit)
         rows.append({"band": band, "contacts": n_cw, "other": int(all_counts[band]) - n_cw, "skimmers": len(spotted_by_band.get(band, ())),
                      "report": float(got.mean()) if got.notna().any() else float("nan"),
-                     "page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(m), "match_rx": int(match[match["band"] == band]["rx"].nunique()),
+                     "page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(mb), "match_rx": len(per),
+                     "near_db": float(near.median()) - TYPICAL_OFFSET_DB if len(near) >= SPLIT_MIN else float("nan"), "near_n": len(near),
+                     "far_db": float(far.median()) - TYPICAL_OFFSET_DB if len(far) >= SPLIT_MIN else float("nan"), "far_n": len(far),
                      "q1": float(m.quantile(0.25)) - TYPICAL_OFFSET_DB if len(m) >= SHOW_MATCHES else float("nan"),
                      "q3": float(m.quantile(0.75)) - TYPICAL_OFFSET_DB if len(m) >= SHOW_MATCHES else float("nan"),
                      "thin": 0 < len(m) < MIN_MATCHES, "note": note, "tone": tone, "no_picture": band in no_picture})
     bands = pd.DataFrame(rows)
     page, actual, n_listen = _agg(solid)
-    offset = float(match["diff"].median()) - TYPICAL_OFFSET_DB if len(match) >= SHOW_MATCHES else float("nan")
+    every = match.assign(b=match["rx"].map(_base)).groupby(["band", "b"])["diff"].median() if len(match) else pd.Series(dtype=float)       # one value for each skimmer on each band
+    offset = float(every.median()) - TYPICAL_OFFSET_DB if len(every) >= SHOW_MATCHES else float("nan")
     thin_cells = cells[~cells.index.isin(solid.index)]
     thin_listen = int(thin_cells["listening"].sum())
-    overall = {"page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(match), "match_rx": int(match["rx"].nunique()),
-               "spread_db": float(match["diff"].std()) if len(match) > 2 else float("nan"),
+    overall = {"page": page, "spotted": actual, "listening": n_listen, "stronger_db": offset, "matches": len(match), "match_rx": int(match["rx"].map(_base).nunique()),
+               "spread_db": float(every.std()) if len(every) > 2 else float("nan"),
                "thin_listening": thin_listen, "thin_spotted": int(thin_cells["spotted"].sum()),
                "typical_offset_db": TYPICAL_OFFSET_DB}
     return {"bands": bands, "regions": _regions(log, mode, cells, solid, on_sets, spot_sets), "overall": overall, "matches": match, "cells": cells}

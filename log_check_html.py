@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 import log_foundations as lf
-from log_check import BALANCE_MIN, CONTINENT_NAMES, DX_FIRST, DX_MILES, DXCC_ENTITIES, CQ_ZONES, HABIT_SHARE, NEAR_REGIONS, bands_top_down, pota_notes
+from log_check import BALANCE_MIN, CONTINENT_NAMES, DX_FIRST, DX_MILES, DXCC_ENTITIES, CQ_ZONES, HABIT_SHARE, HIGH_DB, NEAR_REGIONS, SPLIT_KM, bands_top_down, pota_notes
 
 BLUE, TEAL, AMBER = "#5B8CFF", "#19B5AE", "#F0A020"
 
@@ -59,6 +59,8 @@ CSS = """<style>
 .lc-sbar u{position:absolute;top:-2px;height:16px;border:1.5px solid currentColor;border-radius:4px;opacity:.55;text-decoration:none;box-sizing:border-box}
 .lc-sbar .z{position:absolute;top:-3px;width:2px;height:18px;background:currentColor;opacity:.5}.lc-str b{font-size:14px;text-align:right}
 .lc-str.none{font-size:12.5px;opacity:.6}
+.lc-bnote{grid-column:1/-1;font-size:12.5px;line-height:1.4;padding:6px 10px;border-radius:7px;background:var(--lane)}.lc-bnote b{font-weight:700}
+.lc-bsplit{grid-column:1/-1;font-size:12px;opacity:.72;margin-top:-4px}
 .lc-note{font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:99px;justify-self:start;border:1px solid var(--line)}
 .lc-note.good{color:var(--g);border-color:var(--g)}.lc-note.warn{color:var(--w);border-color:var(--w)}
 .lc-swim{overflow-x:auto}.lc-chart{min-width:640px}
@@ -1092,11 +1094,20 @@ def band_table_html(bands, min_contacts=3):
                         f'<div class="lc-sbar"><em class="g" style="left:14.3%"></em><em class="g" style="left:71.4%"></em><em class="z" style="left:{zero:.1f}%"></em>'
                         f'<i class="{"pos" if r.stronger_db >= 0 else "neg"}{" thin" if r.thin else ""}" style="left:{left:.1f}%;width:{width:.1f}%"></i>{spread}</div>'
                         f'<div class="lc-sv"><b>{r.stronger_db:+.1f} dB</b><small>{getattr(r, "match_rx", r.matches)} station{"s" if getattr(r, "match_rx", r.matches) != 1 else ""}</small></div></div>')
+        notes = ""
+        if not np.isnan(r.stronger_db) and r.stronger_db >= HIGH_DB:
+            notes += (f'<div class="lc-bnote"><b>{r.band} reads well above the WSPR reference ({r.stronger_db:+.1f} dB).</b> The usual reason is a better antenna than most of the WSPR stations '
+                      'near you have: the page corrects for their power but not their antenna. Check that the power above is what you ran. The spread of the skimmers (the outline) '
+                      'is the better guide than the single figure.</div>')
+        near, far = getattr(r, "near_db", float("nan")), getattr(r, "far_db", float("nan"))
+        if not (np.isnan(near) or np.isnan(far)):
+            km = int(SPLIT_KM)
+            notes += (f'<div class="lc-bsplit">Skimmers under {km:,} km ({km / 1.609344:,.0f} mi): <b>{near:+.1f} dB</b> ({r.near_n}) &middot; farther: <b>{far:+.1f} dB</b> ({r.far_n})</div>')
         extra = getattr(r, "other", 0)
         other = f'<small title="Contacts in other modes are in the log but RBN cannot hear them, so they are not compared">+{extra} other mode{"s" if extra != 1 else ""}</small>' if extra else ""
         rows.append(f'<div class="lc-brow"><div class="lc-bname">{r.band}</div>'
                     f'<div class="lc-cont"><b>{r.contacts}</b><span>CW contacts</span><div class="bar"><i style="width:{r.contacts / top * 100:.1f}%"></i></div>{other}</div>'
-                    f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span></div>{strength}</div>')
+                    f'<div class="lc-sk"><b>{r.skimmers}</b><span>skimmers</span></div>{strength}{notes}</div>')
     return ('<div class="lc"><div class="lc-card"><h4>What RBN skimmers heard on each band</h4>'
             '<p class="sub">What you worked, how many skimmers heard you, and how their reports compare with the nearby WSPR reference at your power.</p>'
             '<div class="lc-legend"><span><i class="lg-pos"></i>blue: RBN reports above the WSPR reference</span><span><i class="lg-neg"></i>amber: below it</span>'

@@ -977,6 +977,60 @@ class TheSignalComparison(unittest.TestCase):
         self.assertNotIn("The middle half of the matches ran from", lh.band_table_html(pd.DataFrame([row])))
 
 
+class TheSignalComparisonCountsEachSkimmerOnce(unittest.TestCase):
+    """A skimmer matched with several WSPR stations is one skimmer, a band that reads far above the reference says why, and the result is split by distance."""
+
+    def match(self):
+        rows = [("20m", "K5TR-1", 0.0, 30.0), ("20m", "K5TR-1", 5.0, 33.0), ("20m", "K5TR", -1.5, 33.0),          # one skimmer (two sites of one callsign), three matches, all high
+                ("20m", "N2EPE", -4.5, 36.0), ("20m", "VE6JY", 6.0, 14.0), ("20m", "K1RA-4", 2.0, 27.0), ("20m", "WA7LNW", 11.0, 27.0)]
+        m = pd.DataFrame(rows, columns=["band", "rx", "adj", "obs"])
+        m["diff"] = m["obs"] - m["adj"]
+        return m
+
+    def test_a_skimmer_with_several_matches_is_one_value(self):
+        per = lc._per_skimmer(self.match())
+        self.assertEqual(sorted(per.index), ["K1RA", "K5TR", "N2EPE", "VE6JY", "WA7LNW"])              # K5TR-1 and K5TR are one skimmer
+        self.assertEqual(int(per.loc["K5TR", "n"]), 3)
+        self.assertAlmostEqual(per.loc["K5TR", "diff"], 30.0)                                       # the median of its own three: 30, 28, 34.5
+        # the median over the five skimmers is not pulled up by the one with three matches
+        self.assertLess(per["diff"].median(), self.match()["diff"].median())
+
+    def test_distance_comes_from_the_skimmer_list_and_a_group_needs_two_skimmers(self):
+        locs = {"K5TR": (32.7, -97.1), "N2EPE": (40.8, -74.0), "VE6JY": (53.5, -113.5), "K1RA": (42.4, -71.2), "WA7LNW": (47.6, -122.3)}
+        per = lc._per_skimmer(self.match(), locs, (31.48, -100.46))
+        self.assertLess(per.loc["K5TR", "km"], 500)
+        self.assertGreater(per.loc["N2EPE", "km"], 2000)
+        self.assertTrue(lc._per_skimmer(self.match(), {}, (31.48, -100.46))["km"].isna().all())      # no place known: no distance
+
+    def row(self, **over):
+        row = {"band": "40m", "contacts": 115, "other": 0, "skimmers": 27, "page": 0.5, "spotted": 0.5, "listening": 3, "stronger_db": 19.5, "matches": 16, "match_rx": 11,
+               "q1": 7.0, "q3": 20.0, "thin": False, "note": "", "tone": "", "no_picture": False, "near_db": 13.0, "near_n": 2, "far_db": 18.0, "far_n": 7}
+        row.update(over)
+        return pd.DataFrame([row])
+
+    def test_a_band_far_above_the_reference_says_why_and_a_normal_one_does_not(self):
+        high = lh.band_table_html(self.row())
+        self.assertIn("40m reads well above the WSPR reference (+19.5 dB)", high)
+        self.assertIn("a better antenna than most of the WSPR stations near you have", high)
+        self.assertIn("Check that the power above is what you ran", high)
+        self.assertNotIn("reads well above", lh.band_table_html(self.row(stronger_db=14.9)))
+        self.assertNotIn("reads well above", lh.band_table_html(self.row(stronger_db=5.0)))
+        self.assertNotIn("reads well above", lh.band_table_html(self.row(stronger_db=float("nan"))))
+        self.assertEqual(lc.HIGH_DB, 15)
+
+    def test_the_result_for_near_and_far_skimmers_is_given_only_when_both_groups_have_two(self):
+        html = lh.band_table_html(self.row())
+        self.assertIn("Skimmers under 1,500 km (932 mi): <b>+13.0 dB</b> (2) &middot; farther: <b>+18.0 dB</b> (7)", html)
+        self.assertNotIn("lc-bsplit", lh.band_table_html(self.row(near_db=float("nan"), near_n=1)))
+        self.assertNotIn("lc-bsplit", lh.band_table_html(self.row(far_db=float("nan"), far_n=0)))
+
+    def test_a_table_built_before_these_columns_existed_still_draws(self):
+        old = self.row().drop(columns=["near_db", "near_n", "far_db", "far_n"])
+        html = lh.band_table_html(old)
+        self.assertNotIn("lc-bsplit", html)
+        self.assertIn("reads well above", html)
+
+
 class TheGlanceRow(unittest.TestCase):
     """The row of short findings under the tiles, each a link to its section."""
 

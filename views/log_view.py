@@ -910,9 +910,8 @@ def log_page():
             st.html(lh.CSS + lh.signal_method_html(power, "CW", lc.TYPICAL_OFFSET_DB, lh.signal_example(table), cond.MODES))
         if len(table):
             with st.expander(f"The receiving stations behind these bars ({len(table)})"):
-                st.caption("One row for each band and receiving station. A station that was matched in more than one stretch of the log has more than one match.")
+                st.caption("One row for each band and receiving station. A station that was matched in more than one stretch of the log has more than one match; in the bars it still counts once.")
                 st.dataframe(table, hide_index=True, width="stretch", height=min(420, 38 + 35 * len(table)))
-        st.caption(f"With fewer than {lc.MIN_MATCHES} matches a bar is striped, and it is a hint, not a score. "
+        st.caption(f"With fewer than {lc.MIN_MATCHES} skimmers behind it a bar is striped, and it is a hint, not a score. "
                    "A log shows who worked you; RBN only shows who a skimmer decoded. "
-                   "The S in each band row is the average report they gave you; many operators send a 9 out of habit, so it is a rough picture "
-                   "of your station, not a measurement.")
+                   "The bars compare your reports with other stations' transmissions on WSPR, so a better or worse antenna than theirs shows up in them.")
