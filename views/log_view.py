@@ -319,6 +319,11 @@ def _box_evidence(cells, grid, log, places, spots, locs, home, band, slot, view,
                f"{row['shared_min']:.0f} of its minutes with the box before. Behind it: {cov['reports']} reports from {cov['transmitters']} transmitters, decoded by "
                f"{cov['receivers']} receivers at {cov['sites']} sites. The path in this box is {row['state']}: {lf.STATE_NOTES[row['state']]}")
     tx, rx, rbn, qso = ev["transmitters"], ev["receivers"], ev["rbn"], ev["qsos"]
+    _evidence_tables(tx, rx, rbn, qso, row, where, rbn_ok)
+
+
+def _evidence_tables(tx, rx, rbn, qso, row, where, rbn_ok):
+    """The tables behind one window: the WSPR transmitters near you, the receivers in the destination, your RBN spots and your contacts."""
     t1, t2, t3, t4 = st.tabs([f"WSPR transmitters near you ({len(tx)})", f"Receivers there ({len(rx)})", f"Your RBN spots ({len(rbn)})", f"Your contacts ({len(qso)})"])
     with t1:
         st.dataframe(_clock(tx, ["First report", "Last report"]).round({"Km from you": 0}), hide_index=True, width="stretch")
@@ -398,10 +403,11 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
     are followed by 'look at one box', which shows the evidence behind a bar or box. Returns draw(spots, rbn_ok), which draws it all again: it is called once
     without RBN and again when the spots have been read; it returns the sentence for the row of findings."""
     places = lc.contact_places(log, home)
+    names_shown = list(lh.DX_VIEWS.values())
+    show = st.segmented_control("Nearby WSPR shows", names_shown, default=names_shown[0], key="log_dx_view",
+                                help="What WSPR showed: the stations that decoded WSPR transmitters near you, with nothing assumed about your station. "
+                                     "Estimate for my station: the ones whose reports, restated to your power, look strong enough to hear you. This changes what the WSPR bars mean.") or names_shown[0]
     with st.expander("More options"):
-        show = st.radio("What the bars show", list(lh.DX_VIEWS.values()), horizontal=True, key="log_dx_view",
-                        help="What WSPR showed: the stations that decoded WSPR transmitters near you, with nothing assumed about your station. "
-                             "Estimate for my station: the ones whose reports, restated to your power, look strong enough to hear you.")
         layout = st.radio("View", list(LAYOUTS.values()), horizontal=True, key="log_openings_layout",
                           help="By destination: one destination at a time, with the band you were on above a lane for each band. Band by band: a card for each band you worked, with the "
                                "distant continents WSPR showed a path to, and your contacts, on one time axis. Grid: the earlier view, a box for each band and time bin for one destination.")
@@ -417,7 +423,7 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
     metric_view = next(k for k, v in lh.DX_VIEWS.items() if v == show)
     min_km = lf.DISTANCE_CHOICES[distance][1]
     by_dest, cards = layout == LAYOUTS["dest"], layout == LAYOUTS["cards"]
-    pick, focus = None, None                    # the tab chosen in the destination view (a continent code, or "regional") and the band and time its details should open on
+    pick, focus, current_tab = None, None, None   # the tab chosen in the destination view (a continent code, or "regional") and the band and time its details should open on
     if by_dest:
         base = lo.band_timeline(grid, log, places, None, skimmers, home, min_km, lo.METRIC[metric_view], False, None, "dx", home_cont)
         tabs, _ = lo.destination_views(base)
@@ -448,15 +454,15 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
         view, dest = ("continent" if kind == "continent" else "sector"), (code or None)
     regional = reach == "regional"
     grid_slot, table_slot = st.empty(), st.empty()
-    with st.expander("How to read this, and what it rests on"):
-        explain_slot, words_slot = st.empty(), st.empty()
     bands = list(dict.fromkeys(grid["band"]))
     slots = sorted(grid["slot"].unique())
     lane_codes, lane_names = lo.lane_set(reach, home_cont)[:2] if (cards or by_dest) else ((), {})
+    f_band, f_slot = focus if focus else (None, None)          # open on the band and window of the first line worth a look for this destination, not on the first band of the log
+    with st.expander("How to read this, and what it rests on"):
+        explain_slot, words_slot = st.empty(), st.empty()
     with st.expander("Details for one band and time: the stations, spots and contacts behind it"):
         cols = st.columns(3 if cards else 2)
         stamps = [pd.Timestamp(t) for t in slots]
-        f_band, f_slot = focus if focus else (None, None)          # open on the band and window of the first line worth a look for this destination, not on the first band of the log
         band = cols[0].selectbox("Band", bands, index=bands.index(f_band) if f_band in bands else 0, key=f"log_box_band_{pick or 'x'}")
         slot = cols[1].selectbox("Box (UTC)", slots, index=stamps.index(f_slot) if f_slot in stamps else 0, format_func=lambda t: f"{pd.Timestamp(t):%d %b %H:%M}Z",
                                  key=f"log_box_slot_{pick or 'x'}")
@@ -468,6 +474,8 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
             ev_view, ev_dest = ("sector", None) if regional else ("continent", dest)           # the destination chosen above
         else:
             ev_view, ev_dest = view, dest
+        look = st.toggle("Show what is behind this window", key=f"log_look_{pick or 'x'}",
+                         help="Off by default: looking up the WSPR window takes a moment each time the band or the time changes, so it is done only when you ask for it.")
         box_slot = st.empty()
     ev_km = lo.REGIONAL_MIN_KM if (regional and (cards or by_dest)) else min_km
     _reach_map(grid, places, home, lo.METRIC[metric_view], f_band_default=(focus[0] if focus else None), digest=digest)
@@ -513,9 +521,12 @@ def _openings_section(grid, log, home, power, mode, zone, radius_km, skimmers, d
             lines = lo.openings_summary(cells)
             words_slot.markdown("**In words**\n\n" + "\n".join(f"- {line}" for line in lines) if lines else "")
             headline = lo.openings_headline(cells)
-        evidence = lo.opening_cells(grid, log, places, spots, skimmers, home, ev_view, ev_dest, ev_km, metric, rbn_ok)
-        with box_slot.container():
-            _box_evidence(evidence, grid, log, places, spots, skimmers, home, band, slot, ev_view, ev_dest, ev_km, rbn_ok, radius_km)
+        if look:                                   # the WSPR window behind a box is fetched only when asked for, so changing the band or the time stays quick
+            evidence = lo.opening_cells(grid, log, places, spots, skimmers, home, ev_view, ev_dest, ev_km, metric, rbn_ok)
+            with box_slot.container():
+                _box_evidence(evidence, grid, log, places, spots, skimmers, home, band, slot, ev_view, ev_dest, ev_km, rbn_ok, radius_km)
+        else:
+            box_slot.empty()
         return headline
 
     draw(None, False)

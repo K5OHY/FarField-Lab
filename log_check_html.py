@@ -156,6 +156,10 @@ CSS = """<style>
 .dv-call{position:absolute;top:-3px;font-size:11.5px;font-weight:700;background:rgba(20,24,32,.88);color:#fff;padding:1px 5px;border-radius:5px;z-index:4;white-space:nowrap}
 .dv-call.r{margin-left:12px}.dv-call.l{transform:translateX(calc(-100% - 12px))}
 .dv-axis{position:relative;height:20px;margin-left:92px;font-size:12px;opacity:.7}.dv-axis span{position:absolute;transform:translateX(-50%);top:4px}
+.dv-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:10px 0 4px}
+.dv-ki{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:9px}.dv-ki .mk{flex:0 0 28px;display:flex;justify-content:center;padding-top:2px}
+.dv-ki b{display:block;font-size:13.5px}.dv-ki span{font-size:12.5px;opacity:.78;line-height:1.35}.dv-ki .mk i{margin:0}
+.dv-row.sel .dv-chip{box-shadow:0 0 0 2px #fff,0 0 0 3px rgba(0,0,0,.5)}
 .dv-legend{display:flex;gap:22px;flex-wrap:wrap;font-size:13px;opacity:.8;margin-top:10px;align-items:center}.dv-legend i{display:inline-block;vertical-align:middle;margin-right:7px}
 .dv-sw{width:26px;height:12px;border-radius:4px;background:linear-gradient(90deg,#8a8f98 0 60%,#4a4e55 60%)}.dv-ld{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #8a8f98}
 .dv-lt{display:inline-block;width:16px;height:16px;position:relative;vertical-align:middle;margin-right:7px}
@@ -855,6 +859,17 @@ def contact_clusters(contacts, pct):
     return out
 
 
+def source_key_html(name):
+    """The three sources the destination chart draws, each with its mark and the one thing it can establish, so the difference is on the page beside the chart: your log shows
+    what you did, RBN shows who decoded you, and the nearby WSPR shows who decoded other transmitters near you."""
+    n = escape(name)
+    return ('<div class="dv-key">'
+            f'<div class="dv-ki"><span class="mk"><i class="dv-ld"></i></span><div><b>Your log</b><span>you completed a contact with {n}</span></div></div>'
+            f'<div class="dv-ki"><span class="mk"><i class="dv-lt"></i></span><div><b>RBN</b><span>a skimmer in {n} decoded your signal</span></div></div>'
+            f'<div class="dv-ki"><span class="mk"><i class="dv-sw"></i></span><div><b>Nearby WSPR</b><span>a receiver in {n} decoded another transmitter near you (pale: one receiver)</span></div></div>'
+            '</div>')
+
+
 def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=None):
     """One destination as a picture of the reported paths and your contacts: the plain idea in a sentence, the few lines worth a look and, for each stretch of the log, a
     strip of your logged activity above a lane for each band that has something to show: a bar where the nearby WSPR showed a path to the destination (pale for one
@@ -918,7 +933,8 @@ def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=N
             if selected is not None and selected[0] == band and start <= pd.Timestamp(selected[1]) < end:
                 marks += f'<i class="dv-sel" style="left:{pct(selected[1]):.2f}%;width:calc({100 / len(slots):.2f}% - 2px)" title="The window the details below describe"></i>'
             note = "" if lane["worked_band"] else f' <span class="dv-lab" style="font-size:11px;font-weight:400">not worked</span>'
-            lanes += f'<div class="dv-row"><div class="dv-name">{band_chip(band, colour)}{note}</div><div class="dv-track">{ticks}{marks}</div></div>'
+            on = selected is not None and selected[0] == band
+            lanes += f'<div class="dv-row{" sel" if on else ""}"><div class="dv-name">{band_chip(band, colour)}{note}</div><div class="dv-track">{ticks}{marks}</div></div>'
         head = f'<p class="sub" style="margin:10px 0 4px"><b>{pd.Timestamp(slots[0]):%a %d %b %Y}</b> (UTC)</p>' if many else ""
         out.append(head + f'<div class="dv-row top"><div class="dv-lab" title="The band with the most logged contacts in each quarter hour. A gap means no contact was logged, not that you were off the air.">Logged activity</div><div class="dv-strip">{strip}</div></div>{lanes}<div class="dv-axis">{axis}</div>')
     nothing = ""
@@ -926,13 +942,13 @@ def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=N
         nothing += f"Not shown: {_join(empty)} (no nearby WSPR path, no RBN skimmer and no contact there). "
     if limit_note:
         nothing += limit_note + " "
-    legend = ('<div class="dv-legend"><span><i class="dv-sw"></i>nearby WSPR showed a path to ' + escape(name) + ' (pale: one receiving station)</span>'
-              f'<span><i class="dv-ld"></i>your contact with {escape(name)}</span><span><i class="dv-lt"></i>an RBN skimmer in {escape(name)} spotted you</span></div>')
+    legend = ""
     estimate = ("what WSPR showed" if observed else f"an estimate for {power_w:g} W in {escape(mode)}")
     idea = (f'<p class="sub" style="margin:0 0 6px">Nearby WSPR stations act as test signals from your area. When receivers in {escape(name)} decode them, that shows a path from where you were '
             f'(read as {estimate}). A bar says a path was reported. It does not say whether a contact was possible, or what you were doing at the time.</p>')
     rbn = f'<p class="sub">{escape(tl["rbn_line"])}</p>' if tl.get("rbn_line") and not str(tl["rbn_line"]).startswith("RBN skimmers") else ""
     return (f'<div class="lc"><div class="lc-card" id="sec-openings"><h4>{escape(name)}: reported paths and your contacts</h4>{idea}'
+            + source_key_html(name)
             + (f'<p style="margin:10px 0 2px;font-size:12px;font-weight:700;letter-spacing:.08em;opacity:.65">WORTH A LOOK</p>{looks}' if looks else "")
             + '<div style="margin-top:12px">' + "".join(out) + "</div>" + legend
             + (f'<p class="sub" style="margin-top:8px">The details below describe <b>{escape(str(selected[0]))}, {pd.Timestamp(selected[1]):%H:%M} to {(pd.Timestamp(selected[1]) + pd.Timedelta(minutes=tl["bin_min"])):%H:%M} UTC</b> '

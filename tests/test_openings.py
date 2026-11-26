@@ -795,7 +795,8 @@ class TheDestinationView(Session):
         views, empty = lo.destination_views(tl)
         html = lh.destination_html(views[0], tl, {"20m": "#800080", "15m": "#444444"}, empty, "Inside the 3,000 mile limit, so not counted as DX: Aruba.")
         for text in ("Europe: reported paths and your contacts", "Nearby WSPR stations act as test signals", "WORTH A LOOK", "Logged activity", "DL1AAA",
-                     "nearby WSPR showed a path to Europe (pale: one receiving station)", "your contact with Europe", "an RBN skimmer in Europe spotted you",
+                     "a receiver in Europe decoded another transmitter near you (pale: one receiver)", "you completed a contact with Europe", "a skimmer in Europe decoded your signal",
+                     "<b>Your log</b>", "<b>RBN</b>", "<b>Nearby WSPR</b>",
                      "Not shown: Africa, Oceania and South America (no nearby WSPR path, no RBN skimmer and no contact there).", "not counted as DX: Aruba.", 'id="sec-openings"'):
             self.assertIn(text, html)
         self.assertEqual(lo.unsupported_claims(html), [])
@@ -981,6 +982,28 @@ class TheSignalComparison(unittest.TestCase):
         self.assertNotIn("typical", html)
         row.update(stronger_db=float("nan"), q1=float("nan"), q3=float("nan"))
         self.assertNotIn("The middle half of the skimmers ran from", lh.band_table_html(pd.DataFrame([row])))
+
+
+class TheSourceKeyAndTheSelectedBand(unittest.TestCase):
+    """The key above the destination chart names the three sources and what each can establish; the picked band is ringed on the chart."""
+
+    def test_the_source_key_sits_above_the_chart_and_names_the_three_sources(self):
+        html = lh.source_key_html("Europe")
+        for text in ("<b>Your log</b>", "<b>RBN</b>", "<b>Nearby WSPR</b>", "you completed a contact with Europe", "a skimmer in Europe decoded your signal",
+                     "a receiver in Europe decoded another transmitter near you"):
+            self.assertIn(text, html)
+        self.assertEqual(lo.unsupported_claims(html), [])
+
+    def test_the_selected_band_is_ringed_on_the_chart(self):
+        lane = {"band": "20m", "cells": [], "worked_band": True, "contacts": []}
+        other = dict(lane, band="15m")
+        view = {"code": "EU", "name": "Europe", "contacts": 0, "paths": 0, "rbn": False,
+                "panels": [{"panel": 0, "slots": [pd.Timestamp("2026-11-18 20:00"), pd.Timestamp("2026-11-18 20:30")], "bin_min": 30,
+                            "strip": [(pd.Timestamp("2026-11-18 20:00"), pd.Timestamp("2026-11-18 21:00"), "20m")], "lanes": [lane, other], "lines": [], "focus": None}]}
+        tl = {"power_w": 100.0, "mode": "CW", "metric": "good", "bin_min": 30}
+        html = lh.destination_html(view, tl, None, (), "", ("20m", pd.Timestamp("2026-11-18 20:00")))
+        self.assertEqual(html.count('class="dv-row sel"'), 1)                                       # one lane, the selected band
+        self.assertNotIn('class="dv-row sel"', lh.destination_html(view, tl))
 
 
 class TheSignalComparisonCountsEachSkimmerOnce(unittest.TestCase):

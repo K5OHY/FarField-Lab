@@ -204,7 +204,7 @@ GUIDES = {
         steps=["Set your power first. This page does not read it from the log, and the work starts as soon as a log is loaded.",
                "Upload your ADIF log (most logging programs can export one) and check the callsign and grid square taken from it.",
                "Read the row of findings under the numbers: each one is a link to the part of the page it comes from.",
-               "In the openings, pick a destination from the tabs (only those with something to show are listed), read the lines worth a look, and open *Details for one band and time* to see the stations, spots and contacts behind a bar. *Regional* shows the eight compass directions."],
+               "In the openings, pick a destination from the tabs (only those with something to show are listed), read the lines worth a look, then open *Details for one band and time* and switch on *Show what is behind this window* to see the stations, spots and contacts behind a bar. *Nearby WSPR shows* switches between what was decoded and an estimate for your station. *Regional* shows the eight compass directions."],
         shows=["Your session in numbers: contacts, stations, bands, the active rate, and who worked you on more than one band.",
                "What you worked: DXCC entities, continents, US states, provinces and CQ zones, and session highlights: when each other continent first answered, the farthest contact on each band, and a note when stations were worked again on the same band.",
                "A session chart with a lane for each band, your sending speed as the skimmers measured it, and two maps side by side: the stations you worked, and the skimmers that spotted you.",
