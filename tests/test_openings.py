@@ -963,11 +963,12 @@ class TheGlanceRow(unittest.TestCase):
         self.assertNotIn("<p>", lh.section_heading_html("sec-x", "Only a title"))
         self.assertIn("&lt;", lh.section_heading_html("sec-x", "A <b> title"))                  # text is escaped
 
-    def test_the_findings_row_ends_with_a_link_to_the_share_box(self):
+    def test_the_findings_row_has_no_link_that_scrolls_to_the_share_box(self):
         from views.log_view import _glance
         log = log_of(rec("DL1AAA", "2010", band="20m"), rec("DL1AAA", "2020", band="15m"))
         html = _glance([], lc.repeat_stations(log), None, {}, HOME, "", None)
-        self.assertIn('href="#sec-share"', html)
+        self.assertIn('href="#sec-hunters"', html)                                                  # the findings still link to their own sections
+        self.assertNotIn("sec-share", html)                                                         # the share box is one folded box under the park card, not a scroll to the bottom
         self.assertEqual(_glance([], lc.repeat_stations(log_of(rec("W1AAA", "2010"))), None, {}, HOME, "", None), "")      # no findings, no row and no link
 
     def test_the_page_builds_the_row_from_what_is_known_so_far(self):

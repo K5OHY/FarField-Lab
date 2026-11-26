@@ -524,9 +524,11 @@ def _view_points(home, spots, worked, locs):
     return points
 
 
+@st.fragment
 def _maps_section(log, result, spots, locs, home, label, who, tiles, units, digest, spots_url=None):
     """Two maps of one band, side by side and framed alike: the skimmers that spotted you, and the stations you worked. They open on the
-    band with the most DX; placing that band's stations takes a few seconds the first time, and each band is only looked up once."""
+    band with the most DX; placing that band's stations takes a few seconds the first time, and each band is only looked up once. It is a fragment, so choosing another
+    band redraws only the maps (not the whole page), and a band that has been drawn is kept, so going back to it is instant."""
     st.markdown(f"#### {MAPS_HEADING}")
     if spots_url:
         st.link_button("Open this activation on the My spots map", spots_url, icon=":material/open_in_new:",
@@ -544,31 +546,43 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
     pick = c1.radio("Band", bands, index=first, horizontal=True, key="log_map_band_" + "_".join(bands), label_visibility="collapsed")
     cw_only = c2.checkbox("CW contacts only", value=has_cw and result is not None, key="log_map_cw",
                           help="Skimmers only hear CW, so the CW contacts are the ones to hold against the left map. Untick to see every contact.")
-    mine = log[log["band"] == pick]
-    shown_log = mine[mine["mode"] == "CW"] if cw_only else mine
-    rows = list(shown_log.drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
-    places = _places_for(rows, digest, locs, _log_grids(log))
-    worked = lc.where_worked(shown_log, places)
-    worked = worked.assign(bands_worked=worked["call"].map(log.groupby("call")["band"].nunique()))
-    t_lo, t_hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
-    heard = spots[(spots["band"] == pick) & (spots["time"] >= t_lo) & (spots["time"] <= t_hi)]
-    view = _view_points(home, heard, worked, locs)
+    key = (digest, pick, bool(cw_only), tiles, units, len(spots), result is not None)
+    kept = st.session_state.get("log_map_cache")
+    if not kept or kept["digest"] != digest:
+        kept = {"digest": digest, "maps": {}}
+        st.session_state["log_map_cache"] = kept
+    drawn = kept["maps"].get(key)
+    if drawn is None:
+        mine = log[log["band"] == pick]
+        shown_log = mine[mine["mode"] == "CW"] if cw_only else mine
+        rows = list(shown_log.drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
+        places = _places_for(rows, digest, locs, _log_grids(log))
+        worked = lc.where_worked(shown_log, places)
+        worked = worked.assign(bands_worked=worked["call"].map(log.groupby("call")["band"].nunique()))
+        t_lo, t_hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
+        heard = spots[(spots["band"] == pick) & (spots["time"] >= t_lo) & (spots["time"] <= t_hi)]
+        view = _view_points(home, heard, worked, locs)
+        missing = shown_log["call"].nunique() - worked["call"].nunique()
+        drawn = {
+            "left": build_map(heard, locs, home, label, who, False, tiles, units, None, title=f"{who} \u00b7 RBN heard you on {pick}", view=view, show_legend=False).get_root().render(),
+            "right": build_map(spots.iloc[0:0], locs, home, label, who, False, tiles, units, None, title=f"{who} \u00b7 worked on {pick}",
+                               contacts=worked if len(worked) else None, show_spots=False, contact_paths=False, view=view, show_legend=False).get_root().render(),
+            "left_caption": (f"{heard['spotter'].nunique()} skimmers between {t_lo:%H:%M}Z and {t_hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
+                             if len(heard) else (f"No RBN spots on {pick} while you were working it." if result is not None
+                                                 else "The RBN spots are not available, so there is no skimmer map. The stations you worked are on the right.")),
+            "right_caption": (f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
+                              + ". Colour is the report they gave you, from weak (green) to strong (red), grey where the log has none. "
+                                "A black ring marks a station that worked you on more than one band. Click one for the contacts. "
+                                "Each is at the centre of its grid square, state or country."),
+        }
+        kept["maps"][key] = drawn
     left, right = st.columns(2)      # a one line title above each map and the notes below them, so the two maps start level
     left.markdown(f"**{HEARD_TITLE.format(band=pick)}**")
     right.markdown(f"**{WORKED_TITLE.format(band=pick)}**")
-    left.iframe(build_map(heard, locs, home, label, who, False, tiles, units, None, title=f"{who} · RBN heard you on {pick}", view=view, show_legend=False)
-                .get_root().render(), height=520)
-    right.iframe(build_map(spots.iloc[0:0], locs, home, label, who, False, tiles, units, None, title=f"{who} · worked on {pick}",
-                           contacts=worked if len(worked) else None, show_spots=False, contact_paths=False, view=view, show_legend=False)
-                 .get_root().render(), height=520)
-    missing = shown_log["call"].nunique() - worked["call"].nunique()
-    left.caption(f"{heard['spotter'].nunique()} skimmers between {t_lo:%H:%M}Z and {t_hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
-                 if len(heard) else (f"No RBN spots on {pick} while you were working it." if result is not None
-                                     else "The RBN spots are not available, so there is no skimmer map. The stations you worked are on the right."))
-    right.caption(f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
-                  + ". Colour is the report they gave you, from weak (green) to strong (red), grey where the log has none. "
-                    "A black ring marks a station that worked you on more than one band. Click one for the contacts. "
-                    "Each is at the centre of its grid square, state or country.")
+    left.iframe(drawn["left"], height=520)
+    right.iframe(drawn["right"], height=520)
+    left.caption(drawn["left_caption"])
+    right.caption(drawn["right_caption"])
 
 
 def _glance(park_cards, rep, spots, skimmers, home, headline, result):
@@ -591,7 +605,7 @@ def _glance(park_cards, rep, spots, skimmers, home, headline, result):
         o = result["overall"]
         items.append(("Signal against the WSPR reference", f"About {o['stronger_db']:+.0f} dB against the nearby WSPR reference, from {o['matches']} matches with "
                                                                 f"{o.get('match_rx', o['matches'])} receiving stations.", "sec-signal"))
-    return lh.glance_html(items, '<p class="sub" style="margin:-2px 0 10px"><a href="#sec-share">Save a session card to share \u2193</a></p>')
+    return lh.glance_html(items)
 
 
 def log_page():
@@ -674,9 +688,10 @@ def log_page():
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
     glance_slot = st.empty()
     # The order of the page: what happened (the park, who worked you on more than one band, the highlights and the rate), who heard you (the session chart and the two
-    # maps), the openings and the space weather, the signals, and last the reference lists and the share box. Each group opens with a heading.
-    (overview_head, pota_slot, followers_slot, highlights_slot, heard_head, chart_slot, maps_slot, open_head, conditions_slot, space_slot, signal_head, reports_slot,
-     work, compare_slot, ref_slot, share_slot) = (st.container() for _ in range(16))
+    # maps), the openings and the space weather, the signals, and last the reference lists. Each group opens with a heading. The share box stays under the park card,
+    # where it was, folded: a picture and a text to post are one click away from the top, not a scroll to the bottom.
+    (overview_head, pota_slot, share_slot, followers_slot, highlights_slot, heard_head, chart_slot, maps_slot, open_head, conditions_slot, space_slot, signal_head,
+     reports_slot, work, compare_slot, ref_slot) = (st.container() for _ in range(16))
     for slot, ident, title, note in ((overview_head, "sec-overview", "Session overview", "What happened: the park, who worked you on more than one band, the highlights and how fast the contacts came in."),
                                      (heard_head, "sec-heard", "Who heard you", "Your session against the RBN skimmers that spotted you, and the stations you worked."),
                                      (open_head, "sec-reach", "Openings and reach", "Where nearby WSPR showed a path, and the space weather around your session."),
@@ -685,7 +700,7 @@ def log_page():
             st.html(lh.CSS + lh.section_heading_html(ident, title, note))
     home_cont = _home_continent(call)
     maps_hold = maps_slot.empty()
-    if not cw.empty:
+    if not cw.empty and st.session_state.get("log_maps_seen") != digest:        # only the first time: afterwards the maps stay on the page while it works
         maps_hold.caption("The maps appear here when the RBN spots have been read.")
     with followers_slot:
         st.html(lh.CSS + lh.with_id(lh.followers_html(log, summary), "sec-hunters"))
@@ -727,8 +742,7 @@ def log_page():
     with pota_slot:         # a POTA log opens with how its park compares; the card is laid out above the rest and filled once the session chart is drawn
         park_cards = _pota_cards(log, call)
     with share_slot:
-        st.html(lh.CSS + lh.section_heading_html("sec-share", "Share this session", "A picture and a short summary to post, in the shape each site wants."))
-        with st.expander("Make the picture and the text"):
+        with st.expander("Share this session: a picture and a short summary to post"):
             made = st.session_state.get("log_share")
             share_key = (digest, call, round(home[0], 3), round(home[1], 3), bool(park_cards))
             if not made or made["key"] != share_key:       # the picture and the text are made once for a log, not at every redraw
@@ -824,6 +838,7 @@ def log_page():
                     result = _run(loaded, spots, skimmers, home, power, label, radius_km)
                     if result is not None:
                         st.session_state["log_result"] = {"signature": signature, "result": result}
+    st.session_state["log_maps_seen"] = digest
     with maps_hold.container():
         _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest, lc.spots_link(call, grid, log))
     glance_slot.html(lh.CSS + _glance(park_cards, rep, spots, skimmers, home, headline, result))
