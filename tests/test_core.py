@@ -2018,9 +2018,26 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertTrue(any(t.endswith("stronger") and "POTA Perf" in t and "…" in t for t in texts))       # a long name is cut short, not turned into a bare letter
         self.assertFalse(any(t.strip("◀ ") == "A stronger" for t in texts))
         self.assertIn("A = POTA Performer 2  ·  B = BV", texts)                                          # and written out in full under the chart
-        self.assertTrue(any("BV stronger" in t for t in texts))
+        self.assertTrue(any(t.startswith("BV") and t.endswith("stronger") for t in texts))                  # each side's name sits over its own half, with 'stronger' on a second line
         plain = charts.distance_chart(dist, {"A": "Loop", "B": "Dipole"})
         self.assertFalse(any(t.startswith("A = ") for t in [t.get_text() for t in plain.texts]))               # short names need no key
+
+    def test_the_two_headings_of_the_distance_chart_never_run_into_each_other_or_off_the_picture(self):
+        import charts
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        dist = pd.DataFrame({"label": ["0-300 mi", "300-1,000 mi", "1,000-2,000 mi"], "a": [2, 157, 146], "b": [11, 273, 261], "shared": [1, 9, 16], "delta": [-4.3, -4.6, -4.6]})
+        for names in ({"A": "17 ft whip on a stick", "B": "Performer 7 vertical long name"}, {"A": "Loop", "B": "Dipole"}, {"A": "Wire dipole up a pole", "B": "Magnetic loop indoors"}):
+            fig = charts.distance_chart(dist, names)
+            canvas = FigureCanvasAgg(fig)
+            canvas.draw()
+            renderer = canvas.get_renderer()
+            ax = fig.axes[0]
+            heads = [t.get_window_extent(renderer) for t in ax.texts if "\n" in t.get_text() and t.get_text().endswith("stronger")]
+            self.assertEqual(len(heads), 2)
+            self.assertFalse(heads[0].overlaps(heads[1]), names)                                       # the long names that used to collide over the centre line
+            width = fig.bbox.width
+            for t in ax.texts:
+                self.assertLessEqual(t.get_window_extent(renderer).x1, width + 1, (names, t.get_text()))   # and nothing, such as three digit counts, is cut off at the edge
 
     def worked_log(self, with_numbers=True):
         def rec(call, band="20m", **f):

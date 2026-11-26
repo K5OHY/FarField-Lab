@@ -231,17 +231,17 @@ def distance_chart(dist, names):
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{abs(v):g}"))
     ax.set_xlabel("dB stronger", fontsize=8, color=COLOR_TIE)
     # B is drawn to the right, so a positive A - B (A stronger) points left
-    ax.text(0.0, 1.04, f"◀  {short['A']} stronger", transform=ax.transAxes, ha="left", va="bottom",
-            fontsize=9, color=COLOR_A, fontweight="bold")
-    ax.text(1.0, 1.04, f"{short['B']} stronger  ▶", transform=ax.transAxes, ha="right", va="bottom",
-            fontsize=9, color=COLOR_B, fontweight="bold")
+    ax.text(0.0, 1.03, f"◀  {short['A']}\nstronger", transform=ax.transAxes, ha="left", va="bottom",
+            fontsize=9, color=COLOR_A, fontweight="bold", linespacing=1.15)          # two lines each, so two long names can never run into each other over the centre line
+    ax.text(1.0, 1.03, f"{short['B']}  ▶\nstronger", transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=9, color=COLOR_B, fontweight="bold", linespacing=1.15, multialignment="right")
     for i, row in rows.iterrows():
         ax.text(1.03, i, f"heard by {short['A']} {int(row['a'])} · {short['B']} {int(row['b'])}\n{int(row['shared'])} heard both",
                 transform=ax.get_yaxis_transform(), ha="left", va="center", fontsize=7.5, color=COLOR_TIE)
     if cut:     # a name that was cut short is written out in full under the chart
         key = f"A = {names['A']}  ·  B = {names['B']}"
         fig.text(0.02, 0.012, key if len(key) <= 90 else key[:89] + "…", fontsize=7.5, color=COLOR_TIE, va="bottom")
-    fig.subplots_adjust(left=0.2, right=0.66, top=0.86, bottom=0.26 if cut else 0.18)
+    fig.subplots_adjust(left=0.2, right=0.62, top=0.82, bottom=0.26 if cut else 0.18)
     return fig
 
 
