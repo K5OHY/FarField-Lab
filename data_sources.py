@@ -246,11 +246,11 @@ def load_sota_summit(ref):
     return (summit if isinstance(summit, dict) and summit.get("summitCode") else None), table.dropna(subset=["date"]).reset_index(drop=True), None
 
 
-_REF_PLACES = {}              # park or summit reference -> (lat, lon) or None: kept for as long as the app runs, so a reference is asked for once
+_REF_PLACES = {}              # park or summit reference -> (lat, lon, name) or None: kept for as long as the app runs, so a reference is asked for once
 
 
 def load_reference_places(pota_refs=(), sota_refs=(), workers=8):
-    """Where the parks and summits are, for contacts made with another activator: {reference: (lat, lon)}, from POTA's and SOTA's public data services, one small request
+    """Where the parks and summits are, for contacts made with another activator: {reference: (lat, lon, name)}, from POTA's and SOTA's public data services, one small request
     for each reference (only the reference is sent). A reference that cannot be found or reached is left out, and nothing here raises, so a contact is then placed by its
     state or country as before."""
     from concurrent.futures import ThreadPoolExecutor
@@ -266,7 +266,7 @@ def load_reference_places(pota_refs=(), sota_refs=(), workers=8):
                 resp.raise_for_status()
                 data = resp.json() if resp.content else None
                 if isinstance(data, dict) and data.get("latitude") is not None and data.get("longitude") is not None:
-                    point = (float(data["latitude"]), float(data["longitude"]))
+                    point = (float(data["latitude"]), float(data["longitude"]), str(data.get("name") or data.get("summitName") or data.get("title") or ""))
                 break
             except (requests.RequestException, ValueError, TypeError):
                 if attempt == 2:

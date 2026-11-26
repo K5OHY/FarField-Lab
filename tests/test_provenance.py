@@ -96,9 +96,9 @@ class LookingUpReferences(unittest.TestCase):
         with mock.patch.object(ds.requests, "get", fake_get):
             found = ds.load_reference_places(["US-1234", "US-0000"], ["W7W/CS-001"])
             again = ds.load_reference_places(["US-1234"], [])
-        self.assertEqual(found, {"US-1234": (40.1, -75.2), "W7W/CS-001": (48.5, -121.0)})
+        self.assertEqual(found, {"US-1234": (40.1, -75.2, ""), "W7W/CS-001": (48.5, -121.0, "")})
         self.assertNotIn("US-0000", found)                                                        # a reference that could not be reached is simply not placed
-        self.assertEqual(again, {"US-1234": (40.1, -75.2)})
+        self.assertEqual(again, {"US-1234": (40.1, -75.2, "")})
         self.assertEqual(sum("US-1234" in c for c in calls), 1)                                   # remembered, not asked twice
         self.assertEqual(ds.load_reference_places([], []), {})
         ds._REF_PLACES.clear()

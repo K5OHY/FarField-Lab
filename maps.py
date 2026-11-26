@@ -281,6 +281,29 @@ def park_map(lat, lon, name, tiles="Street"):
     return m
 
 
+def p2p_map(own, parks, tiles="Street", noun="park"):
+    """A map of the park (or summit) the log was made from and the others its contacts were at: `own` is (lat, lon, label), `parks` is log_check.park_to_park's table. A green
+    dot for your park, an amber dot for each other park or summit with a line to it, and on hover its reference and name, the stations and bands and when. A place that is
+    not known is left off. Framed on all of them, and never tighter than a few km."""
+    m = base_map(own[:2], tiles)
+    points = [(own[0], own[1])]
+    placed = parks[parks["lat"].notna()] if len(parks) else parks
+    for r in placed.itertuples():
+        path = great_circle(own[:2], (r.lat, r.lon), 40)
+        end = path[-1]
+        folium.PolyLine(path, color="#e6a117", weight=2, opacity=0.55).add_to(m)
+        calls = ", ".join(r.calls[:4]) + (f" and {len(r.calls) - 4} more" if len(r.calls) > 4 else "")
+        when = f"{r.first:%H:%M}" + (f"–{r.last:%H:%M}" if r.last != r.first else "") + " UTC"
+        tip = f"<b>{esc(r.ref)}</b> {esc(r.name)}<br>{esc(calls)} on {esc(', '.join(r.bands))}<br>{r.contacts} contact{'s' if r.contacts != 1 else ''}, {when}"
+        folium.CircleMarker(end, radius=5 + min(4, r.contacts ** 0.5), color="#ffffff", weight=1.5, fill=True, fill_color="#e6a117", fill_opacity=1, tooltip=tip).add_to(m)
+        points.append(tuple(end))
+    folium.CircleMarker(own[:2], radius=9, color="#ffffff", weight=2, fill=True, fill_color="#2e8b57", fill_opacity=1, tooltip=esc(own[2])).add_to(m)
+    lats, lons = [p[0] for p in points], [p[1] for p in points]
+    pad_lat, pad_lon = max(0.03, 0.08 * (max(lats) - min(lats))), max(0.04, 0.08 * (max(lons) - min(lons)))
+    fit_to(m, [(min(lats) - pad_lat, min(lons) - pad_lon), (max(lats) + pad_lat, max(lons) + pad_lon)])
+    return m
+
+
 def fit_to(m, bounds):
     """Zoom the map to show every point in `bounds`. A map in a hidden Streamlit tab has zero size when it loads,
     so Leaflet would fit to nothing and zoom all the way in; fit again the moment the map becomes visible."""

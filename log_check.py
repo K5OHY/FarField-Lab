@@ -997,6 +997,43 @@ def farthest_contact(places, band=None):
     return best
 
 
+def park_to_park(log, ref, ref_places=None, program="POTA"):
+    """The contacts made from the park (or summit) `ref` with another activator, one row for each park (or summit) of theirs that the log names: `ref`, `name`, `lat`, `lon`
+    (NaN when the place of that park is not known), `contacts`, `stations`, `calls`, `bands`, `first` and `last` (times). Only a contact whose log record carries the other
+    station's park reference is here: the log is the only place that says it was park to park, so a contact the logging program did not mark is not found. Most contacts
+    first. `attrs` has `with_ref` (contacts that name a park or summit), `total` (the contacts made from `ref`) and `unplaced` (parks with no known place)."""
+    ref_places = ref_places if ref_places is not None else (getattr(log, "attrs", {}).get("ref_places") or {})
+    sota = program == "SOTA"
+    mine_col, valid = ("my_sota", SOTA_REF) if sota else ("my_pota", POTA_REF)
+    cols = ["ref", "name", "lat", "lon", "contacts", "stations", "calls", "bands", "first", "last"]
+    empty = pd.DataFrame(columns=cols)
+    empty.attrs.update(with_ref=0, total=0, unplaced=0)
+    if mine_col not in log:
+        return empty
+    theirs = _summits_of(log) if sota else (log["pota_ref"] if "pota_ref" in log else pd.Series("", index=log.index))
+    rows, total = [], 0
+    for call, band, time, mine, other in zip(log["call"], log["band"], log["time"], log[mine_col], theirs):
+        if ref not in _cell_refs(mine, program):
+            continue
+        total += 1
+        for r in sorted(_cell_refs(other, program)):
+            if valid.match(r) and r != ref:
+                rows.append((r, call, band, time))
+    if not rows:
+        empty.attrs.update(total=total)
+        return empty
+    d = pd.DataFrame(rows, columns=["ref", "call", "band", "time"])
+    out = []
+    for r, g in d.groupby("ref"):
+        place = ref_places.get(r)
+        out.append({"ref": r, "name": (place[2] if place and len(place) > 2 else ""), "lat": float(place[0]) if place else float("nan"),
+                    "lon": float(place[1]) if place else float("nan"), "contacts": len(g), "stations": int(g["call"].nunique()),
+                    "calls": list(dict.fromkeys(g.sort_values("time")["call"])), "bands": sorted(g["band"].unique(), key=_rank), "first": g["time"].min(), "last": g["time"].max()})
+    table = pd.DataFrame(out, columns=cols).sort_values(["contacts", "ref"], ascending=[False, True]).reset_index(drop=True)
+    table.attrs.update(with_ref=int(len(d)), total=total, unplaced=int(table["lat"].isna().sum()))
+    return table
+
+
 def contact_dx_calls(log):
     """The stations that need a place looked up beyond the log: no usable grid square, no park or summit place, and outside North America (those are placed by the log's
     state). A contact's country is the log's, else the one its callsign gives."""

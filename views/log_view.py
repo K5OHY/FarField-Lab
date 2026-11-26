@@ -18,7 +18,7 @@ import space_weather as sw
 from compare_stats import locate as skimmer_location
 from data_sources import (download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, load_reference_places, load_sota_summit,
                           skimmer_data)
-from maps import build_map, great_circle, park_map, reach_map
+from maps import build_map, great_circle, p2p_map, park_map, reach_map
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
 from ui_common import BAND_COLORS, BANNER, KM_PER_MILE, page_guide, preview
 from wspr_data import WsprError
@@ -82,6 +82,28 @@ def _reference_places(pota, sota):
     return load_reference_places(pota, sota)
 
 
+def _p2p_block(col, log, ref, program, own, noun):
+    """Under the facts about the park: a map of the other parks (or summits) the log names for its contacts, with a line saying how many and what it cannot show. Only a
+    contact whose record carries the other station's park is found: the log is the only thing that says a contact was park to park."""
+    title = "Summit to summit" if program == "SOTA" else "Park to park"
+    p2p = lc.park_to_park(log, ref, log.attrs.get("ref_places") or {}, program)
+    col.markdown(f"##### {title}")
+    n = p2p.attrs
+    if p2p.empty:
+        col.caption(f"No {title.lower()} contacts are recorded in this log. A contact shows here when your logging program writes the other station's {noun} into the log "
+                    f"({'SOTA_REF' if program == 'SOTA' else 'POTA_REF'}).")
+        return
+    placed = p2p[p2p["lat"].notna()]
+    if placed.empty:
+        col.caption(f"{len(p2p)} {noun}s are named in the log, but none could be placed on a map just now.")
+        return
+    col.iframe(p2p_map(own, p2p, noun=noun).get_root().render(), height=320)
+    stations = int(p2p["calls"].explode().nunique())
+    col.caption(f"{len(placed)} {noun}{'s' if len(placed) != 1 else ''} reached, {n['with_ref']} contact{'s' if n['with_ref'] != 1 else ''} with {stations} station{'s' if stations != 1 else ''}. "
+                f"This shows only the contacts where your log names the other station's {noun} ({n['with_ref']} of the {n['total']:,} made from {ref}); a contact the log does not "
+                f"mark is not found." + (f" {n['unplaced']} could not be placed." if n["unplaced"] else ""))
+
+
 def _pota_cards(log, call):
     """One card for each park (POTA) or summit (SOTA) the log was made from (at most four): a headline across the top, then a map and what is known
     about the place on the left and how the activations compare on the right. A note instead when the program cannot be reached. Returns the
@@ -109,6 +131,7 @@ def _pota_cards(log, call):
             facts = lh.summit_facts_html(card) if program == "SOTA" else lh.park_facts_html(card)
             if facts:
                 left.html(lh.CSS + facts)
+            _p2p_block(left, log, ref, program, (float(park["latitude"]), float(park["longitude"]), f"{ref} {park.get('name', '')}".strip()), noun)
             right.html(lh.CSS + lh.pota_html(card))
         else:
             st.html(lh.CSS + lh.pota_html(card))
