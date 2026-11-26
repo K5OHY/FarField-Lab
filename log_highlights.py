@@ -1,7 +1,7 @@
 """What stood out in a CW session, worked out from the log alone (and, for the timing of RBN spots, from the spots of your own call).
 
 Nothing here scores or judges. Each piece says what the log shows: when each other continent first answered, the farthest contact on each band, how many
-new stations came in each hour, and when RBN first and last spotted you on each band next to your first and last contact there. The times are logged
+and when RBN first and last spotted you on each band next to your first and last contact there. The times are logged
 times: a log holds contacts, so it cannot say when you were listening, calling or resting."""
 import pandas as pd
 
@@ -48,21 +48,28 @@ def farthest_by_band(places):
     return pd.DataFrame(rows, columns=cols)
 
 
-def new_by_hour(log):
-    """The contacts in each UTC hour of the log and how many of them were with a station not worked earlier in the session (on any band). Columns:
-    hour, contacts, new, share (new / contacts). A station is a callsign exactly as logged. Hours with no contact between the first and the last are kept
-    as zeros so a gap shows as a gap."""
-    cols = ["hour", "contacts", "new", "share"]
+REPEAT_MIN_SHARE = 0.05        # the repeat line is written only when at least this share of the contacts were with a station again on a band already worked with it
+
+
+def repeat_contacts(log):
+    """The contacts with a station already worked earlier in the session, from the log alone: how many were with a station on another band than it was first worked on
+    (`other_band`) and how many were with it again on a band already worked with it (`same_band`), with the total and `share` of all contacts. A station is a callsign exactly
+    as logged."""
+    out = {"total": 0, "same_band": 0, "other_band": 0, "repeats": 0, "share": 0.0}
     if log is None or len(log) == 0:
-        return pd.DataFrame(columns=cols)
-    d = log.sort_values("time").assign(first=lambda x: ~x["call"].duplicated())
-    d["hour"] = d["time"].dt.floor("h")
-    g = d.groupby("hour").agg(contacts=("call", "size"), new=("first", "sum"))
-    g = g.reindex(pd.date_range(g.index.min(), g.index.max(), freq="h"), fill_value=0)
-    out = g.rename_axis("hour").reset_index()
-    out["contacts"], out["new"] = out["contacts"].astype(int), out["new"].astype(int)
-    out["share"] = out["new"] / out["contacts"].where(out["contacts"] > 0)
-    return out[cols]
+        return out
+    d = log.sort_values("time")
+    seen_call, seen_pair = set(), set()
+    for call, band in zip(d["call"], d["band"]):
+        if (call, band) in seen_pair:
+            out["same_band"] += 1
+        elif call in seen_call:
+            out["other_band"] += 1
+        seen_call.add(call)
+        seen_pair.add((call, band))
+    out["total"], out["repeats"] = len(d), out["same_band"] + out["other_band"]
+    out["share"] = out["repeats"] / out["total"]
+    return out
 
 
 def rbn_timing(log, spots):
@@ -79,8 +86,10 @@ def rbn_timing(log, spots):
     return pd.DataFrame(rows, columns=cols)
 
 
-def highlight_lines(first, far, hours):
-    """The few sentences that lead the highlights, from the tables above and nothing else. Checked against the wording guard."""
+def highlight_lines(first, far, repeats=None):
+    """The few sentences that lead the highlights, from the tables above and nothing else. The repeat line is written only when `repeats` (repeat_contacts) says at least
+    REPEAT_MIN_SHARE of the contacts were with a station again on a band already worked with it. Stations that came back on another band are the multiband hunters, which the
+    page shows on their own, and on most logs they are a tenth of the contacts, so they alone do not make a line. Checked against the wording guard."""
     lines = []
     if len(first):
         r = first.iloc[0]
@@ -93,9 +102,11 @@ def highlight_lines(first, far, hours):
         top = far.loc[far["km"].idxmax()]
         lines.append(f"The farthest contact was {top['call']}" + (f" in {top['place']}" if top["place"] else "") + f" on {top['band']}, "
                      f"{'about ' if top['approx'] else ''}{top['km']:,.0f} km ({top['km'] / 1.609344:,.0f} mi) away.")
-    if len(hours) and hours["new"].sum():
-        best = hours.loc[hours["new"].idxmax()]
-        lines.append(f"The most new stations came in the hour from {best['hour']:%H:%M} UTC: {int(best['new'])} of {int(best['contacts'])} contacts.")
+    if repeats and repeats["total"] and repeats["same_band"] / repeats["total"] >= REPEAT_MIN_SHARE:
+        text = f"{repeats['same_band']} of {repeats['total']} contacts ({repeats['same_band'] / repeats['total'] * 100:.0f}%) were with a station already worked on the same band"
+        if repeats["other_band"]:
+            text += f"; a further {repeats['other_band']} were with stations that came back on another band"
+        lines.append(text + ".")
     for line in lines:
         assert not unsupported_claims(line), unsupported_claims(line)
     return lines

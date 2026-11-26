@@ -793,10 +793,10 @@ def summit_facts_html(card):
     return '<div class="lc"><div class="lc-card"><h4>About the summit</h4><ul class="lc-says">' + "".join(f"<li>{f}</li>" for f in facts) + "</ul></div></div>"
 
 
-def highlights_html(first, far, hours, lines):
-    """The session's highlights: a few plain sentences, then when each other continent first answered, the farthest contact on each band and how many new
-    stations came in each hour (log_highlights has the tables). Empty when there is nothing to show."""
-    if not (len(first) or len(far) or len(hours)):
+def highlights_html(first, far, lines):
+    """The session's highlights: a few plain sentences, then when each other continent first answered and the farthest contact on each band (log_highlights has the
+    tables). Empty when there is nothing to show."""
+    if not (len(first) or len(far)):
         return ""
     from log_highlights import _hm
     says = ('<ul class="lc-says">' + "".join(f"<li>{escape(x)}</li>" for x in lines) + "</ul>") if lines else ""
@@ -808,12 +808,7 @@ def highlights_html(first, far, hours, lines):
         a = '<div><h5>When each other continent first answered</h5><p class="none">No contact outside your own continent.</p></div>'
     rows = "".join(f"<tr><td><b>{r.band}</b></td><td>{escape(r.call)}</td><td>{escape(r.place)}</td><td class=\"n\">{'~' if r.approx else ''}{r.km:,.0f} km</td></tr>" for r in far.itertuples())
     b = f'<div><h5>The farthest contact on each band</h5><table><tr><th>Band</th><th>Station</th><th>Where</th><th>Distance</th></tr>{rows}</table></div>' if len(far) else ""
-    top = max(int(hours["contacts"].max()), 1) if len(hours) else 1
-    rows = "".join(f"<tr><td>{r.hour:%H:%M}</td><td style=\"width:50%\"><i class=\"hb\" style=\"width:{r.contacts / top * 100:.0f}%\" title=\"{r.contacts} contacts\"></i>"
-                   f"<i class=\"hb new\" style=\"width:{r.new / top * 100:.0f}%\" title=\"{r.new} new stations\"></i></td><td class=\"n\">{r.new} / {r.contacts}</td></tr>" for r in hours.itertuples())
-    c = (f'<div><h5>New stations in each hour</h5><table><tr><th>UTC</th><th>Contacts (blue) and new stations (green)</th><th>New / all</th></tr>{rows}</table>'
-         '<p class="sub">A new station is one not worked earlier in the session, on any band.</p></div>') if len(hours) else ""
-    return (f'<div class="lc"><div class="lc-card" id="sec-highlights"><h4>Session highlights</h4>{says}<div class="lc-hl">{a}{b}{c}</div></div></div>')
+    return (f'<div class="lc"><div class="lc-card" id="sec-highlights"><h4>Session highlights</h4>{says}<div class="lc-hl">{a}{b}</div></div></div>')
 
 
 def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=None):

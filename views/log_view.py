@@ -705,8 +705,8 @@ def log_page():
                 st.html(lh.CSS + still)
     with highlights_slot:
         hl_places = lc.contact_places(log, home)
-        hl_first, hl_far, hl_hours = hl.first_by_continent(hl_places, home_cont), hl.farthest_by_band(hl_places), hl.new_by_hour(log)
-        hl_html = lh.highlights_html(hl_first, hl_far, hl_hours, hl.highlight_lines(hl_first, hl_far, hl_hours))
+        hl_first, hl_far = hl.first_by_continent(hl_places, home_cont), hl.farthest_by_band(hl_places)
+        hl_html = lh.highlights_html(hl_first, hl_far, hl.highlight_lines(hl_first, hl_far, hl.repeat_contacts(log)))
         if hl_html:
             st.html(lh.CSS + hl_html)
         rate = hl.rate_chart(log, BAND_COLORS)

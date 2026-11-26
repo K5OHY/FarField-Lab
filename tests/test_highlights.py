@@ -1,4 +1,4 @@
-"""The session highlights: when each other continent first answered, the farthest contact on each band, new stations by the hour, and RBN spot timing."""
+"""The session highlights: when each other continent first answered, the farthest contact on each band, the repeat line, and RBN spot timing."""
 import unittest
 
 import pandas as pd
@@ -46,15 +46,31 @@ class Highlights(unittest.TestCase):
         self.assertEqual(far.set_index("band").loc["20m", "call"], "DL1BBB")
         self.assertTrue((far["km"] > 0).all())
 
-    def test_new_stations_are_counted_once_each_hour_by_hour_with_gaps_kept(self):
-        hours = hl.new_by_hour(self.log())
-        self.assertEqual(hours["hour"].dt.strftime("%H").tolist(), ["20", "21", "22"])
-        self.assertEqual(hours["contacts"].tolist(), [2, 2, 2])
-        self.assertEqual(hours["new"].tolist(), [2, 1, 2])                                         # W1AAA's second contact (on 15m) is not a new station
-        quiet = log_of(rec("W1AAA", "2000", gridsquare="FN31"), rec("W1BBB", "2250", gridsquare="FN31"))
-        gaps = hl.new_by_hour(quiet)
-        self.assertEqual(gaps["contacts"].tolist(), [1, 0, 1])
-        self.assertTrue(pd.isna(gaps["share"].iloc[1]))                                            # no contacts, so no share, not a zero share
+    def test_a_repeat_is_a_station_already_worked_on_another_band_or_again_on_the_same_one(self):
+        r = hl.repeat_contacts(self.log())
+        self.assertEqual((r["total"], r["other_band"], r["same_band"], r["repeats"]), (6, 1, 0, 1))      # W1AAA came back on 15m
+        again = log_of(rec("W1AAA", "2000"), rec("W1AAA", "2010"), rec("W1AAA", "2020", band="15m"), rec("W1BBB", "2030"))
+        r = hl.repeat_contacts(again)
+        self.assertEqual((r["same_band"], r["other_band"], r["repeats"]), (1, 1, 2))                       # the second 20m contact is a repeat, the 15m one is on another band
+        self.assertAlmostEqual(r["share"], 0.5)
+        self.assertEqual(hl.repeat_contacts(None)["total"], 0)
+
+    def test_the_repeat_line_is_written_only_when_enough_of_the_contacts_were_repeats(self):
+        p = self.places()
+        first, far = hl.first_by_continent(p), hl.farthest_by_band(p)
+        hunters_only = hl.highlight_lines(first, far, hl.repeat_contacts(self.log()))
+        self.assertFalse(any("already worked" in line for line in hunters_only))                              # a station back on another band is a hunter, not a repeat
+        few = {"total": 100, "same_band": 2, "other_band": 30, "repeats": 32, "share": 0.32}
+        self.assertFalse(any("already worked" in line for line in hl.highlight_lines(first, far, few)))        # two in a hundred is not worth a line
+        both = {"total": 20, "same_band": 2, "other_band": 3, "repeats": 5, "share": 0.25}
+        text = [line for line in hl.highlight_lines(first, far, both) if "already worked" in line][0]
+        self.assertEqual(text, "2 of 20 contacts (10%) were with a station already worked on the same band; a further 3 were with stations that came back on another band.")
+        alone = {"total": 20, "same_band": 2, "other_band": 0, "repeats": 2, "share": 0.1}
+        self.assertEqual([line for line in hl.highlight_lines(first, far, alone) if "already worked" in line],
+                         ["2 of 20 contacts (10%) were with a station already worked on the same band."])
+        self.assertFalse(any("already worked" in line for line in hl.highlight_lines(first, far)))            # no repeats given, no line
+        for line in hl.highlight_lines(first, far, both):
+            self.assertEqual(lo.unsupported_claims(line), [], line)
 
     def test_the_timing_of_the_spots_sits_beside_the_contacts_band_by_band(self):
         spots = pd.DataFrame({"spotter": ["A", "B", "C"], "band": ["20m", "20m", "15m"], "snr": [10.0] * 3,
@@ -68,20 +84,22 @@ class Highlights(unittest.TestCase):
 
     def test_the_sentences_pass_the_wording_guard_and_say_when_things_happened(self):
         p = self.places()
-        first, far, hours = hl.first_by_continent(p), hl.farthest_by_band(p), hl.new_by_hour(self.log())
-        lines = hl.highlight_lines(first, far, hours)
+        first, far = hl.first_by_continent(p), hl.farthest_by_band(p)
+        lines = hl.highlight_lines(first, far)
         self.assertTrue(lines[0].startswith("The first contact outside your continent was Europe: DL1AAA on 20m at 21:00 UTC, 1 h into the session."), lines[0])
         for line in lines:
             self.assertEqual(lo.unsupported_claims(line), [], line)
-        self.assertEqual(hl.highlight_lines(first.iloc[0:0], far.iloc[0:0], hours.iloc[0:0]), [])
+        self.assertEqual(hl.highlight_lines(first.iloc[0:0], far.iloc[0:0]), [])
 
-    def test_the_card_shows_the_three_tables_and_is_empty_with_nothing_to_show(self):
+    def test_the_card_shows_the_two_tables_and_is_empty_with_nothing_to_show(self):
         p = self.places()
-        first, far, hours = hl.first_by_continent(p), hl.farthest_by_band(p), hl.new_by_hour(self.log())
-        html = lh.highlights_html(first, far, hours, hl.highlight_lines(first, far, hours))
-        for text in ("Session highlights", "When each other continent first answered", "The farthest contact on each band", "New stations in each hour", "DL1AAA"):
+        first, far = hl.first_by_continent(p), hl.farthest_by_band(p)
+        both = {"total": 20, "same_band": 2, "other_band": 3, "repeats": 5, "share": 0.25}
+        html = lh.highlights_html(first, far, hl.highlight_lines(first, far, both))
+        for text in ("Session highlights", "When each other continent first answered", "The farthest contact on each band", "DL1AAA", "already worked on the same band"):
             self.assertIn(text, html)
-        self.assertEqual(lh.highlights_html(first.iloc[0:0], far.iloc[0:0], hours.iloc[0:0], []), "")
+        self.assertNotIn("New stations in each hour", html)                                          # the hourly table said little, since nearly every contact is a new station
+        self.assertEqual(lh.highlights_html(first.iloc[0:0], far.iloc[0:0], []), "")
 
 
 class RateAndLink(unittest.TestCase):

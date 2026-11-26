@@ -206,7 +206,7 @@ GUIDES = {
                "Read the row of findings under the numbers: each one is a link to the part of the page it comes from.",
                "In the openings, pick a destination from the tabs (only those with something to show are listed), read the lines worth a look, and open *Details for one band and time* to see the stations, spots and contacts behind a bar. *Regional* shows the eight compass directions."],
         shows=["Your session in numbers: contacts, stations, bands, the active rate, and who worked you on more than one band.",
-               "What you worked: DXCC entities, continents, US states, provinces and CQ zones, and session highlights: when each other continent first answered, the farthest contact on each band and how many new stations came in each hour.",
+               "What you worked: DXCC entities, continents, US states, provinces and CQ zones, and session highlights: when each other continent first answered, the farthest contact on each band, and a note when stations were worked again on the same band.",
                "A session chart with a lane for each band, your sending speed as the skimmers measured it, and two maps side by side: the stations you worked, and the skimmers that spotted you.",
                "For a POTA or SOTA log, how your activation compares with the others listed for that park or summit, and a picture to share in the shape your site wants.",
                "How you used the openings, one destination at a time: where nearby WSPR showed a path, your logged activity above a lane for each band, and who you worked there, with the time of each path set against the time of each contact.",
