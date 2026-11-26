@@ -9,7 +9,7 @@ This is the detailed companion to the [README](../README.md). The README explain
 | Source | What is used |
 | --- | --- |
 | WSPR (wspr.live) | Each report: time, receiver, receiver position, SNR, transmit power (dBm), frequency. A receiver that decodes the same transmission twice is counted once, at its strongest decode. |
-| Reverse Beacon Network | The day's public history file, filtered to your callsign. Skimmer positions come from a skimmer list. A skimmer at the same site with a "-1", "-2" suffix is a separate skimmer. |
+| Reverse Beacon Network | The day's public history file, filtered to your callsign. Skimmer positions come from a skimmer list: RBN's node list, with HamQTH.com's copy of it (the same data, kept for 90 days after a skimmer last shows) filling in any skimmer the saved list lacks, such as one added since it was made, or all of them when the server cannot read RBN's page. RBN's own place wins when both have a skimmer. A skimmer at the same site with a "-1", "-2" suffix is a separate skimmer. |
 | Pasted rows | Spots copied from reversebeacon.net, read the same way. |
 
 - All times are UTC. A day that has ended is remembered on disk so it is fetched once (wspr.live allows 20 requests a minute for the whole site). Anything from the last hour is always fetched fresh.

@@ -238,7 +238,7 @@ def spots_page():
         st.caption(f":material/location_on: {who} · {label}"
                    + (f" · ⚠️ No location for {', '.join(sorted(missing)[:5])}"
                       f"{f' and {len(missing) - 5} more' if len(missing) > 5 else ''}"
-                      f" (not in RBN's skimmer list), so not shown on the map" if missing else "")
+                      f" (not in the RBN or HamQTH skimmer lists), so not shown on the map" if missing else "")
                    + (f" · ℹ️ {', '.join(f'{s} shown at {b}' + chr(39) + 's location' for s, b in placed[:3])}"
                       f"{f' and {len(placed) - 3} more' if len(placed) > 3 else ''}" if placed else ""))
 

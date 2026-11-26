@@ -6,6 +6,7 @@
 
 Run `python rbn_data.py` to force a skimmer refresh from the command line.
 """
+import hashlib
 import re
 import time
 from pathlib import Path
@@ -89,6 +90,34 @@ def fetch_skimmers():
     )
 
 
+HAMQTH_SKIMMERS_URL = "https://www.hamqth.com/api/v2/rbn/skimmers"
+
+
+def fetch_hamqth_skimmers():
+    """HamQTH.com's copy of the RBN skimmer list (no account needed), as a DataFrame(callsign, latitude, longitude). It is built from the same RBN node list, refreshed daily, and kept
+    for 90 days after a skimmer last shows in it, so it fills in the skimmers added since the saved list was made. It is asked for at most once a day (with the refresh below) and
+    only the list is requested. Data provided by HamQTH.com."""
+    resp = requests.get(HAMQTH_SKIMMERS_URL, headers=dict(HEADERS, Accept="application/json"), timeout=30)
+    resp.raise_for_status()
+    rows = {}
+    for item in (resp.json() or {}).get("skimmers", []):
+        node, grid = str(item.get("node") or "").strip().upper(), str(item.get("grid") or "").strip()
+        if node and GRID_RE.match(grid):
+            rows[node] = maidenhead_to_latlon(grid)
+    if len(rows) < 50:                                   # not the list we expect: do not trust it
+        raise RuntimeError(f"Only {len(rows)} skimmers in HamQTH's list")
+    return pd.DataFrame([(cs, lat, lon) for cs, (lat, lon) in sorted(rows.items())], columns=["callsign", "latitude", "longitude"])
+
+
+def _list_signature():
+    """A short fingerprint of the saved skimmer list's content ('' when there is no list). The stamp that says when the list was refreshed carries it, so a list that has changed under
+    the stamp (a server that puts the saved copy back when the app is redeployed, while the stamp, which git ignores, stays) is not taken for a fresh one."""
+    try:
+        return hashlib.sha1(CACHE_FILE.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
 def refresh_skimmer_cache(force=False):
     """Refresh spotter_coords.csv if missing or older than CACHE_MAX_AGE_HOURS.
 
@@ -99,23 +128,34 @@ def refresh_skimmer_cache(force=False):
     # a fresh checkout on a server stamps it "now", which would hide that the committed copy is stale.
     if not force and CACHE_FILE.exists() and REFRESH_MARKER.exists():
         age_h = (time.time() - REFRESH_MARKER.stat().st_mtime) / 3600
-        if age_h < CACHE_MAX_AGE_HOURS:
+        try:
+            stamped = REFRESH_MARKER.read_text(encoding="utf-8").strip()
+        except OSError:
+            stamped = ""
+        if age_h < CACHE_MAX_AGE_HOURS and stamped == _list_signature():      # a stamp from before the list was last changed, or with no fingerprint, does not count
             return False, f"Skimmer list is {age_h:.0f}h old (up to date)."
 
-    try:
-        df = fetch_skimmers()
-    except Exception as exc:
-        return False, f"Could not refresh skimmer list ({exc}); using cached copy."
+    frames, problems = [], []
+    for name, fetch in (("RBN", fetch_skimmers), ("HamQTH", fetch_hamqth_skimmers)):      # RBN's own list wins; HamQTH's fills in what RBN's could not be read for
+        try:
+            frames.append(fetch())
+        except Exception as exc:
+            problems.append(f"{name}: {exc}")
+    if not frames:
+        return False, f"Could not refresh skimmer list ({'; '.join(problems)}); using cached copy."
+    df = frames[0]
+    for extra in frames[1:]:
+        df = pd.concat([df, extra[~extra["callsign"].isin(df["callsign"])]], ignore_index=True)
 
-    # Keep skimmers that have since dropped off RBN's list; old history files still reference them.
+    # Keep skimmers that have since dropped off the lists; old history files still reference them.
     if CACHE_FILE.exists():
         old = pd.read_csv(CACHE_FILE)
         df = pd.concat([old[~old["callsign"].isin(df["callsign"])], df], ignore_index=True)
         df = df.sort_values("callsign")
 
     df.to_csv(CACHE_FILE, index=False)
-    REFRESH_MARKER.touch()
-    return True, f"Skimmer list refreshed: {len(df)} skimmers."
+    REFRESH_MARKER.write_text(_list_signature(), encoding="utf-8")
+    return True, f"Skimmer list refreshed: {len(df)} skimmers." + (f" ({'; '.join(problems)}.)" if problems else "")
 
 
 def load_skimmers():

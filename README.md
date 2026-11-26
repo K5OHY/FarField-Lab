@@ -459,7 +459,7 @@ Next time, just run the last command again. Open http://localhost:8501 if the br
 
 **Today's spots, built in.** While the app is open on your own computer it also listens to RBN's live feed by itself, so My spots can show today. The first time, the sidebar asks for your own callsign to log in with and remembers it (nothing connects until you give it; set `LIVE_RBN_CALL` to give it without being asked), and it only has the spots from when the app started: the page says when it began listening and where it lost its connection, and a restart the same day carries on. The spots are kept for 48 hours in a small file in your local app-data folder (not in the project folder). It is on by default; set `LIVE_RBN_LOCAL=0` to switch it off. To use a collector on another machine instead, set `LIVE_RBN_URL` (see [collector/SETUP.md](collector/SETUP.md)).
 
-The skimmer list refreshes itself every 24 hours. To force it: `.venv\Scripts\python rbn_to_csv.py` (macOS/Linux: `.venv/bin/python rbn_to_csv.py`).
+The skimmer list refreshes itself every 24 hours, from RBN's node list and, for any skimmer RBN's page could not give (or when it cannot be read from the server), from [HamQTH.com](https://www.hamqth.com)'s copy of it (data provided by HamQTH.com); a skimmer that has since dropped off is kept. To force it: `.venv\Scripts\python rbn_to_csv.py` (macOS/Linux: `.venv/bin/python rbn_to_csv.py`).
 
 ## Help inside the app
 
@@ -473,7 +473,7 @@ The **Help and README** page in the app opens with the same four tasks as the ho
 | "RBN has no spots of ... for that date" | Check the callsign or try another day. |
 | "Couldn't read any spot rows" | Copy the rows straight from the RBN spot table. The message quotes the first line it couldn't read. |
 | "Couldn't find a location for ..." | Enter your grid square in the sidebar. |
-| "No location for ..." under the stats | Those skimmers are not in RBN's node list, so they are counted but not drawn. |
+| "No location for ..." under the stats | Those skimmers are in neither RBN's node list nor HamQTH's copy of it, so they are counted but not drawn. |
 | Compare found only one frequency group | Your spots are on one frequency, or your two tests were less than 0.1 kHz apart. Use a different frequency for each antenna. |
 | A few WSPR cycles show only one or two receivers while the rest show dozens | Usually a few receivers with a wrong clock reporting your signal in the slot where you skipped a transmission. The app leaves those slots out and lists them above the table. If you really transmitted in one (a weak band can do this), pick it under **Count these slots as transmissions**, or every antenna label after it is one step off. |
 | "wspr.live seems to be missing most of the reports for ... of your transmissions" | wspr.live's own data has gaps, seen at the start of every hour in some 2024 dates. Spots from those transmissions are undercounted, which can favour the antenna that was on the air at other times. A recent test is not affected. |
