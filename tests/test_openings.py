@@ -448,7 +448,7 @@ class TheBandTimeline(Session):
     def test_a_skimmer_in_a_continent_you_worked_is_added_to_the_finding(self):
         spots = pd.DataFrame({"spotter": ["JA1SKM"], "band": ["20m"], "snr": [9.0], "time": [T("2026-11-18 21:06")], "mode": ["CQ"], "tx_mode": ["CW"]})
         tl, _ = self.timeline("good", spots=spots, log=log_of(rec("JA1ZZZ", "2105", gridsquare="PM95")))
-        self.assertEqual(self.card(tl)["finding"], "Worked Asia. No corresponding nearby WSPR reports in the selected window. RBN skimmers in Asia also spotted you. "
+        self.assertEqual(self.card(tl)["finding"], "Worked Asia. WSPR was active on 20m then (64 reports from 32 receivers), but none of the receivers there decoded the stations near you. RBN skimmers in Asia also spotted you. "
                          "Europe paths appeared during your logged activity on 20m; you logged no contact there.")                        # a path to a continent you did not work is still said
         none, _ = self.timeline("good", log=log_of(rec("JA1ZZZ", "2105", gridsquare="PM95")))
         self.assertNotIn("RBN", self.card(none)["finding"])                                         # no spot, no sentence
@@ -460,7 +460,7 @@ class TheBandTimeline(Session):
 
     def test_the_finding_for_a_contact_with_no_path_is_short_and_plain(self):
         tl, _ = self.timeline("good", log=log_of(rec("JA1ZZZ", "2105", gridsquare="PM95")))
-        self.assertEqual(self.card(tl)["finding"], "Worked Asia. No corresponding nearby WSPR reports in the selected window. "
+        self.assertEqual(self.card(tl)["finding"], "Worked Asia. WSPR was active on 20m then (64 reports from 32 receivers), but none of the receivers there decoded the stations near you. "
                                                    "Europe paths appeared during your logged activity on 20m; you logged no contact there.")
         self.assertEqual(self.card(tl)["worked"], [("JA1ZZZ", "AS")])
 
@@ -982,6 +982,40 @@ class TheSignalComparison(unittest.TestCase):
         self.assertNotIn("typical", html)
         row.update(stronger_db=float("nan"), q1=float("nan"), q3=float("nan"))
         self.assertNotIn("The middle half of the skimmers ran from", lh.band_table_html(pd.DataFrame([row])))
+
+
+class TheNoPathSentenceAndTheTwoRowLane(unittest.TestCase):
+    def finding(self, activity):
+        T = pd.Timestamp
+        return lo.band_finding("15m", {}, {T("2026-11-12 22:00")}, {}, [(T("2026-11-12 22:12"), "JM8QGN", "AS")], 5, T("2026-11-12 22:00"), pd.Timedelta(minutes=30),
+                               {"AS"}, lf.CONTINENT_NAMES, activity)
+
+    def test_it_says_whether_wspr_was_active_on_the_band_or_silent(self):
+        busy = self.finding({"reports": 1254, "receivers": 123})
+        self.assertIn("Worked Asia. WSPR was active on 15m then (1,254 reports from 123 receivers), but none of the receivers there decoded the stations near you.", busy)
+        self.assertIn("RBN skimmers in Asia also spotted you.", busy)
+        quiet = self.finding({"reports": 0, "receivers": 0})
+        self.assertIn("Worked Asia. There were no nearby WSPR reports on 15m then.", quiet)
+        self.assertIn("No corresponding nearby WSPR reports in the selected window.", self.finding(None))        # no coverage information: the earlier wording
+        for text in (busy, quiet):
+            self.assertEqual(lo.unsupported_claims(text), [])
+
+    def view(self, contacts, cells):
+        lane = {"band": "15m", "cells": cells, "worked_band": True, "contacts": contacts}
+        slots = [pd.Timestamp("2026-11-12 22:00"), pd.Timestamp("2026-11-12 22:30")]
+        return ({"code": "AS", "name": "Asia", "contacts": len(contacts), "paths": 0, "rbn": True,
+                 "panels": [{"panel": 0, "slots": slots, "bin_min": 30, "strip": [(slots[0], pd.Timestamp("2026-11-12 23:00"), "15m")], "lanes": [lane], "lines": [], "focus": None}]},
+                {"power_w": 100.0, "mode": "CW", "metric": "good", "bin_min": 30})
+
+    def test_a_lane_with_contacts_and_skimmers_has_a_row_for_each(self):
+        contacts = [{"time": pd.Timestamp("2026-11-12 22:12"), "call": "JM8QGN"}]
+        both = lh.destination_html(*self.view(contacts, [{"slot": pd.Timestamp("2026-11-12 22:00"), "n": 0, "rbn": True}, {"slot": pd.Timestamp("2026-11-12 22:30"), "n": 0, "rbn": False}]))
+        self.assertIn('class="dv-track two', both)
+        self.assertIn('class="dv-track two lab"', both)                                          # one lone contact: its callsign label gets a row of its own
+        only_contacts = lh.destination_html(*self.view(contacts, [{"slot": pd.Timestamp("2026-11-12 22:00"), "n": 0, "rbn": False}]))
+        self.assertNotIn('dv-track two', only_contacts)                                          # nothing to separate
+        only_skimmers = lh.destination_html(*self.view([], [{"slot": pd.Timestamp("2026-11-12 22:00"), "n": 0, "rbn": True}]))
+        self.assertNotIn('dv-track two', only_skimmers)
 
 
 class TheSourceKeyAndTheSelectedBand(unittest.TestCase):

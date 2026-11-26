@@ -412,7 +412,7 @@ def _when(bins, contact_times, step):
     return "at other times"
 
 
-def band_finding(band, opened, own_bins, elsewhere, worked, n_contacts, first, step, rbn_cont=(), names=None):
+def band_finding(band, opened, own_bins, elsewhere, worked, n_contacts, first, step, rbn_cont=(), names=None, activity=None):
     """The finding for a band card, in cautious words: for each distant continent, what your log shows and what the nearby WSPR showed, and when,
     so a path that appeared hours from a contact is never read as support for it.
     opened     {continent code: [bin starts in which WSPR showed a path there]}
@@ -420,7 +420,9 @@ def band_finding(band, opened, own_bins, elsewhere, worked, n_contacts, first, s
     elsewhere  {bin start: [other bands with logged contacts in it]}
     worked     [(time, call, continent code)] contacts with the distant continents on this band
     rbn_cont   the continents in which an RBN skimmer spotted you on this band (only where RBN applies)
-    names      {lane code: name}, the continents unless the lanes are directions"""
+    names      {lane code: name}, the continents unless the lanes are directions
+    activity   {'reports', 'receivers'}: the WSPR near you on this band in the windows of your contacts, anywhere in the world, so a destination with no path can say whether
+               WSPR was quiet on the band or only silent there"""
     names = names or lf.CONTINENT_NAMES
     when_worked = {}
     for t, _, c in worked:
@@ -431,7 +433,14 @@ def band_finding(band, opened, own_bins, elsewhere, worked, n_contacts, first, s
         other_time = [c for c in when_worked if opened.get(c) and c not in at_time]
         no_path = [c for c in when_worked if not opened.get(c)]
         if no_path:
-            text += f"Worked {_join(names[c] for c in no_path)}. No corresponding nearby WSPR reports in the selected window."
+            where = _join(names[c] for c in no_path)
+            if activity and activity.get("reports"):
+                text += (f"Worked {where}. WSPR was active on {band} then ({activity['reports']:,} reports from {activity['receivers']} receivers), "
+                         f"but none of the receivers there decoded the stations near you.")
+            elif activity is not None:
+                text += f"Worked {where}. There were no nearby WSPR reports on {band} then."
+            else:
+                text += f"Worked {where}. No corresponding nearby WSPR reports in the selected window."
         if at_time:
             text += (" " if text else "") + f"Worked {_join(names[c] for c in at_time)}; nearby WSPR showed a path there at the time."
         for c in other_time:
@@ -561,7 +570,9 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
         worked = [(c["time"], c["call"], c["cont"]) for c in contacts if c["cont"] and (not only or c["cont"] == only)]
         first = mine["time"].iloc[0] if len(mine) else None
         rbn_cont = {c for c, v in lanes.items() if any(x["rbn"] for x in v)}
-        finding = band_finding(band, opened, own_bins, elsewhere, worked, len(mine), first, step, rbn_cont, names)
+        act = grid[(grid["band"] == band) & grid["slot"].isin(own_bins)] if len(own_bins) else grid.iloc[0:0]
+        activity = {"reports": int(act["wspr_reports"].max()) if len(act) else 0, "receivers": int(act["receivers"].max()) if len(act) else 0} if len(mine) else None
+        finding = band_finding(band, opened, own_bins, elsewhere, worked, len(mine), first, step, rbn_cont, names, activity)
         if reach == "regional" and finding == NO_PATHS:
             finding = NO_PATHS_REGIONAL
         if steady:
@@ -571,7 +582,7 @@ def band_timeline(grid, log, places, spots, locs, home, min_km=lc.DX_KM, metric=
         worked_c = {c for _, _, c in worked}
         outside = any(t not in own_bins for c, v in opened.items() if c not in worked_c for t in v)
         return {"band": band, "worked_band": bool(len(mine)), "steady": steady, "lanes": lanes, "opened": opened, "outside": outside,
-                "thin": [s for s in slots if states.get((s, band)) == lf.SPARSE], "spans": activity_spans(mine["time"]), "contacts": contacts, "finding": finding,
+                "thin": [s for s in slots if states.get((s, band)) == lf.SPARSE], "spans": activity_spans(mine["time"]), "contacts": contacts, "finding": finding, "activity": activity,
                 "worked": list(dict.fromkeys((call, cont) for _, call, cont in worked)),
                 "rbn_why": next((rbn_state[(s, band)][1] for s in slots if rbn_state.get((s, band), ("", ""))[1]), "")}
 
@@ -667,7 +678,7 @@ def destination_views(tl, max_lines=3):
                               "contacts": [{"time": k["time"], "call": k["call"]} for k in mine], "worked_band": card["worked_band"]})
                 if bins or mine:
                     text = band_finding(card["band"], {c: bins} if bins else {}, own, elsewhere, [(k["time"], k["call"], c) for k in mine], len(card["contacts"]), first, step,
-                                        {c} if rbn_bins else (), names)
+                                        {c} if rbn_bins else (), names, card.get("activity"))
                 else:
                     text = _rbn_only_line(card["band"], names[c])
                 outside = len([t for t in bins if t not in own])

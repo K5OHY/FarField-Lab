@@ -149,7 +149,7 @@ CSS = """<style>
 .dv-bar{position:absolute;top:4px;height:20px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(128,128,128,.6)}.dv-bar.pale{opacity:.4}
 .dv-tri{position:absolute;top:2px;width:0;height:0;transform:translateX(-50%);z-index:2;cursor:default}
 .dv-tri::before{content:"\\25b3";position:absolute;left:-10px;top:-1px;font-size:20px;line-height:24px;font-weight:700;color:#fff;text-shadow:0 0 2px #000,0 0 3px #000}
-.dv-sel{position:absolute;top:1px;bottom:1px;border:2px dashed #fff;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.6);pointer-events:none;z-index:2}
+.dv-sel{position:absolute;top:1px;bottom:1px;border:1.5px dashed rgba(255,255,255,.8);border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.5);pointer-events:none;z-index:1}
 .dv-ring{position:absolute;top:6px;width:14px;height:14px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .dv-dot{position:absolute;top:5px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid;z-index:3}
 .dv-dot.multi{font-style:normal;width:auto;min-width:16px;padding:0 3px;box-sizing:content-box;border-radius:11px;color:#111;font-size:11.5px;font-weight:800;line-height:16px;text-align:center;cursor:default}
@@ -160,6 +160,8 @@ CSS = """<style>
 .dv-ki{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:9px}.dv-ki .mk{flex:0 0 28px;display:flex;justify-content:center;padding-top:2px}
 .dv-ki b{display:block;font-size:13.5px}.dv-ki span{font-size:12.5px;opacity:.78;line-height:1.35}.dv-ki .mk i{margin:0}
 .dv-row.sel .dv-chip{box-shadow:0 0 0 2px #fff,0 0 0 3px rgba(0,0,0,.5)}
+.dv-track.two{height:56px}.dv-track.two .dv-bar{top:4px;height:48px}.dv-track.two .dv-tri{top:2px}.dv-track.two .dv-dot{top:31px}
+.dv-track.two.lab{height:80px}.dv-track.two.lab .dv-bar{height:72px}.dv-track.two.lab .dv-call{top:57px;margin-left:0;transform:translateX(-50%)}
 .dv-legend{display:flex;gap:22px;flex-wrap:wrap;font-size:13px;opacity:.8;margin-top:10px;align-items:center}.dv-legend i{display:inline-block;vertical-align:middle;margin-right:7px}
 .dv-sw{width:26px;height:12px;border-radius:4px;background:linear-gradient(90deg,#8a8f98 0 60%,#4a4e55 60%)}.dv-ld{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #8a8f98}
 .dv-lt{display:inline-block;width:16px;height:16px;position:relative;vertical-align:middle;margin-right:7px}
@@ -934,7 +936,10 @@ def destination_html(view, tl, colours=None, empty=(), limit_note="", selected=N
                 marks += f'<i class="dv-sel" style="left:{pct(selected[1]):.2f}%;width:calc({100 / len(slots):.2f}% - 2px)" title="The window the details below describe"></i>'
             note = "" if lane["worked_band"] else f' <span class="dv-lab" style="font-size:11px;font-weight:400">not worked</span>'
             on = selected is not None and selected[0] == band
-            lanes += f'<div class="dv-row{" sel" if on else ""}"><div class="dv-name">{band_chip(band, colour)}{note}</div><div class="dv-track">{ticks}{marks}</div></div>'
+            two = bool(lane["contacts"]) and any(x["rbn"] for x in lane["cells"])          # a lane with contacts and skimmers has a row for each, so a dot never covers a triangle
+            labelled = two and len(clusters) <= 3 and any(len(g) == 1 for _, g in clusters)   # and a row of its own for the callsign labels, so one never covers a neighbour
+            lanes += (f'<div class="dv-row{" sel" if on else ""}"><div class="dv-name">{band_chip(band, colour)}{note}</div>'
+                      f'<div class="dv-track{" two" if two else ""}{" lab" if labelled else ""}">{ticks}{marks}</div></div>')
         head = f'<p class="sub" style="margin:10px 0 4px"><b>{pd.Timestamp(slots[0]):%a %d %b %Y}</b> (UTC)</p>' if many else ""
         out.append(head + f'<div class="dv-row top"><div class="dv-lab" title="The band with the most logged contacts in each quarter hour. A gap means no contact was logged, not that you were off the air.">Logged activity</div><div class="dv-strip">{strip}</div></div>{lanes}<div class="dv-axis">{axis}</div>')
     nothing = ""
