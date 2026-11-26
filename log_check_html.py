@@ -806,7 +806,16 @@ def highlights_html(first, far, lines):
         a = f'<div><h5>When each other continent first answered</h5><table><tr><th>Continent</th><th>Station</th><th>Band</th><th>UTC</th><th>Into the session</th></tr>{rows}</table></div>'
     else:
         a = '<div><h5>When each other continent first answered</h5><p class="none">No contact outside your own continent.</p></div>'
-    rows = "".join(f"<tr><td><b>{r.band}</b></td><td>{escape(r.call)}</td><td>{escape(r.place)}</td><td class=\"n\">{'~' if r.approx else ''}{r.km:,.0f} km</td></tr>" for r in far.itertuples())
+    def far_row(r):
+        who = ", ".join(r.calls[:3]) + (f" and {len(r.calls) - 3} more" if len(r.calls) > 3 else "") if r.approx else r.call
+        rough = (f'<br><small title="Placed only by country, so the distance is rough and it does not take the place of the contact above">farther, by country only: '
+                 f'{escape(r.rough_place)} ~{r.rough_km:,.0f} km</small>' if r.rough_km == r.rough_km and not r.approx else "")
+        if r.approx and r.precise_call:
+            rough = (f'<br><small title="The farthest contact placed by a grid, a park or a summit">farthest placed precisely: {escape(r.precise_call)} '
+                     f'{r.precise_km:,.0f} km</small>')
+        return (f"<tr><td><b>{r.band}</b></td><td>{escape(who)}</td><td>{escape(r.place)}</td>"
+                f"<td class=\"n\">{'~' if r.approx else ''}{r.km:,.0f} km{rough}</td></tr>")
+    rows = "".join(far_row(r) for r in far.itertuples())
     b = f'<div><h5>The farthest contact on each band</h5><table><tr><th>Band</th><th>Station</th><th>Where</th><th>Distance</th></tr>{rows}</table></div>' if len(far) else ""
     return (f'<div class="lc"><div class="lc-card" id="sec-highlights"><h4>Session highlights</h4>{says}<div class="lc-hl">{a}{b}</div></div></div>')
 
@@ -1275,6 +1284,16 @@ def ladder_rest_html(log, first=LADDER_ROWS):
     return '<div class="lc">' + ladder_html(rep, bands_top_down(log), rows=len(rep), first=first) + "</div>"
 
 
+def _long_time(minutes):
+    """A length of time in plain words: '41.5 minutes' under an hour, else '11 h 25 min'."""
+    if minutes != minutes:
+        return "none"
+    if minutes < 60:
+        return f"{minutes:.0f} minutes"
+    h, m = divmod(int(round(minutes)), 60)
+    return f"{h} h" if m == 0 else f"{h} h {m:02d} min"
+
+
 def followers_html(log, summary, rows=LADDER_ROWS):
     """The ladder of the stations worked on more than one band, the most bands first, beside a few notes written from the log."""
     from log_check import repeat_stations, same_band_repeats
@@ -1284,8 +1303,10 @@ def followers_html(log, summary, rows=LADDER_ROWS):
     if len(far):
         names = ", ".join(f"<b>{escape(r.call)}</b> ({r.band})" for r in far.head(6).itertuples())
         facts.append(_fact("Outside North America", names + (f" and {len(far) - 6} more" if len(far) > 6 else "")))
-    facts.append(_fact("Busiest stretch", f"<b>{summary['best_hour']} contacts</b> in the hour from {summary['best_hour_start']:%H:%M}Z. "
-                                        f"Longest quiet gap: {summary['longest_gap_min']:.1f} minutes."))
+    spans_days = log["time"].dt.date.nunique() > 1
+    when = f"{summary['best_hour_start']:%d %b %H:%M}Z" if spans_days else f"{summary['best_hour_start']:%H:%M}Z"
+    facts.append(_fact("Busiest stretch", f"<b>{summary['best_hour']} contacts</b> in the hour from {when}. "
+                                        f"Longest quiet gap: {_long_time(summary['longest_gap_min'])}."))
     if summary["park_to_park"]:
         facts.append(_fact("Park to park", f"<b>{summary['park_to_park']} contacts</b> with {summary['parks']} park{'s' if summary['parks'] != 1 else ''}."))
     if summary.get("summit_to_summit"):

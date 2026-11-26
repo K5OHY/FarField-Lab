@@ -15,7 +15,8 @@ import log_openings as lo
 import share_card as sc
 import space_weather as sw
 from compare_stats import locate as skimmer_location
-from data_sources import download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, load_sota_summit, skimmer_data
+from data_sources import (download_rbn_day, load_contact_places, load_nearby, load_pota_park, load_rbn_listening, load_reference_places, load_sota_summit,
+                          skimmer_data)
 from maps import build_map, great_circle, park_map, reach_map
 from rbn_data import lookup_callsign_location, maidenhead_to_latlon
 from ui_common import BAND_COLORS, BANNER, KM_PER_MILE, page_guide, preview
@@ -55,7 +56,22 @@ def _log_grids(log):
     if "their_grid" not in log:
         return {}
     given = log[log["their_grid"] != ""].drop_duplicates("call")
-    return dict(zip(given["call"], given["their_grid"]))
+    grids = dict(zip(given["call"], given["their_grid"]))
+    refs = log.attrs.get("ref_places") or {}
+    if refs:                                    # a station at another park or summit is placed at that park or summit (as the grid square it falls in), so the maps place it too
+        from conditions import latlon_to_maidenhead
+        for call, pota_cell, sota_cell in zip(log["call"], log["pota_ref"] if "pota_ref" in log else [""] * len(log), log["sota_ref"] if "sota_ref" in log else [""] * len(log)):
+            if call not in grids:
+                point, _ = lc._reference_point(pota_cell, sota_cell, refs)
+                if point:
+                    grids[call] = latlon_to_maidenhead(point[0], point[1])
+    return grids
+
+
+@st.cache_data(ttl=86400, show_spinner="Looking up where the parks and summits you contacted are…")
+def _reference_places(pota, sota):
+    """Where the parks and summits of the other stations are, kept for a day: {reference: (lat, lon)}. Only the references are sent."""
+    return load_reference_places(pota, sota)
 
 
 def _pota_cards(log, call):
@@ -649,6 +665,9 @@ def log_page():
         st.error(str(exc) + ("" if name.lower().endswith((".adi", ".adif")) else f" {name} does not look like an ADIF log (those end in .adi or .adif). Pick the exported log file."))
         return
     digest = hashlib.sha1(raw).hexdigest()
+    contacted_parks, contacted_summits = lc.contact_references(log)
+    if contacted_parks or contacted_summits:      # a contact with another park or summit is placed at that park or summit, not at its state's centre
+        log.attrs["ref_places"] = _reference_places(tuple(sorted(contacted_parks)), tuple(sorted(contacted_summits)))
     read_slot = st.container()
     cw = log[log["mode"] == "CW"]
     summary, rep = lc.summary(log), lc.repeat_stations(log)
@@ -730,9 +749,10 @@ def log_page():
             st.caption("Above, each bar is ten minutes and is as tall as the contacts you made in them, stacked by band; a triangle marks the first contact on each band. Below, the line is "
                        "the contacts an hour over the hour around each bar, counting only the time you were on the air; a pause of more than 30 minutes breaks it. Hover for the details.")
             st.altair_chart(rate, width="stretch")
-            line = hl.rate_line(hl.best_stretch(log))
-            if line:
+            for line in hl.rate_lines(log):
                 st.caption(line)
+            if len(hl.stretches(log)) > 1:
+                st.caption("The log has long pauses, so each stretch of activity has its own chart and its own date, as on the session chart; the pauses are not drawn.")
         timing_hold = st.empty()           # when RBN first and last spotted you on each band, added when the spots have been read
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})

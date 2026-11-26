@@ -246,6 +246,42 @@ def load_sota_summit(ref):
     return (summit if isinstance(summit, dict) and summit.get("summitCode") else None), table.dropna(subset=["date"]).reset_index(drop=True), None
 
 
+_REF_PLACES = {}              # park or summit reference -> (lat, lon) or None: kept for as long as the app runs, so a reference is asked for once
+
+
+def load_reference_places(pota_refs=(), sota_refs=(), workers=8):
+    """Where the parks and summits are, for contacts made with another activator: {reference: (lat, lon)}, from POTA's and SOTA's public data services, one small request
+    for each reference (only the reference is sent). A reference that cannot be found or reached is left out, and nothing here raises, so a contact is then placed by its
+    state or country as before."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def ask(ref, kind):
+        if ref in _REF_PLACES:
+            return ref, _REF_PLACES[ref]
+        url = f"{POTA_API}/park/{ref}" if kind == "POTA" else f"{SOTA_API}/summits/{ref}"
+        point = None
+        for attempt in (1, 2):
+            try:
+                resp = requests.get(url, headers=HEADERS, timeout=15)
+                resp.raise_for_status()
+                data = resp.json() if resp.content else None
+                if isinstance(data, dict) and data.get("latitude") is not None and data.get("longitude") is not None:
+                    point = (float(data["latitude"]), float(data["longitude"]))
+                break
+            except (requests.RequestException, ValueError, TypeError):
+                if attempt == 2:
+                    return ref, None                      # not remembered: it may work next time
+        _REF_PLACES[ref] = point
+        return ref, point
+
+    jobs = [(r, "POTA") for r in dict.fromkeys(pota_refs)] + [(r, "SOTA") for r in dict.fromkeys(sota_refs)]
+    if not jobs:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as pool:
+        found = list(pool.map(lambda job: ask(*job), jobs))
+    return {ref: point for ref, point in found if point}
+
+
 _RECENT = {}                  # callsign -> (answer, when it was asked): misses and guesses are kept for an hour, so a band is never asked twice
 RECENT_SECONDS = 3600
 

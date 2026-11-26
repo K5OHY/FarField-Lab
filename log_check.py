@@ -955,19 +955,91 @@ def coverage_table(grid):
         "What it can say": d["state"].tolist()}, columns=COVERAGE_COLUMNS)
 
 
-def contact_places(log, home):
+PRECISE_SOURCES = ("grid", "park", "summit")      # a contact placed by one of these is at a known place; a state or a country is only a centre, which can be hundreds of km away
+ROUGH_MARGIN_KM = 1500                             # a centre placed farther than this beyond the farthest known place is certainly farther (a small country's centre is wrong by far less)
+
+
+def farthest_contact(places, band=None):
+    """The farthest contact, from contact_places' table (all bands, or one `band`). A contact placed by a grid, a park or a summit is at a known place, so the farthest of
+    those is the answer when there is one. A contact placed only by its state or country is at a centre that can be hundreds of km from the station, so it is never
+    allowed to win by a few km over another, and when nothing better is known every contact at the same distance is named (two stations in Japan are both at the centre
+    of Japan, so neither is 'the' farthest). Returns None for no placed contact, else a dict: `call` (the first), `calls` (all at that distance), `bands` (their bands),
+    `place` (the country, else the continent), `km`, `band` and `approx`. A contact placed only by country that is farther than the farthest precise one comes as `rough`
+    (the same dict) when it is farther by less than ROUGH_MARGIN_KM, so the page can say so without letting it take the answer; when it is farther by more than that
+    it is the answer itself (`approx` True) with the farthest precise one as `precise`."""
+    d = places[places["c_km"].notna()] if places is not None and len(places) else None
+    if d is None or d.empty:
+        return None
+    if band is not None:
+        d = d[d["band"] == band]
+        if d.empty:
+            return None
+
+    def pick(g, approx):
+        top = g.loc[g["c_km"].idxmax()]
+        tied = g[(g["c_km"] - top["c_km"]).abs() < 1.0] if approx else g.loc[[top.name]]
+        calls = list(dict.fromkeys(tied["call"]))
+        return {"call": str(top["call"]), "calls": calls, "bands": list(dict.fromkeys(tied["band"])), "band": str(top["band"]),
+                "place": top["country"] or lf.CONTINENT_NAMES.get(top["continent"], ""), "km": float(top["c_km"]), "approx": approx}
+
+    precise, rough = d[d["c_source"].isin(PRECISE_SOURCES)], d[~d["c_source"].isin(PRECISE_SOURCES)]
+    best = pick(precise, False) if len(precise) else None
+    if len(rough):
+        far_rough = pick(rough, True)
+        if best is None:
+            return far_rough
+        if far_rough["km"] > best["km"] + ROUGH_MARGIN_KM:
+            far_rough["precise"] = best            # a country's centre is not wrong by this much, so it is certainly farther: it leads, said to be rough, with the best known place beside it
+            return far_rough
+        if far_rough["km"] > best["km"]:
+            best["rough"] = far_rough              # farther, but by less than a centre can be wrong: said beside the precise one, which keeps the place
+    return best
+
+
+def contact_references(log):
+    """The parks and summits the other stations were at (the POTA_REF and SOTA_REF of a contact; a two-fer lists two), as (set of POTA references, set of SOTA references),
+    so their places can be looked up."""
+    pota = set()
+    for cell in log["pota_ref"] if "pota_ref" in log else []:
+        for ref in str(cell).split(","):
+            ref = ref.strip().upper()
+            if POTA_REF.match(ref):
+                pota.add(ref)
+    return pota, {s for s in (_summits_of(log) if "sota_ref" in log else []) if s}
+
+
+def _reference_point(pota_cell, sota_cell, ref_places):
+    """The place of the first park (then the summit) of a contact that is known in `ref_places`, as ((lat, lon), 'park' or 'summit'), else (None, '')."""
+    for ref in str(pota_cell).split(","):
+        ref = ref.strip().upper()
+        if ref in ref_places:
+            return tuple(ref_places[ref][:2]), "park"
+    summit = clean_sota(sota_cell) if sota_cell else ""
+    if summit and summit in ref_places:
+        return tuple(ref_places[summit][:2]), "summit"
+    return None, ""
+
+
+def contact_places(log, home, ref_places=None):
     """Where each contact was, as columns added to the log. The place comes from the contact's own grid square when the log gives a valid one
-    (the 6 character grid when there is one), read for each contact, so a station that moved is placed where it was each time; failing that
-    the centre of its state (North America), then the centre of its country by its callsign. `c_source` says which ('grid', 'state', 'country'
+    (the 6 character grid when there is one), read for each contact, so a station that moved is placed where it was each time; failing that, for a contact with another
+    park or summit, from that park or summit's own place (`ref_places`, or the log's `attrs['ref_places']`, {reference: (lat, lon)}); failing that
+    the centre of its state (North America), then the centre of its country by its callsign. `c_source` says which ('grid', 'park', 'summit', 'state', 'country'
     or '' when it could not be placed), `c_approx` is True for the last two, `c_km` and `c_bearing` are the distance and the bearing from
     `home` to the place, `sector` is the compass sector of that bearing and `continent` comes from the log's CONT field, else from the callsign.
-    `sector_whole` is the sector the contact can be counted in: the sector of its grid, or, for a contact placed only by its state, the sector
-    the whole state lies in (None when the state spreads over more than one, and for a country's centre); `sector_basis` says 'grid' or 'state'."""
-    keys = list(zip(log["call"], log["state"], log["their_grid"], log["cont"], log["country"]))
+    `sector_whole` is the sector the contact can be counted in: the sector of its grid, park or summit, or, for a contact placed only by its state, the sector
+    the whole state lies in (None when the state spreads over more than one, and for a country's centre); `sector_basis` says 'grid', 'park', 'summit' or 'state'."""
+    ref_places = ref_places if ref_places is not None else (getattr(log, "attrs", {}).get("ref_places") or {})
+    pota_cells = log["pota_ref"] if "pota_ref" in log else pd.Series("", index=log.index)
+    sota_cells = log["sota_ref"] if "sota_ref" in log else pd.Series("", index=log.index)
+    keys = list(zip(log["call"], log["state"], log["their_grid"], log["cont"], log["country"], pota_cells, sota_cells))
     found = {}
     for key in set(keys):
-        call, state, grid, cont, country = key
+        call, state, grid, cont, country, pota_cell, sota_cell = key
         point, source = lf.grid_point(grid), "grid"
+        if point is None and ref_places:
+            point, source = _reference_point(pota_cell, sota_cell, ref_places)
+            point = point or None
         guess = country_location(call)
         if point is None and state in STATE_CENTRES and country in _NORTH_AMERICA:
             point, source = STATE_CENTRES[state], "state"
@@ -980,8 +1052,8 @@ def contact_places(log, home):
         inv = Geodesic.WGS84.Inverse(home[0], home[1], float(point[0]), float(point[1]))
         bearing = inv["azi1"] % 360
         sector = lf.sector_of(bearing)
-        whole, basis = (sector, "grid") if source == "grid" else ((lf.state_sector(state, home), "state") if source == "state" else (None, ""))
-        found[key] = (float(point[0]), float(point[1]), source, source != "grid", inv["s12"] / 1000, bearing, sector, continent, whole if whole else None,
+        whole, basis = (sector, source) if source in PRECISE_SOURCES else ((lf.state_sector(state, home), "state") if source == "state" else (None, ""))
+        found[key] = (float(point[0]), float(point[1]), source, source not in PRECISE_SOURCES, inv["s12"] / 1000, bearing, sector, continent, whole if whole else None,
                       basis if whole else "")
     cols = ["c_lat", "c_lon", "c_source", "c_approx", "c_km", "c_bearing", "sector", "continent", "sector_whole", "sector_basis"]
     return log.assign(**{c: [found[k][i] for k in keys] for i, c in enumerate(cols)})

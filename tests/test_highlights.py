@@ -165,6 +165,56 @@ class RateAndLink(unittest.TestCase):
         self.assertGreaterEqual(domain[1], tallest)                                             # the axis reaches the tallest stack, so no bar is cut off
         self.assertIsNone(hl.rate_chart(self.log().iloc[0:0], {}))
 
+    def two_days(self):
+        # a morning run on 12 Nov (20m, 19:00 to 19:40) and an evening run on 13 Nov (15m, 08:00 to 08:40), eleven hours apart
+        return log_of(*[rec(f"W1A{i}", f"19{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 45, 5))],
+                      *[rec(f"W2B{i}", f"08{m:02d}", band="15m", date="20261119", gridsquare="FN31") for i, m in enumerate(range(0, 45, 5))])
+
+    def test_a_long_pause_starts_a_new_stretch(self):
+        parts = hl.stretches(self.two_days())
+        self.assertEqual([(a.strftime("%d %H:%M"), b.strftime("%d %H:%M")) for a, b in parts], [("18 19:00", "18 19:40"), ("19 08:00", "19 08:40")])
+        self.assertEqual(len(hl.stretches(self.log())), 1)                                          # a 90 minute pause is not long enough to start a new chart (that takes four hours)
+        self.assertEqual(hl.stretches(None), [])
+
+    def test_two_days_are_two_pairs_of_charts_each_with_its_own_date_and_a_shared_scale(self):
+        chart = hl.rate_chart(self.two_days(), {"20m": "#800080", "15m": "#444444"})
+        spec = chart.to_dict()
+        self.assertEqual(len(spec["hconcat"]), 2)                                                   # one pair for each stretch
+        titles = [p["vconcat"][0]["title"]["text"] for p in spec["hconcat"]]
+        self.assertEqual(titles, ["Wed 18 Nov, 19:00–19:40 UTC", "Thu 19 Nov, 08:00–08:40 UTC"])          # 19:00 on one day is not 19:00 on the next
+        domains = {str(p["vconcat"][0]["layer"][0]["encoding"]["y"]["scale"]["domain"]) for p in spec["hconcat"]}
+        self.assertEqual(len(domains), 1)                                                           # the same vertical scale, so the days can be compared
+        legends = [p["vconcat"][0]["layer"][0]["encoding"]["color"].get("legend") for p in spec["hconcat"]]
+        self.assertIsNotNone(legends[0])
+        self.assertIsNone(legends[1])                                                               # the legend once
+        self.assertIn("timeFormat(datum.value, '%d %b')", str(spec))                                # a midnight is labelled with the date
+        self.assertNotIn("f5f5f5", str(spec))                                                       # the line takes the theme's colour, so it is visible on a light page too
+
+    def test_a_one_day_log_is_still_one_pair(self):
+        one = log_of(*[rec(f"W1A{i}", f"20{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 55, 5))])
+        spec = hl.rate_chart(one, {"20m": "#800080"}).to_dict()
+        self.assertIn("vconcat", spec)
+        self.assertNotIn("hconcat", spec)
+
+    def test_the_sentences_name_the_busiest_hour_and_ten_minutes_and_the_day_when_there_are_two(self):
+        lines = hl.rate_lines(self.two_days())
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("The busiest 60 minutes began at 18 Nov 19:00 UTC: 9 contacts."), lines[0])
+        self.assertIn("The busiest 10 minutes began at", lines[1])
+        self.assertIn("Nov", lines[1])                                                              # dated, since the same clock time is on both days
+        one = hl.rate_lines(self.log())
+        self.assertNotIn("Nov", " ".join(one))                                                      # a one day log needs no date
+        self.assertEqual(hl.rate_lines(None), [])
+        for line in lines + one:
+            self.assertEqual(lo.unsupported_claims(line), [], line)
+
+    def test_a_long_gap_is_written_in_hours_and_minutes(self):
+        import log_check_html as lh
+        self.assertEqual(lh._long_time(685.1), "11 h 25 min")
+        self.assertEqual(lh._long_time(41.5), "42 minutes")
+        self.assertEqual(lh._long_time(120.0), "2 h")
+        self.assertEqual(lh._long_time(float("nan")), "none")
+
     def test_the_link_opens_my_spots_on_the_day_and_the_hours_of_the_session(self):
         link = lc.spots_link("K5OHY", "DM81wx", self.log())
         self.assertTrue(link.startswith("./?"))                                                 # My spots is the main page, at the root: a /spots path would say page not found

@@ -33,18 +33,23 @@ def first_by_continent(places, home_cont="NA"):
 
 
 def farthest_by_band(places):
-    """The farthest contact on each band, highest band first. Columns: band, call, place (the country, else the continent), km, approx (True when the
-    contact was placed by its state or country rather than its own grid square, so the distance is a rough one) and time."""
-    cols = ["band", "call", "place", "km", "approx", "time"]
+    """The farthest contact on each band, highest band first (see log_check.farthest_contact: one placed by a grid, a park or a summit wins; one placed only by its state
+    or country does not, and when nothing better is known the stations at the same distance are all named). Columns: band, call (the first), calls (every contact at that
+    distance), place (the country, else the continent), km, approx (True when only a centre is known, so the distance is a rough one), time, and rough_place, rough_km and
+    rough_calls for a contact placed only by country that was farther than the precise one (else empty)."""
+    cols = ["band", "call", "calls", "place", "km", "approx", "time", "rough_place", "rough_km", "rough_calls", "precise_call", "precise_km"]
     if places is None or len(places) == 0:
         return pd.DataFrame(columns=cols)
     d = places[places["c_km"].notna()]
     rows = []
     for band in lc.bands_top_down(d):
-        g = d[d["band"] == band]
-        far = g.loc[g["c_km"].idxmax()]
-        rows.append({"band": band, "call": far["call"], "place": far["country"] or lf.CONTINENT_NAMES.get(far["continent"], ""), "km": float(far["c_km"]),
-                     "approx": bool(far["c_approx"]), "time": far["time"]})
+        f = lc.farthest_contact(d, band)
+        g = d[(d["band"] == band) & (d["call"] == f["call"])]
+        rough = f.get("rough") or {}
+        precise = f.get("precise") or {}
+        rows.append({"band": band, "call": f["call"], "calls": f["calls"], "place": f["place"], "km": f["km"], "approx": f["approx"], "time": g["time"].min(),
+                     "rough_place": rough.get("place", ""), "rough_km": rough.get("km", float("nan")), "rough_calls": rough.get("calls", []),
+                     "precise_call": precise.get("call", ""), "precise_km": precise.get("km", float("nan"))})
     return pd.DataFrame(rows, columns=cols)
 
 
@@ -86,6 +91,37 @@ def rbn_timing(log, spots):
     return pd.DataFrame(rows, columns=cols)
 
 
+def _names(calls, limit=3):
+    calls = list(calls)
+    shown = ", ".join(calls[:limit]) if len(calls) <= 2 else ", ".join(calls[:limit]) + (f" and {len(calls) - limit} more" if len(calls) > limit else "")
+    return shown.replace(", ", " and ") if len(calls) == 2 else shown
+
+
+def _farthest_line(far):
+    """The sentence about the farthest contact from farthest_by_band's table, honest about how well the place is known: a contact placed by its grid, park or summit is named
+    and its distance given; when only a country is known, the country and the stations in it are named and the distance is called rough; a farther contact placed only by
+    country is mentioned beside a precisely placed one without taking its place."""
+    lead = far.loc[far["km"].idxmax()]
+    if bool(lead["approx"]) and lead["precise_call"]:             # a country far beyond anything placed precisely leads, said to be rough, with the best known place beside it
+        return (f"The farthest contact{'s were' if len(lead['calls']) > 1 else ' was'} " + (f"with {lead['place']}" if lead["place"] else "") + f" ({_names(lead['calls'])} on {lead['band']}), "
+                f"about {lead['km']:,.0f} km ({lead['km'] / 1.609344:,.0f} mi) away, placed only by country, so that distance is rough. The farthest placed by a grid or a park was "
+                f"{lead['precise_call']}, {lead['precise_km']:,.0f} km.")
+    precise = far[~far["approx"].astype(bool)]
+    if len(precise):
+        top = precise.loc[precise["km"].idxmax()]
+        text = (f"The farthest contact was {top['call']}" + (f" in {top['place']}" if top["place"] else "") + f" on {top['band']}, "
+                f"{top['km']:,.0f} km ({top['km'] / 1.609344:,.0f} mi) away.")
+        rough = far[far["rough_km"].notna() & (far["rough_km"] > top["km"])]
+        if len(rough):
+            r = rough.loc[rough["rough_km"].idxmax()]
+            text += (f" Contacts with {r['rough_place'] or 'another country'} ({_names(r['rough_calls'])}) were farther, about {r['rough_km']:,.0f} km, "
+                     "but they are placed only by country, so that distance is rough.")
+        return text
+    top = far.loc[far["km"].idxmax()]
+    return (f"The farthest contact{'s were' if len(top['calls']) > 1 else ' was'} " + (f"in {top['place']}" if top["place"] else "") + f" ({_names(top['calls'])} on {top['band']}), "
+            f"about {top['km']:,.0f} km ({top['km'] / 1.609344:,.0f} mi) away. The log gives no grid square, so each is placed at the centre of its country and the distance is rough.")
+
+
 def highlight_lines(first, far, repeats=None):
     """The few sentences that lead the highlights, from the tables above and nothing else. The repeat line is written only when `repeats` (repeat_contacts) says at least
     REPEAT_MIN_SHARE of the contacts were with a station again on a band already worked with it. Stations that came back on another band are the multiband hunters, which the
@@ -99,9 +135,7 @@ def highlight_lines(first, far, repeats=None):
             last = first.iloc[-1]
             lines.append(f"{last['name']} came last, at {last['time']:%H:%M} UTC ({last['call']} on {last['band']}).")
     if len(far):
-        top = far.loc[far["km"].idxmax()]
-        lines.append(f"The farthest contact was {top['call']}" + (f" in {top['place']}" if top["place"] else "") + f" on {top['band']}, "
-                     f"{'about ' if top['approx'] else ''}{top['km']:,.0f} km ({top['km'] / 1.609344:,.0f} mi) away.")
+        lines.append(_farthest_line(far))
     if repeats and repeats["total"] and repeats["same_band"] / repeats["total"] >= REPEAT_MIN_SHARE:
         text = f"{repeats['same_band']} of {repeats['total']} contacts ({repeats['same_band'] / repeats['total'] * 100:.0f}%) were with a station already worked on the same band"
         if repeats["other_band"]:
@@ -157,6 +191,18 @@ def rate_table(log, bin_min=RATE_BIN_MIN, gap_min=RATE_GAP_MIN):
     return bars, pd.DataFrame(rows, columns=cols_l)
 
 
+STRETCH_GAP_H = 4          # a pause this long in the log starts a new chart on the rate view, as it does on the session chart, so two days are not squeezed into one axis
+
+
+def stretches(log, gap_h=STRETCH_GAP_H):
+    """The log cut into stretches of activity wherever there is a pause of `gap_h` hours or more: a list of (first contact, last contact)."""
+    if log is None or len(log) == 0:
+        return []
+    t = log["time"].sort_values().reset_index(drop=True)
+    new = (t.diff() > pd.Timedelta(hours=gap_h)).cumsum()
+    return [(g.min(), g.max()) for _, g in t.groupby(new)]
+
+
 def best_stretch(log, minutes=10):
     """The busiest `minutes` of the log: the window that holds the most contacts. Returns {'start', 'end', 'contacts', 'pace', 'bands'} where pace is the contacts
     an hour that window would be if kept up, or None for a log of fewer than 3 contacts. A short window runs hot, so the page calls it a pace, not a rate."""
@@ -182,14 +228,83 @@ def band_starts(log):
     return first[["time", "band", "call"]].reset_index(drop=True)
 
 
-def rate_line(best):
-    """The sentence under the chart about the busiest stretch. Checked against the wording guard."""
+def rate_line(best, dated=False):
+    """The sentence under the chart about the busiest stretch; with `dated` the day is named too (a log over two days has the same clock time twice). Checked against the
+    wording guard."""
     if not best:
         return ""
-    text = (f"The busiest {int((best['end'] - best['start']).total_seconds() // 60)} minutes began at {best['start']:%H:%M} UTC: {best['contacts']} contacts, "
+    when = f"{best['start']:%d %b %H:%M} UTC" if dated else f"{best['start']:%H:%M} UTC"
+    text = (f"The busiest {int((best['end'] - best['start']).total_seconds() // 60)} minutes began at {when}: {best['contacts']} contacts, "
             f"a pace of {best['pace']:.0f} an hour if it had been kept up.")
     assert not unsupported_claims(text), unsupported_claims(text)
     return text
+
+
+def rate_lines(log):
+    """The sentences under the rate charts: the busiest 60 minutes (the contacts in any hour of the log, as a count) and the busiest 10 minutes (a pace), with the day named
+    when the log covers more than one UTC day. They are different measures and are not mixed with the estimated active rate on the tiles, which divides by the time on the
+    air. Checked against the wording guard."""
+    if log is None or len(log) < 3:
+        return []
+    dated = log["time"].dt.date.nunique() > 1
+    lines = []
+    hour = best_stretch(log, 60)
+    if hour:
+        when = f"{hour['start']:%d %b %H:%M} UTC" if dated else f"{hour['start']:%H:%M} UTC"
+        lines.append(f"The busiest 60 minutes began at {when}: {hour['contacts']} contacts.")
+    lines.append(rate_line(best_stretch(log, 10), dated))
+    for line in lines:
+        assert not unsupported_claims(line), unsupported_claims(line)
+    return [x for x in lines if x]
+
+
+_DATE_AT_MIDNIGHT = "hours(datum.value) === 0 && minutes(datum.value) === 0 ? timeFormat(datum.value, '%d %b') : timeFormat(datum.value, '%H:%M')"
+
+
+def _rate_chart_by_stretch(log, colours, bars, line, parts, total_width=700):
+    """The rate charts for a log with long pauses (two days, or a morning and an evening): one pair of charts for each stretch of activity side by side, each on its own
+    time axis and as wide as the stretch is long, with the date in its title, so the long overnight gap is not drawn as hours of nothing and 19:00 on one day cannot be
+    taken for 19:00 on the next. The vertical scales are shared, so the stretches can be compared. The legend is drawn once."""
+    import altair as alt
+    order = sorted(set(bars["band"]), key=lc._rank, reverse=True)
+    scale = alt.Scale(domain=order, range=[colours.get(b, "#888888") for b in order])
+    bars = bars.assign(window=bars["slot"].dt.strftime("%d %b %H:%M") + "–" + bars["end"].dt.strftime("%H:%M") + " UTC")
+    bars["top"] = bars.groupby("slot")["contacts"].cumsum()
+    bars["foot"] = bars["top"] - bars["contacts"]
+    bars["shown_end"] = bars["end"] - pd.Timedelta(minutes=1)
+    bars["pace_text"] = bars["pace"].round().astype(int).astype(str) + " an hour"
+    line = line.assign(window=line["slot"].dt.strftime("%d %b %H:%M") + "–" + (line["slot"] + pd.Timedelta(minutes=RATE_BIN_MIN)).dt.strftime("%H:%M") + " UTC")
+    marks = band_starts(log).assign(zero=0, label=lambda d: "First " + d["band"] + " contact: " + d["call"] + " at " + d["time"].dt.strftime("%d %b %H:%M") + " UTC")
+    top_max, line_max = int(bars["top"].max()) + 1, max(float(line["rolling"].max() or 0), 1.0) * 1.1
+    durations = [max((b - a).total_seconds() + RATE_BIN_MIN * 60, 1800) for a, b in parts]
+    gap = 36
+    usable = total_width - gap * (len(parts) - 1)
+    pair = []
+    for i, (a, b) in enumerate(parts):
+        lo, hi = a.floor(f"{RATE_BIN_MIN}min"), b.floor(f"{RATE_BIN_MIN}min") + pd.Timedelta(minutes=RATE_BIN_MIN)
+        width = max(200, int(usable * durations[i] / sum(durations)))
+        x_scale = alt.Scale(domain=[lo.isoformat(), hi.isoformat()])
+        bi, li, mi = bars[(bars["slot"] >= lo) & (bars["slot"] < hi)], line[(line["slot"] >= lo) & (line["slot"] < hi)], marks[(marks["time"] >= lo) & (marks["time"] < hi)]
+        first = i == 0
+        y_axis = alt.Axis(minExtent=44) if first else alt.Axis(minExtent=44, title=None)
+        stack = alt.Chart(bi).mark_bar(strokeWidth=0).encode(
+            x=alt.X("slot:T", scale=x_scale, axis=alt.Axis(labels=False, ticks=False, title=None)), x2="shown_end:T",
+            y=alt.Y("foot:Q", title="Contacts in 10 minutes" if first else None, axis=y_axis, scale=alt.Scale(domain=[0, top_max], nice=True)), y2="top:Q",
+            color=alt.Color("band:N", scale=scale, sort=order, legend=alt.Legend(title="Band", orient="top", symbolStrokeWidth=0, symbolType="square") if first else None),
+            tooltip=[alt.Tooltip("window:N", title="Time"), alt.Tooltip("band:N", title="Band"), alt.Tooltip("contacts:Q", title="Contacts on this band"),
+                     alt.Tooltip("pace_text:N", title="All bands, at that pace")])
+        starts = alt.Chart(mi).mark_point(shape="triangle-up", size=110, filled=True, color="#ffd54f", strokeWidth=0).encode(
+            x=alt.X("time:T", scale=x_scale), y="zero:Q", tooltip=[alt.Tooltip("label:N", title="")])
+        rolling = alt.Chart(li).mark_line(strokeWidth=2.2, point=alt.OverlayMarkDef(size=24)).encode(
+            x=alt.X("mid:T", scale=x_scale, axis=alt.Axis(labelExpr=_DATE_AT_MIDNIGHT, title=None)),
+            y=alt.Y("rolling:Q", title="Contacts an hour" if first else None, axis=y_axis, scale=alt.Scale(domain=[0, line_max], nice=True)),
+            tooltip=[alt.Tooltip("window:N", title="Around"), alt.Tooltip("rolling:Q", title="Contacts an hour, over the hour around", format=".0f")])
+        span = f"{a:%a %d %b}" if a.date() == b.date() else f"{a:%a %d %b} to {b:%a %d %b}"
+        title = alt.TitleParams(f"{span}, {a:%H:%M}–{b:%H:%M} UTC", anchor="start", fontSize=13, fontWeight="normal")
+        top = alt.layer(stack, starts).properties(width=width, height=210, title=title)
+        bottom = rolling.properties(width=width, height=110)
+        pair.append(alt.vconcat(top, bottom, spacing=14))
+    return alt.hconcat(*pair, spacing=gap).resolve_scale(color="shared").configure_view(strokeWidth=0)
 
 
 def rate_chart(log, colours):
@@ -201,6 +316,9 @@ def rate_chart(log, colours):
     bars, line = rate_table(log)
     if bars.empty:
         return None
+    parts = stretches(log)
+    if len(parts) > 1:
+        return _rate_chart_by_stretch(log, colours, bars, line, parts)
     order = sorted(set(bars["band"]), key=lc._rank, reverse=True)
     scale = alt.Scale(domain=order, range=[colours.get(b, "#888888") for b in order])
     lo, hi = bars["slot"].min(), bars["end"].max()
@@ -222,7 +340,7 @@ def rate_chart(log, colours):
     starts = alt.Chart(marks).mark_point(shape="triangle-up", size=110, filled=True, color="#ffd54f", strokeWidth=0).encode(
         x=alt.X("time:T", scale=x_scale), y="zero:Q", tooltip=[alt.Tooltip("label:N", title="")])
     line = line.assign(window=line["slot"].dt.strftime("%H:%M") + "\u2013" + (line["slot"] + pd.Timedelta(minutes=RATE_BIN_MIN)).dt.strftime("%H:%M") + " UTC")
-    rolling = alt.Chart(line).mark_line(color="#f5f5f5", strokeWidth=2.2, point=alt.OverlayMarkDef(color="#f5f5f5", size=24)).encode(
+    rolling = alt.Chart(line).mark_line(strokeWidth=2.2, point=alt.OverlayMarkDef(size=24)).encode(
         x=alt.X("mid:T", scale=x_scale, axis=axis), y=alt.Y("rolling:Q", title="Contacts an hour", axis=left, scale=alt.Scale(zero=True)),
         tooltip=[alt.Tooltip("window:N", title="Around"), alt.Tooltip("rolling:Q", title="Contacts an hour, over the hour around", format=".0f")])
     top = alt.layer(stack, starts).properties(height=210, title=alt.TitleParams("Contacts in each 10 minutes, by band", anchor="start", fontSize=13, fontWeight="normal"))

@@ -334,7 +334,7 @@ def cell_evidence(grid, log, places, spots, locs, wspr_for, home, band, slot, vi
         "Time": pl["time"].tolist(), "Call": pl["call"].tolist(), "Mode": pl["mode"].tolist(),
         "Km from you": [int(round(k)) if pd.notna(k) else None for k in pl["c_km"]],
         "Direction": [lf.SECTOR_NAMES.get(s, "") if isinstance(s, str) else "" for s in pl["sector"]],
-        "Placed by": [{"grid": "its grid", "state": "its state", "country": "its country"}.get(s, "") for s in pl["c_source"]],
+        "Placed by": [{"grid": "its grid", "park": "its park", "summit": "its summit", "state": "its state", "country": "its country"}.get(s, "") for s in pl["c_source"]],
         "With the destination": ["yes" if w else "no" for w in with_it]})
     return out
 

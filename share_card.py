@@ -90,9 +90,10 @@ def map_facts(places, home):
         counts = g["band"].value_counts()
         points.append({"lat": float(lat), "lon": float(lon), "n": int(len(g)), "km": float(g["c_km"].max()), "bands": list(counts.index),
                        "band_n": {b: int(n) for b, n in counts.items()}, "call": str(first["call"]), "country": _country(first["call"], first["country"])})
-    far = d.loc[d["c_km"].idxmax()]
+    far = lc.farthest_contact(d)
     return {"home": (float(home[0]), float(home[1])), "points": points, "placed": int(len(d)), "total": int(len(places)),
-            "farthest": {"call": str(far["call"]), "country": _country(far["call"], far["country"]), "km": float(far["c_km"]), "band": str(far["band"])},
+            "farthest": {"call": far["call"], "calls": far["calls"], "country": far["place"] if far["approx"] else _country(far["call"], d[d["call"] == far["call"]]["country"].iloc[0]),
+                         "km": far["km"], "band": far["band"], "approx": far["approx"]},
             "contacts": [(float(r.plat), float(r.plon), str(r.band)) for r in d.itertuples()]}
 
 
@@ -294,6 +295,17 @@ def _rgb(hex_colour):
     return [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
 
 
+def _farthest_text(far):
+    """The share card's line about the farthest contact: named with its distance when its place is known, and, when only its country is known, the country with the stations
+    in it and a distance said to be about so much."""
+    if far.get("approx"):
+        calls = far["calls"]
+        who = " and ".join(calls) if len(calls) <= 2 else ", ".join(calls[:2]) + f" and {len(calls) - 2} more"
+        return f"Farthest: {far['country'] or 'a far country'} ({who}), about {_fmt_km(far['km'])} on {far['band']}."
+    place = f", {far['country']}" if far["country"] else ""
+    return f"Farthest: {far['call']}{place}, {_fmt_km(far['km'])} on {far['band']}."
+
+
 def _fmt_km(km):
     return f"{km:,.0f} km ({km / 1.609344:,.0f} mi)"
 
@@ -376,8 +388,7 @@ def _map_card(fig, facts, m):
     lines = [x for x in facts["lines"] if not (hun and "worked on 2 or more bands" in x)]      # the hunters block says it, so the line is not said twice
     far = m["farthest"]
     if far["km"] >= lc.DX_KM or not lines:                              # the farthest contact comes first, so it is the last line to be dropped when there is no room
-        place = f", {far['country']}" if far["country"] else ""
-        lines.insert(0, f"Farthest: {far['call']}{place}, {_fmt_km(far['km'])} on {far['band']}.")
+        lines.insert(0, _farthest_text(far))
     floor = 0.278                                                       # the band counts start below this; a line that would reach it is left out
     for line in lines:
         wrapped = _wrap(line, 40, 2)
@@ -472,8 +483,7 @@ def _tall_card(fig, facts, m, size, safe_top=0.0, safe_bottom=0.0):
     if m:
         far = m["farthest"]
         if far["km"] >= lc.DX_KM or not lines:                          # the farthest contact comes first, so it is the last line to be dropped
-            place = f", {far['country']}" if far["country"] else ""
-            lines.insert(0, f"Farthest: {far['call']}{place}, {_fmt_km(far['km'])} on {far['band']}.")
+            lines.insert(0, _farthest_text(far))
     for line in lines:
         wrapped = _wrap(line, 46, 2)
         height = 0.2 * len(wrapped)
