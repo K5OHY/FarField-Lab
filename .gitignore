@@ -10,3 +10,5 @@ collector/out/
 *.db
 *.db-wal
 *.db-shm
+
+.test_timings.json
