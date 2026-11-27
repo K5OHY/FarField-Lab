@@ -140,6 +140,7 @@ CSS = """<style>
 .dv-look b{font-size:17px}.dv-look div{font-size:14.5px}
 .dv-row{display:grid;grid-template-columns:92px 1fr;align-items:center;margin-top:7px}.dv-row.top{margin-top:2px}
 .dv-lab{color:inherit;opacity:.65;font-size:12.5px}.dv-name{font-weight:800;font-size:16px}
+.dv-bandkey{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 2px;font-size:.85rem}.dv-bandkey b{font-weight:600;margin-right:2px}
 .dv-chip{display:inline-block;padding:0 9px;border-radius:7px;font-weight:800;line-height:1.5;border:1px solid rgba(128,128,128,.55)}
 .dv-strip{position:relative;height:28px;border-radius:7px;overflow:hidden;background:var(--lane)}
 .dv-seg{position:absolute;top:0;height:100%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12.5px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);border-right:1px solid rgba(0,0,0,.3);overflow:hidden}
@@ -844,6 +845,12 @@ def band_chip(band, colour):
     luminance = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
     ink = "#000" if luminance > 0.18 else "#fff"
     return f'<span class="dv-chip" style="background:{colour};color:{ink}">{escape(band)}</span>'
+
+
+def band_key_html(bands):
+    """The key to a chart whose bars are coloured by band: "Band" and a chip for each of (band, colour). Drawn once by the page, above the charts, so no chart has to carry
+    a key of its own and every chart has the same height."""
+    return '<div class="dv-bandkey"><b>Band</b>' + "".join(band_chip(b, c) for b, c in bands) + "</div>"
 
 
 CONTACT_CLUSTER_PCT = 2.0      # contacts closer together than this share of a lane (about 12 minutes of a 4 hour stretch) are drawn as one marker with a count, as their dots would overlap

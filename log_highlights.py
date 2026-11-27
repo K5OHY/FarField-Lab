@@ -263,88 +263,71 @@ def rate_lines(log):
 _DATE_AT_MIDNIGHT = "hours(datum.value) === 0 && minutes(datum.value) === 0 ? timeFormat(datum.value, '%d %b') : timeFormat(datum.value, '%H:%M')"
 
 
-def _rate_chart_by_stretch(log, colours, bars, line, parts, total_width=700):
-    """The rate charts for a log with long pauses (two days, or a morning and an evening): one pair of charts for each stretch of activity side by side, each on its own
-    time axis and as wide as the stretch is long, with the date in its title, so the long overnight gap is not drawn as hours of nothing and 19:00 on one day cannot be
-    taken for 19:00 on the next. The vertical scales are shared, so the stretches can be compared. The legend is drawn once."""
-    import altair as alt
-    order = sorted(set(bars["band"]), key=lc._rank, reverse=True)
-    scale = alt.Scale(domain=order, range=[colours.get(b, "#888888") for b in order])
-    bars = bars.assign(window=bars["slot"].dt.strftime("%d %b %H:%M") + "–" + bars["end"].dt.strftime("%H:%M") + " UTC")
-    bars["top"] = bars.groupby("slot")["contacts"].cumsum()
-    bars["foot"] = bars["top"] - bars["contacts"]
-    bars["shown_end"] = bars["end"] - pd.Timedelta(minutes=1)
-    bars["pace_text"] = bars["pace"].round().astype(int).astype(str) + " an hour"
-    line = line.assign(window=line["slot"].dt.strftime("%d %b %H:%M") + "–" + (line["slot"] + pd.Timedelta(minutes=RATE_BIN_MIN)).dt.strftime("%H:%M") + " UTC")
-    marks = band_starts(log).assign(zero=0, label=lambda d: "First " + d["band"] + " contact: " + d["call"] + " at " + d["time"].dt.strftime("%d %b %H:%M") + " UTC")
-    top_max, line_max = int(bars["top"].max()) + 1, max(float(line["rolling"].max() or 0), 1.0) * 1.1
-    durations = [max((b - a).total_seconds() + RATE_BIN_MIN * 60, 1800) for a, b in parts]
-    gap = 36
-    usable = total_width - gap * (len(parts) - 1)
-    pair = []
-    for i, (a, b) in enumerate(parts):
-        lo, hi = a.floor(f"{RATE_BIN_MIN}min"), b.floor(f"{RATE_BIN_MIN}min") + pd.Timedelta(minutes=RATE_BIN_MIN)
-        width = max(200, int(usable * durations[i] / sum(durations)))
-        x_scale = alt.Scale(domain=[lo.isoformat(), hi.isoformat()])
-        bi, li, mi = bars[(bars["slot"] >= lo) & (bars["slot"] < hi)], line[(line["slot"] >= lo) & (line["slot"] < hi)], marks[(marks["time"] >= lo) & (marks["time"] < hi)]
-        first = i == 0
-        y_axis = alt.Axis(minExtent=44) if first else alt.Axis(minExtent=44, title=None)
-        stack = alt.Chart(bi).mark_bar(strokeWidth=0).encode(
-            x=alt.X("slot:T", scale=x_scale, axis=alt.Axis(labels=False, ticks=False, title=None)), x2="shown_end:T",
-            y=alt.Y("foot:Q", title="Contacts in 10 minutes" if first else None, axis=y_axis, scale=alt.Scale(domain=[0, top_max], nice=True)), y2="top:Q",
-            color=alt.Color("band:N", scale=scale, sort=order, legend=alt.Legend(title="Band", orient="top", symbolStrokeWidth=0, symbolType="square") if first else None),
-            tooltip=[alt.Tooltip("window:N", title="Time"), alt.Tooltip("band:N", title="Band"), alt.Tooltip("contacts:Q", title="Contacts on this band"),
-                     alt.Tooltip("pace_text:N", title="All bands, at that pace")])
-        starts = alt.Chart(mi).mark_point(shape="triangle-up", size=110, filled=True, color="#ffd54f", strokeWidth=0).encode(
-            x=alt.X("time:T", scale=x_scale), y="zero:Q", tooltip=[alt.Tooltip("label:N", title="")])
-        rolling = alt.Chart(li).mark_line(strokeWidth=2.2, point=alt.OverlayMarkDef(size=24)).encode(
-            x=alt.X("mid:T", scale=x_scale, axis=alt.Axis(labelExpr=_DATE_AT_MIDNIGHT, title=None)),
-            y=alt.Y("rolling:Q", title="Contacts an hour" if first else None, axis=y_axis, scale=alt.Scale(domain=[0, line_max], nice=True)),
-            tooltip=[alt.Tooltip("window:N", title="Around"), alt.Tooltip("rolling:Q", title="Contacts an hour, over the hour around", format=".0f")])
-        span = f"{a:%a %d %b}" if a.date() == b.date() else f"{a:%a %d %b} to {b:%a %d %b}"
-        title = alt.TitleParams(f"{span}, {a:%H:%M}–{b:%H:%M} UTC", anchor="start", fontSize=13, fontWeight="normal")
-        top = alt.layer(stack, starts).properties(width=width, height=210, title=title)
-        bottom = rolling.properties(width=width, height=110)
-        pair.append(alt.vconcat(top, bottom, spacing=14))
-    return alt.hconcat(*pair, spacing=gap).resolve_scale(color="shared").configure_view(strokeWidth=0)
+RATE_AXIS_PX = 75        # the room each pair of charts keeps on the left, for its axis numbers and title, so the plots of side-by-side stretches line up
+RATE_PAGE_PX = 1030      # about the width the charts will have; only the proportions between stretches depend on it, the charts themselves fill whatever room they get
+RATE_COLUMN_GAP_PX = 16  # the gap Streamlit leaves between columns
 
 
-def rate_chart(log, colours):
-    """The rate as two charts on one time axis, so a bar and a line are never read as the same thing. Above: a bar for each ten minutes, as tall as the contacts made in
-    those ten minutes, stacked by band in the band's colour, with a triangle where each band was first used; hovering gives the count and the pace that bin was at.
-    Below: a line of the contacts an hour over the hour around each bar, counting only the time on the air, broken at a pause of more than 30 minutes. An Altair chart,
-    or None when there is nothing to draw."""
+def rate_charts(log, colours):
+    """The rate as charts on a time axis, so a bar and a line are never read as the same thing. Above: a bar for each ten minutes, as tall as the contacts made in those ten
+    minutes, stacked by band in the band's colour, with a triangle where each band was first used; hovering gives the count and the pace that bin was at. Below: a line of
+    the contacts an hour over the hour around each bar, counting only the time on the air, broken at a pause of more than 30 minutes.
+
+    A log with a long pause (two days, or a morning and an evening) gets one pair of charts for each stretch of activity side by side, each on its own time axis and as wide as
+    the stretch is long, with the date in its title, so the overnight gap is not drawn as hours of nothing and 19:00 on one day cannot be taken for 19:00 on the next; the
+    vertical scales are shared so the stretches can be compared. Each chart is its own Altair chart, so the page can stretch it to exactly the room it has (a chart made of
+    several parts cannot be made to fit, it runs past the edge by the width of its axis).
+
+    Returns None when there is nothing to draw, else {"bands": [(band, colour), ...] for the key the page draws once, "columns": [{"weight", "top", "bottom"}, ...]}; `weight` is
+    the share of the width a column takes, and the key is left to the page so every chart has the same height whatever its column."""
     import altair as alt
     bars, line = rate_table(log)
     if bars.empty:
         return None
     parts = stretches(log)
-    if len(parts) > 1:
-        return _rate_chart_by_stretch(log, colours, bars, line, parts)
+    many = len(parts) > 1
     order = sorted(set(bars["band"]), key=lc._rank, reverse=True)
     scale = alt.Scale(domain=order, range=[colours.get(b, "#888888") for b in order])
-    lo, hi = bars["slot"].min(), bars["end"].max()
-    x_scale = alt.Scale(domain=[lo.isoformat(), hi.isoformat()])
-    bars = bars.assign(window=bars["slot"].dt.strftime("%H:%M") + "\u2013" + bars["end"].dt.strftime("%H:%M") + " UTC")
+    day = "%d %b " if many else ""
+    bars = bars.assign(window=bars["slot"].dt.strftime(day + "%H:%M") + "–" + bars["end"].dt.strftime("%H:%M") + " UTC")
     bars["top"] = bars.groupby("slot")["contacts"].cumsum()                # stacked by hand (the highest band at the foot), so every bar runs from its own foot to its own top
     bars["foot"] = bars["top"] - bars["contacts"]
     bars["shown_end"] = bars["end"] - pd.Timedelta(minutes=1)              # a minute of gap between bars, so the bins can be told apart without an outline
     bars["pace_text"] = bars["pace"].round().astype(int).astype(str) + " an hour"
-    axis = alt.Axis(format="%H:%M", title=None)
-    left = alt.Axis(minExtent=44)                                           # the same left margin on both charts, so the two time axes line up
-    stack = alt.Chart(bars).mark_bar(strokeWidth=0).encode(
-        x=alt.X("slot:T", scale=x_scale, axis=alt.Axis(format="%H:%M", title=None, labels=False, ticks=False)), x2="shown_end:T",
-        y=alt.Y("foot:Q", title="Contacts in 10 minutes", axis=left, scale=alt.Scale(domain=[0, int(bars["top"].max()) + 1], nice=True)), y2="top:Q",     # the axis has to reach the tallest stack
-        color=alt.Color("band:N", scale=scale, sort=order, legend=alt.Legend(title="Band", orient="top", symbolStrokeWidth=0, symbolType="square")),
-        tooltip=[alt.Tooltip("window:N", title="Time"), alt.Tooltip("band:N", title="Band"), alt.Tooltip("contacts:Q", title="Contacts on this band"),
-                 alt.Tooltip("pace_text:N", title="All bands, at that pace")])
-    marks = band_starts(log).assign(zero=0, label=lambda d: "First " + d["band"] + " contact: " + d["call"] + " at " + d["time"].dt.strftime("%H:%M") + " UTC")
-    starts = alt.Chart(marks).mark_point(shape="triangle-up", size=110, filled=True, color="#ffd54f", strokeWidth=0).encode(
-        x=alt.X("time:T", scale=x_scale), y="zero:Q", tooltip=[alt.Tooltip("label:N", title="")])
-    line = line.assign(window=line["slot"].dt.strftime("%H:%M") + "\u2013" + (line["slot"] + pd.Timedelta(minutes=RATE_BIN_MIN)).dt.strftime("%H:%M") + " UTC")
-    rolling = alt.Chart(line).mark_line(strokeWidth=2.2, point=alt.OverlayMarkDef(size=24)).encode(
-        x=alt.X("mid:T", scale=x_scale, axis=axis), y=alt.Y("rolling:Q", title="Contacts an hour", axis=left, scale=alt.Scale(zero=True)),
-        tooltip=[alt.Tooltip("window:N", title="Around"), alt.Tooltip("rolling:Q", title="Contacts an hour, over the hour around", format=".0f")])
-    top = alt.layer(stack, starts).properties(height=210, title=alt.TitleParams("Contacts in each 10 minutes, by band", anchor="start", fontSize=13, fontWeight="normal"))
-    bottom = rolling.properties(height=110, title=alt.TitleParams("Contacts an hour, over the hour around (time on the air only)", anchor="start", fontSize=13, fontWeight="normal"))
-    return alt.vconcat(top, bottom, spacing=14).resolve_scale(x="shared", color="independent").configure_view(strokeWidth=0)
+    line = line.assign(window=line["slot"].dt.strftime(day + "%H:%M") + "–" + (line["slot"] + pd.Timedelta(minutes=RATE_BIN_MIN)).dt.strftime("%H:%M") + " UTC")
+    marks = band_starts(log).assign(zero=0, label=lambda d: "First " + d["band"] + " contact: " + d["call"] + " at " + d["time"].dt.strftime(day + "%H:%M") + " UTC")
+    top_max, line_max = int(bars["top"].max()) + 1, max(float(line["rolling"].max() or 0), 1.0) * 1.1
+    durations = [max((b - a).total_seconds() + RATE_BIN_MIN * 60, 1800) for a, b in parts]
+    usable = RATE_PAGE_PX - len(parts) * RATE_AXIS_PX - RATE_COLUMN_GAP_PX * (len(parts) - 1)
+    plots = [max(140.0, usable * d / sum(durations)) for d in durations]
+    columns = []
+    for i, (a, b) in enumerate(parts):
+        lo, hi = a.floor(f"{RATE_BIN_MIN}min"), b.floor(f"{RATE_BIN_MIN}min") + pd.Timedelta(minutes=RATE_BIN_MIN)
+        x_scale = alt.Scale(domain=[lo.isoformat(), hi.isoformat()])
+        bi, li, mi = bars[(bars["slot"] >= lo) & (bars["slot"] < hi)], line[(line["slot"] >= lo) & (line["slot"] < hi)], marks[(marks["time"] >= lo) & (marks["time"] < hi)]
+        first = i == 0
+        y_axis = alt.Axis(minExtent=44) if first else alt.Axis(minExtent=RATE_AXIS_PX - 10, title=None)     # a column without the title keeps the room the title takes, so the plots line up
+        stack = alt.Chart(bi).mark_bar(strokeWidth=0).encode(
+            x=alt.X("slot:T", scale=x_scale, axis=alt.Axis(labels=False, ticks=False, title=None)), x2="shown_end:T",
+            y=alt.Y("foot:Q", title="Contacts in 10 minutes" if first else None, axis=y_axis, scale=alt.Scale(domain=[0, top_max], nice=True)), y2="top:Q",
+            color=alt.Color("band:N", scale=scale, sort=order, legend=None),
+            tooltip=[alt.Tooltip("window:N", title="Time"), alt.Tooltip("band:N", title="Band"), alt.Tooltip("contacts:Q", title="Contacts on this band"),
+                     alt.Tooltip("pace_text:N", title="All bands, at that pace")])
+        starts = alt.Chart(mi).mark_point(shape="triangle-up", size=110, filled=True, color="#ffd54f", strokeWidth=0).encode(
+            x=alt.X("time:T", scale=x_scale), y="zero:Q", tooltip=[alt.Tooltip("label:N", title="")])
+        rolling = alt.Chart(li).mark_line(strokeWidth=2.2, point=alt.OverlayMarkDef(size=24)).encode(
+            x=alt.X("mid:T", scale=x_scale, axis=alt.Axis(labelExpr=_DATE_AT_MIDNIGHT, title=None) if many else alt.Axis(format="%H:%M", title=None)),
+            y=alt.Y("rolling:Q", title="Contacts an hour" if first else None, axis=y_axis, scale=alt.Scale(domain=[0, line_max], nice=True)),
+            tooltip=[alt.Tooltip("window:N", title="Around"), alt.Tooltip("rolling:Q", title="Contacts an hour, over the hour around", format=".0f")])
+        if many:
+            span = f"{a:%a %d %b}" if a.date() == b.date() else f"{a:%a %d %b} to {b:%a %d %b}"
+            top_title = alt.TitleParams(f"{span}, {a:%H:%M}–{b:%H:%M} UTC", anchor="start", fontSize=13, fontWeight="normal")
+            bottom_title = alt.TitleParams("", fontSize=1)                  # the same space as the other columns' charts, so a pair of columns lines up
+        else:
+            top_title = alt.TitleParams("Contacts in each 10 minutes, by band", anchor="start", fontSize=13, fontWeight="normal")
+            bottom_title = alt.TitleParams("Contacts an hour, over the hour around (time on the air only)", anchor="start", fontSize=13, fontWeight="normal")
+        fit = alt.AutoSizeParams(type="fit-x", contains="padding")           # fill the width, but the height is the plot's own
+        top = alt.layer(stack, starts).properties(height=210, title=top_title, autosize=fit).configure_view(strokeWidth=0)
+        bottom = rolling.properties(height=110, title=bottom_title, autosize=fit).configure_view(strokeWidth=0)
+        columns.append({"weight": plots[i] + RATE_AXIS_PX, "top": top, "bottom": bottom})
+    return {"bands": [(b, colours.get(b, "#888888")) for b in order], "columns": columns}

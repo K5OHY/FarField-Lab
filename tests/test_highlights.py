@@ -149,21 +149,34 @@ class RateAndLink(unittest.TestCase):
         self.assertEqual(marks["band"].tolist(), ["20m", "15m"])
         self.assertEqual(marks["call"].tolist(), ["W1A0", "W2B0"])
 
-    def test_the_bars_and_the_line_are_two_charts_on_one_time_axis_each_named_for_what_it_shows(self):
-        chart = hl.rate_chart(self.log(), {"20m": "#800080", "15m": "#444444"})
-        spec = chart.to_dict()
-        self.assertEqual(len(spec["vconcat"]), 2)                                               # the bars above, the line below
-        self.assertEqual(len(spec["vconcat"][0]["layer"]), 2)                                   # the bars and the band marks
-        text = str(spec)
+    def test_the_bars_and_the_line_are_two_charts_each_named_for_what_it_shows(self):
+        out = hl.rate_charts(self.log(), {"20m": "#800080", "15m": "#444444"})
+        self.assertEqual(len(out["columns"]), 1)                                                # one stretch: one pair
+        top, bottom = (out["columns"][0][k].to_dict() for k in ("top", "bottom"))
+        self.assertEqual(len(top["layer"]), 2)                                                  # the bars and the band marks
+        text = str(top) + str(bottom)
         for part in ("Contacts in each 10 minutes, by band", "Contacts an hour, over the hour around (time on the air only)", "Contacts in 10 minutes",
                      "Contacts on this band", "All bands, at that pace", "#800080"):
             self.assertIn(part, text)
         self.assertNotIn("'stroke': 'white'", text)                                             # no white outline on the bars
-        self.assertEqual(spec["resolve"]["scale"]["x"], "shared")
-        domain = spec["vconcat"][0]["layer"][0]["encoding"]["y"]["scale"]["domain"]
+        domain = top["layer"][0]["encoding"]["y"]["scale"]["domain"]
         tallest = int(hl.rate_table(self.log())[0].groupby("slot")["contacts"].sum().max())
         self.assertGreaterEqual(domain[1], tallest)                                             # the axis reaches the tallest stack, so no bar is cut off
-        self.assertIsNone(hl.rate_chart(self.log().iloc[0:0], {}))
+        self.assertIsNone(hl.rate_charts(self.log().iloc[0:0], {}))
+        self.assertEqual([b for b, _ in out["bands"]], sorted(["20m", "15m"], key=lc._rank, reverse=True))     # the key the page draws, highest band first
+        self.assertEqual(dict(out["bands"])["20m"], "#800080")
+
+    def test_each_chart_fills_the_room_it_is_given(self):
+        """A chart with a width of its own (or made of several parts) runs past the edge of the card or stops short of it; these have no width, and fit the width of their space."""
+        for log in (self.log(), self.two_days()):
+            for column in hl.rate_charts(log, {"20m": "#800080", "15m": "#444444"})["columns"]:
+                for chart in (column["top"], column["bottom"]):
+                    spec = chart.to_dict()
+                    self.assertNotIn("width", spec)
+                    self.assertNotIn("vconcat", spec)
+                    self.assertNotIn("hconcat", spec)
+                    self.assertEqual(spec["autosize"], {"type": "fit-x", "contains": "padding"})
+                    self.assertIsNone(spec["layer"][0]["encoding"]["color"].get("legend") if "layer" in spec else None)       # the key is drawn once by the page
 
     def two_days(self):
         # a morning run on 12 Nov (20m, 19:00 to 19:40) and an evening run on 13 Nov (15m, 08:00 to 08:40), eleven hours apart
@@ -177,24 +190,33 @@ class RateAndLink(unittest.TestCase):
         self.assertEqual(hl.stretches(None), [])
 
     def test_two_days_are_two_pairs_of_charts_each_with_its_own_date_and_a_shared_scale(self):
-        chart = hl.rate_chart(self.two_days(), {"20m": "#800080", "15m": "#444444"})
-        spec = chart.to_dict()
-        self.assertEqual(len(spec["hconcat"]), 2)                                                   # one pair for each stretch
-        titles = [p["vconcat"][0]["title"]["text"] for p in spec["hconcat"]]
-        self.assertEqual(titles, ["Wed 18 Nov, 19:00–19:40 UTC", "Thu 19 Nov, 08:00–08:40 UTC"])          # 19:00 on one day is not 19:00 on the next
-        domains = {str(p["vconcat"][0]["layer"][0]["encoding"]["y"]["scale"]["domain"]) for p in spec["hconcat"]}
-        self.assertEqual(len(domains), 1)                                                           # the same vertical scale, so the days can be compared
-        legends = [p["vconcat"][0]["layer"][0]["encoding"]["color"].get("legend") for p in spec["hconcat"]]
-        self.assertIsNotNone(legends[0])
-        self.assertIsNone(legends[1])                                                               # the legend once
-        self.assertIn("timeFormat(datum.value, '%d %b')", str(spec))                                # a midnight is labelled with the date
-        self.assertNotIn("f5f5f5", str(spec))                                                       # the line takes the theme's colour, so it is visible on a light page too
+        out = hl.rate_charts(self.two_days(), {"20m": "#800080", "15m": "#444444"})
+        cols = out["columns"]
+        self.assertEqual(len(cols), 2)                                                              # one pair for each stretch
+        tops = [c["top"].to_dict() for c in cols]
+        self.assertEqual([t["title"]["text"] for t in tops], ["Wed 18 Nov, 19:00–19:40 UTC", "Thu 19 Nov, 08:00–08:40 UTC"])          # 19:00 on one day is not 19:00 on the next
+        self.assertEqual(len({str(t["layer"][0]["encoding"]["y"]["scale"]["domain"]) for t in tops}), 1)    # the same vertical scale, so the days can be compared
+        self.assertIn("timeFormat(datum.value, '%d %b')", str([c["bottom"].to_dict() for c in cols]))      # a midnight is labelled with the date
+        self.assertNotIn("f5f5f5", str([c["bottom"].to_dict() for c in cols]))                      # the line takes the theme's colour, so it is visible on a light page too
+        self.assertTrue(all(c["weight"] > 0 for c in cols))
+        self.assertAlmostEqual(cols[0]["weight"] / cols[1]["weight"], 1.0, delta=0.05)              # two stretches of the same length take the same room
+
+    def test_the_key_to_the_bar_colours_is_drawn_once_by_the_page(self):
+        html = lh.band_key_html([("20m", "#800080"), ("15m", "#444444")])
+        self.assertIn("<b>Band</b>", html)
+        self.assertEqual(html.count("dv-chip"), 2)
+        self.assertIn("background:#800080", html)
+
+    def test_a_longer_stretch_gets_more_of_the_width(self):
+        long_then_short = log_of(*[rec(f"W1A{i}", f"{h:02d}{m:02d}", gridsquare="FN31") for i, (h, m) in enumerate((h, m) for h in range(8, 12) for m in (0, 20, 40))],
+                                 *[rec(f"W2B{i}", f"23{m:02d}", gridsquare="FN31") for i, m in enumerate((0, 20, 40))])
+        cols = hl.rate_charts(long_then_short, {"20m": "#800080"})["columns"]
+        self.assertEqual(len(cols), 2)
+        self.assertGreater(cols[0]["weight"], cols[1]["weight"])
 
     def test_a_one_day_log_is_still_one_pair(self):
         one = log_of(*[rec(f"W1A{i}", f"20{m:02d}", gridsquare="FN31") for i, m in enumerate(range(0, 55, 5))])
-        spec = hl.rate_chart(one, {"20m": "#800080"}).to_dict()
-        self.assertIn("vconcat", spec)
-        self.assertNotIn("hconcat", spec)
+        self.assertEqual(len(hl.rate_charts(one, {"20m": "#800080"})["columns"]), 1)
 
     def test_the_sentences_name_the_busiest_hour_and_ten_minutes_and_the_day_when_there_are_two(self):
         lines = hl.rate_lines(self.two_days())

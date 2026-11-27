@@ -806,12 +806,17 @@ def log_page():
         hl_html = lh.highlights_html(hl_first, hl_far, hl.highlight_lines(hl_first, hl_far, hl.repeat_contacts(log), dated), dated)
         if hl_html:
             st.html(lh.CSS + hl_html)
-        rate = hl.rate_chart(log, BAND_COLORS)
+        rate = hl.rate_charts(log, BAND_COLORS)
         if rate is not None:
             st.markdown("#### How fast the contacts came in")
             st.caption("Above, each bar is ten minutes and is as tall as the contacts you made in them, stacked by band; a triangle marks the first contact on each band. Below, the line is "
                        "the contacts an hour over the hour around each bar, counting only the time you were on the air; a pause of more than 30 minutes breaks it. Hover for the details.")
-            st.altair_chart(rate, width="stretch")
+            st.html(lh.CSS + lh.band_key_html(rate["bands"]))
+            rate_columns = st.columns([c["weight"] for c in rate["columns"]]) if len(rate["columns"]) > 1 else [st.container()]
+            for rate_column, pair in zip(rate_columns, rate["columns"]):
+                with rate_column:
+                    st.altair_chart(pair["top"], width="stretch")
+                    st.altair_chart(pair["bottom"], width="stretch")
             for line in hl.rate_lines(log):
                 st.caption(line)
             if len(hl.stretches(log)) > 1:
