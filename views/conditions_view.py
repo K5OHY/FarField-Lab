@@ -108,7 +108,10 @@ def _dx_badge(result, units, k):
         return ("Thin DX evidence", "ta", f"Only {n} receiver{'s' if n != 1 else ''} outside the US and Canada heard these WSPR "
                 "signals, so the DX figures rest on very little data. A wider area (up to about 900 miles) or a longer look-back "
                 "can add some.")
-    return ("DX evidence good", "tg", f"{n} receivers outside the US and Canada heard these WSPR signals.")
+    if not cond._dx_cells(result)[1]:                 # reports from afar, but no one region has enough receivers for a solid reading: the highlights below say "No solid DX yet"
+        return ("DX reports available · regional evidence sparse", "ta", f"{n} receivers outside the US and Canada heard these WSPR signals, but no single region has enough "
+                "of them yet for a solid reading. The DX highlights below say which regions have only hints.")
+    return ("DX evidence good", "tg", f"{n} receivers outside the US and Canada heard these WSPR signals, and at least one region has enough of them for a solid reading.")
 
 
 def _conditions_body(result, power, mode, margin_db, units, k, lat, lon, who, window=60, area=""):

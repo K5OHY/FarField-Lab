@@ -28,6 +28,7 @@ CSS = """<style>
 .sw-kp{position:absolute;bottom:0;border-radius:3px 3px 0 0;font-size:11.5px;font-weight:700;text-align:center;line-height:1.1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:2px;color:#0b1420}
 .sw-storm{position:absolute;left:0;right:0;border-top:1px dashed rgba(220,80,80,.75)}.sw-storm span{position:absolute;left:4px;top:-15px;font-size:11px;opacity:.85}
 .sw-fl{position:absolute;border-radius:50%;transform:translate(-50%,-50%)}.sw-fn{position:absolute;transform:translate(-50%,0);font-size:11.5px;font-weight:700;white-space:nowrap;padding:0 6px;border-radius:99px;background:rgba(240,160,32,.25);border:1px solid rgba(240,160,32,.6)}
+.sw-int{position:absolute;top:calc(70% - 4px);height:8px;border-radius:4px;background:rgba(240,160,32,.28);border:1px solid rgba(240,160,32,.5)}
 .sw-base{position:absolute;left:0;right:0;border-top:1px solid rgba(240,160,32,.55)}
 .sw-day{position:absolute;top:0;bottom:0}.sw-day.night{background:rgba(70,90,150,.28)}.sw-day.twilight{background:rgba(150,110,170,.22)}.sw-day.daylight{background:rgba(240,190,60,.2)}
 .sw-sun{position:absolute;bottom:3px;transform:translateX(-50%);font-size:11.5px;white-space:nowrap;padding:0 6px;border-radius:99px;background:rgba(0,0,0,.3);color:#fff}
@@ -72,13 +73,15 @@ def _tiles(f, place):
         days = sorted({t for t, _ in f["flux_days"]})
         note = (f"Latest daily solar flux, {f['flux_latest'][0]:%d %b}: the session's own day is not published yet" if f.get("flux_latest")
                 else f"Daily solar flux, {', '.join(f'{d:%d %b}' for d in days)}")
-        out.append(("Solar background", f"{flux:.0f}<small>F10.7 sfu</small>", f'<span class="sw-chip mute">{escape(ls.flux_label(flux))}</span>', note))
+        out.append(("Solar background", f"{flux:.0f}<small>F10.7 sfu</small>", f'<span class="sw-chip mute">{escape(ls.flux_label(flux))} solar activity</span>', note))
     else:
         out.append(("Solar background", "n/a", "", "The solar flux could not be read for these dates."))
     peak = f["kp_peak"]
     if peak:
         v = peak[1]
-        out.append(("Geomagnetic activity", f"Kp {ls.kp_text(v)}", f'<span class="sw-chip {_kp_chip(v)}">{escape(ls.kp_label(v))}</span>', "Peak during your session. A storm starts at Kp 5."))
+        lo_kp = min((k for _, k in f["kp_session"]), default=v)
+        span_text = f"Peak during your session (it ranged from Kp {ls.kp_text(lo_kp)} to {ls.kp_text(v)})." if abs(lo_kp - v) >= 1.0 else "Peak during your session."
+        out.append(("Geomagnetic activity", f"Kp {ls.kp_text(v)}", f'<span class="sw-chip {_kp_chip(v)}">{escape(ls.kp_label(v))}</span>', f"{span_text} A storm starts at Kp 5."))
     else:
         out.append(("Geomagnetic activity", "n/a", "", "Kp could not be read for these dates."))
     focus = f["focus"]
@@ -129,6 +132,10 @@ def _timeline(f, colours):
     for t, c in f["flares"] or []:
         size = {"X": 16, "M": 13}.get(c[:1], 8)
         colour = FLARE_COLOUR.get(c[:1], "rgb(150,150,150)")
+        d = f["flare_details"].get(t) or {}
+        if c[:1] in ("M", "X") and d.get("begin") is not None and d.get("end") is not None:               # the flare's whole interval, faint, under its brighter peak
+            fl += (f'<i class="sw-int" style="left:{left(d["begin"]):.3f}%;width:{max(left(d["end"]) - left(d["begin"]), 0.4):.3f}%" '
+                   f'title="{escape(c)} flare from {d["begin"]:%H:%M} to {d["end"]:%H:%M} UTC, peak {t:%H:%M}"></i>')
         fl += (f'<i class="sw-fl" style="left:{left(t):.3f}%;top:70%;width:{size}px;height:{size}px;background:{colour}" '
                f'title="{escape(c)} flare, peak {t:%H:%M} UTC' + (f", {ls.r_level(c)}" if ls.r_level(c) else ", below R1") + '"></i>')
         if c[:1] in ("M", "X"):
@@ -264,6 +271,8 @@ def _focus_box(f, colours):
     chips = ""
     if focus["bands"]:
         chips += f'<span class="sw-chip ok">During logged {escape(focus["bands"][0])} activity</span> '
+    elif focus["overlap"]:
+        chips += f'<span class="sw-chip mute">Peak between logged sessions</span> <span class="sw-chip ok">Flare overlapped logged {escape(focus["overlap"][0])} activity</span> '
     else:
         chips += '<span class="sw-chip mute">Outside your logged activity</span> '
     chips += f'<span class="sw-chip mute">Station in {escape(focus["light"])}</span>'

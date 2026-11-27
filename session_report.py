@@ -59,6 +59,11 @@ def region_of(call, loc=None):
             "OC": "Oceania"}.get(cont, "Other") if country != "Greenland" else "Other"
 
 
+def _rx(call):
+    """A receiver as it is counted: its callsign without a -# suffix, so a station that runs several receivers counts once, as it does everywhere else on the site."""
+    return str(call).split("-")[0].upper()
+
+
 def _prepare(spots, locs, home):
     """Spots with the distance of each receiver, its country and its region added."""
     d = spots.copy()
@@ -66,6 +71,7 @@ def _prepare(spots, locs, home):
     d["km"] = d["spotter"].map(table["km"])
     d["country"] = d["spotter"].map(_country)
     d["region"] = [region_of(s, locate(s, locs)) for s in d["spotter"]]
+    d["rx"] = d["spotter"].map(_rx)
     return d
 
 
@@ -102,7 +108,7 @@ def band_scorecard(spots, locs, home, units="mi"):
         located = g.dropna(subset=["km"]).groupby("spotter")["km"].first()
         far_who = located.idxmax() if len(located) else None
         rows.append({
-            "Band": band, "Spots": len(g), "Receivers": g["spotter"].nunique(),
+            "Band": band, "Spots": len(g), "Receivers": g["rx"].nunique(),
             "Heard from": g["time"].min(), "Heard until": g["time"].max(),
             "Minutes with spots": _bins(g["time"]).nunique() * BIN_MIN,
             "Median SNR": g["snr"].median(), "Best SNR": g["snr"].max(),
@@ -125,7 +131,7 @@ def headline(spots, locs, home, units="mi", noun="receiver"):
     when = (f"{first:%H:%M} to {last:%H:%M} UTC" if same_day else f"{first:%d %b %H:%M} to {last:%d %b %H:%M} UTC")
     lines = [f"You were heard from **{when}** ({_duration((last - first).total_seconds() / 60)}), on "
              f"**{len(bands)} band{'s' if len(bands) != 1 else ''}** ({', '.join(bands)}), "
-             f"with **{len(d):,} spots** from **{d['spotter'].nunique():,} {noun}s**."]
+             f"with **{len(d):,} spots** from **{d['rx'].nunique():,} {noun}s**."]
     if len(bands) > 1:
         lines.append(f"Most spots: **{per.idxmax()}** ({int(per.max()):,}).")
     located = d.dropna(subset=["km"])
@@ -143,20 +149,20 @@ def headline(spots, locs, home, units="mi", noun="receiver"):
 def region_table(spots, locs, home):
     """Receivers per band in each region, with an 'All bands' row that counts each receiver once. Columns left empty are dropped."""
     d = _prepare(spots, locs, home)
-    by_band = d.groupby(["band", "region"])["spotter"].nunique().unstack(fill_value=0).reindex(band_list(d))
-    total = d.groupby("region")["spotter"].nunique().rename("All bands")
+    by_band = d.groupby(["band", "region"])["rx"].nunique().unstack(fill_value=0).reindex(band_list(d))
+    total = d.groupby("region")["rx"].nunique().rename("All bands")
     table = pd.concat([total.to_frame().T, by_band]).fillna(0).astype(int)
     cols = [c for c in REGION_ORDER if c in table.columns and table[c].sum() > 0]
     table = table[cols]
-    table["Total"] = pd.concat([pd.Series({"All bands": d["spotter"].nunique()}),
-                                d.groupby("band")["spotter"].nunique().reindex(band_list(d))])
+    table["Total"] = pd.concat([pd.Series({"All bands": d["rx"].nunique()}),
+                                d.groupby("band")["rx"].nunique().reindex(band_list(d))])
     return table
 
 
 def country_table(spots):
     """Every country heard: receivers, spots, and the bands it was heard on."""
-    d = spots.assign(country=spots["spotter"].map(_country).fillna("Unknown"))
-    rows = [{"Country": c, "Receivers": g["spotter"].nunique(), "Spots": len(g),
+    d = spots.assign(country=spots["spotter"].map(_country).fillna("Unknown"), rx=spots["spotter"].map(_rx))
+    rows = [{"Country": c, "Receivers": g["rx"].nunique(), "Spots": len(g),
              "Bands": ", ".join(b for b in BAND_ORDER if b in set(g["band"])) or ", ".join(sorted(set(g["band"])))}
             for c, g in d.groupby("country")]
     return pd.DataFrame(rows).sort_values(["Receivers", "Spots"], ascending=False).reset_index(drop=True)

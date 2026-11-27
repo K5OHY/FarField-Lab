@@ -1464,7 +1464,8 @@ def followers_html(log, summary, rows=LADDER_ROWS):
     dupes = same_band_repeats(log)
     if dupes:
         facts.append(_fact("Worked twice on a band", f"{dupes} station{'s were' if dupes != 1 else ' was'} logged more than once on the same band."))
-    ladder = ladder_html(rep, bands_top_down(log), rows) if len(rep) else '<p class="muted">Nobody was worked on more than one band.</p>'
-    return ('<div class="lc"><div class="lc-card"><h4>Who followed you</h4>'
-            f'<p class="sub">{followers_headline(rep)}</p>'
-            f'<div class="lc-two"><div>{ladder}</div><div class="lc-facts">{"".join(facts)}</div></div></div></div>')
+    head = f'<div class="lc"><div class="lc-card"><h4>Who followed you</h4><p class="sub">{followers_headline(rep)}</p>'
+    if not len(rep):                                   # the headline already says nobody was worked on more than one band: no second sentence, no empty column
+        return head + f'<div class="lc-facts">{"".join(facts)}</div></div></div>'
+    ladder = ladder_html(rep, bands_top_down(log), rows)
+    return head + f'<div class="lc-two"><div>{ladder}</div><div class="lc-facts">{"".join(facts)}</div></div></div></div>'

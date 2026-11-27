@@ -43,7 +43,7 @@ def _azimuth_single_section(spots, locs, home, callsign, noun, units, scale):
     k = KM_PER_MILE if units == "mi" else 1
     far = pts.loc[pts["km"].idxmax()]
     beyond = int((pts["km"] > radius).sum())
-    heard = (f"**{len(pts)}** dots, one for each {noun} on each band it heard you on ({spots['spotter'].nunique()} different {noun}s)."
+    heard = (f"**{len(pts)}** dots, one for each {noun} on each band it heard you on ({spots['spotter'].map(lambda c: str(c).split('-')[0].upper()).nunique()} different {noun}s; one with several receivers counts once)."
              if bands > 1 else f"**{len(pts)}** {noun}s heard you.")
     info_col.markdown(f"{heard} Farthest: **{far['km'] / k:,.0f} {units}**."
                       + (f" {beyond} beyond this view." if beyond else ""))

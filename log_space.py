@@ -103,6 +103,16 @@ def activity_runs(log, gap_min=RUN_GAP_MIN):
     return out
 
 
+def bands_overlapping(runs, begin, end):
+    """The bands with a logged stretch that overlaps a flare's whole interval, from its beginning to its end (highest first, without repeats). A stretch counts when any of it falls in
+    the interval: the flare's peak can be between two sessions while the flare itself ran into one of them."""
+    seen = []
+    for band, a, b, _ in runs:
+        if a <= end and b >= begin and band not in seen:
+            seen.append(band)
+    return seen
+
+
 def bands_active_at(runs, when, slack_min=5):
     """The bands with logged activity at a moment (within `slack_min` minutes of a stretch), highest first, without repeats."""
     seen = []
@@ -125,7 +135,7 @@ def kp_text(kp):
 
 def flux_label(flux):
     """A short word for the solar flux, from the same bands as the page's flux sentence."""
-    return "Very low" if flux < 70 else "Low" if flux < 90 else "Fair" if flux < 120 else "Good" if flux < 150 else "Very good" if flux < 200 else "Excellent"
+    return "Very low" if flux < 70 else "Low" if flux < 90 else "Moderate" if flux < 120 else "Elevated" if flux < 150 else "High" if flux < 200 else "Very high"
 
 
 def flux_note(flux):
@@ -187,9 +197,11 @@ def facts(log, wx, home):
     if top:
         peak, cls = top
         bands = bands_active_at(runs, peak)
-        focus = {"peak": peak, "class": cls, "level": r_level(cls), "bands": bands, "light": daylight_state(sun_elevation(lat, lon, peak)),
-                 "detail": (wx.get("flare_details") or {}).get(peak) or {}}
-    out = {"start": start, "end": end, "kp": kp, "kp_peak": max(kp_session, key=lambda p: p[1]) if kp_session else None, "flux": (sum(v for _, v in flux_days) / len(flux_days)) if flux_days else (latest[1] if latest else None),
+        detail = (wx.get("flare_details") or {}).get(peak) or {}
+        begin, finish = detail.get("begin"), detail.get("end")
+        overlap = bands_overlapping(runs, begin, finish) if begin is not None and finish is not None else []
+        focus = {"peak": peak, "class": cls, "level": r_level(cls), "bands": bands, "overlap": overlap, "light": daylight_state(sun_elevation(lat, lon, peak)), "detail": detail}
+    out = {"start": start, "end": end, "kp": kp, "kp_session": kp_session, "kp_peak": max(kp_session, key=lambda p: p[1]) if kp_session else None, "flux": (sum(v for _, v in flux_days) / len(flux_days)) if flux_days else (latest[1] if latest else None),
            "flux_days": flux_days, "flux_latest": latest, "flares": flares, "flare_source": wx.get("flare_source"), "flare_details": wx.get("flare_details") or {}, "focus": focus, "runs": runs,
            "segments": segments, "events": sun_events(lat, lon, start, end), "contacts_by_light": contacts_light, "home": (lat, lon), "contacts": len(log)}
     out["headline"] = headline(out)
@@ -228,6 +240,10 @@ def headline(f):
     elif focus and focus["level"]:
         if focus["bands"]:
             parts.append(f"{article(focus['class']).capitalize()} {focus['class']} flare peaked at {_clock(focus['peak'], span)} UTC during your logged {focus['bands'][0]} activity.")
+        elif focus["overlap"]:
+            d = focus["detail"]
+            parts.append(f"{article(focus['class']).capitalize()} {focus['class']} flare peaked at {_clock(focus['peak'], span)} UTC, between your logged sessions; it ran from "
+                         f"{_clock(d['begin'], span)} to {_clock(d['end'], span)} UTC and overlapped your logged {focus['overlap'][0]} activity.")
         else:
             parts.append(f"{article(focus['class']).capitalize()} {focus['class']} flare peaked at {_clock(focus['peak'], span)} UTC, outside your logged activity.")
     else:

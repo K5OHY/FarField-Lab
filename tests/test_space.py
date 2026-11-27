@@ -54,7 +54,7 @@ class TheReadings(unittest.TestCase):
     def test_the_words_follow_noaas_scales(self):
         self.assertEqual([ls.kp_label(k) for k in (1.0, 2.67, 3.0, 4.33, 5.0, 7.0, 9.0)], ["Quiet", "Quiet", "Unsettled", "Active", "Storm G1", "Storm G3", "Storm G5"])
         self.assertEqual([ls.r_level(c) for c in ("C9.9", "M1.0", "M4.9", "M5.0", "X1.0", "X10", "X20.5")], ["", "R1", "R1", "R2", "R3", "R4", "R5"])
-        self.assertEqual([ls.flux_label(f) for f in (60, 80, 110, 140, 180, 233)], ["Very low", "Low", "Fair", "Good", "Very good", "Excellent"])
+        self.assertEqual([ls.flux_label(f) for f in (60, 80, 110, 140, 180, 233)], ["Very low", "Low", "Moderate", "Elevated", "High", "Very high"])
         self.assertEqual([ls.article(c) for c in ("M2.1", "X1.0", "C4.9", "B1.0")], ["an", "an", "a", "a"])
 
     def test_the_strongest_flare_is_the_biggest_and_then_the_earliest(self):

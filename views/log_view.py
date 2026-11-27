@@ -757,7 +757,7 @@ def _glance(park_cards, rep, spots, skimmers, home, headline, result):
     if spots is not None and len(spots):
         sk = lo.skimmer_table(spots, skimmers, home)
         bands = lc.bands_top_down(spots)
-        text = f"{spots['spotter'].nunique()} RBN skimmers spotted you, on {', '.join(bands)}."
+        text = f"{lreach.reporter_count(spots)} RBN skimmers spotted you, on {', '.join(bands)}."
         if len(sk):
             far = sk.loc[sk["km"].idxmax()]
             text += f" The farthest was {far['who']}, {far['km']:,.0f} km ({far['km'] / 1.609344:,.0f} mi) away."
