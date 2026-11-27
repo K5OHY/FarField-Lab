@@ -465,6 +465,30 @@ Next time, just run the last command again. Open http://localhost:8501 if the br
 
 The skimmer list refreshes itself every 24 hours, from RBN's node list and, for any skimmer RBN's page could not give (or when it cannot be read from the server), from [HamQTH.com](https://www.hamqth.com)'s copy of it (data provided by HamQTH.com); a skimmer that has since dropped off is kept. To force it: `.venv\Scripts\python rbn_to_csv.py` (macOS/Linux: `.venv/bin/python rbn_to_csv.py`).
 
+### Optional keys for your own copy
+
+The app works without any key. Two free keys make the Log page a little better, and each one is only used for that:
+
+| Key | What it adds | Without it |
+|---|---|---|
+| `HAMQTH_API_KEY` | Places a station outside North America at its callbook home instead of the middle of its call area. | It uses the call area, as it always did. |
+| `NASA_API_KEY` | The "why" under a geomagnetic storm: which ejections NASA's DONKI links to it. | It uses NASA's shared demo key, which allows only about 10 requests an hour for everyone, so the "why" is often missing and the story says it could not be read. Kp, flux and flares still show. |
+
+**HamQTH.** You need a free HamQTH account ([register here](https://www.hamqth.com/register)). Sign in, open your settings (Modify profile, then Account & privacy), choose **Apps and API keys**, and make a key. Give it a name such as "FarField Lab". It starts with `hqk_`. HamQTH's own description is on its [developers page](https://www.hamqth.com/developers.php). A key does not expire and can be revoked there at any time, and it has the same rights as your password, so treat it like one.
+
+**NASA.** Fill in the "Generate API Key" form at [api.nasa.gov](https://api.nasa.gov). The key is shown at once and emailed to you.
+
+**Where to put them.** Make a file called `secrets.toml` in the `.streamlit` folder of the project (create the folder if it is missing), with one line for each key you have:
+
+```toml
+HAMQTH_API_KEY = "paste your HamQTH key here"
+NASA_API_KEY = "paste your NASA key here"
+```
+
+That file is listed in `.gitignore`, so git never uploads it. Do not put a key in the code, in a commit, in a screenshot or in a message to anyone. Instead of the file you can set an environment variable for one window, for example in PowerShell `$env:NASA_API_KEY = "..."`. Restart the app after adding a key.
+
+To check that a key works without showing it, run `.venv\Scripts\python check_hamqth_key.py` or `.venv\Scripts\python check_nasa_key.py` (macOS/Linux: `.venv/bin/python ...`). Each prints only whether the key was accepted. If you host your own copy on Streamlit Community Cloud, paste the same lines into the app's **Settings, Secrets** box instead of a file.
+
 ## Help inside the app
 
 The **Help and README** page in the app opens with the same four tasks as the home page, then has one tab for each part of this README (My spots, Compare antennas, Band conditions, Log analysis, Troubleshooting, Deep dive), with the long explanations folded closed. The sidebar has a link to the README and code on GitHub.
