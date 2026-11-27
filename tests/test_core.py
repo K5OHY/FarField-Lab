@@ -1804,70 +1804,11 @@ class LogCheckReportsAndPlaces(unittest.TestCase):
         self.assertIsNone(wx["kp"])                                                             # a feed that fails is None, nothing raises
         self.assertIsNotNone(wx["flares"])
 
-    def test_the_space_weather_lines_state_the_facts(self):
-        start, end = pd.Timestamp("2026-11-12 14:00"), pd.Timestamp("2026-11-12 22:00")
-        quiet = {"kp": [(pd.Timestamp("2026-11-12 12:00"), 1.0), (pd.Timestamp("2026-11-12 15:00"), 2.0)], "flux": [(pd.Timestamp("2026-11-12"), 115.5)],
-                 "flares": [(pd.Timestamp("2026-11-12 19:00"), "C4.9")]}
-        text = " ".join(a + " " + b for a, b in lc.space_notes(quiet, start, end))
-        self.assertIn("Kp stayed at 2 or lower (quiet).", text)
-        self.assertIn("Solar flux was about 116.", text)
-        self.assertIn("No M or X flares. The strongest flare was C4.9", text)
-        stormy = dict(quiet, kp=[(pd.Timestamp("2026-11-12 18:00"), 5.0)], flares=[(pd.Timestamp("2026-11-12 15:12"), "M2.3"), (pd.Timestamp("2026-11-12 17:00"), "X1.0")])
-        text = " ".join(a + " " + b for a, b in lc.space_notes(stormy, start, end))
-        self.assertIn("Kp reached 5 (a geomagnetic storm, G1) in the three hours from 18:00Z.", text)
-        self.assertIn("A flare of class X1.0 peaked at 17:00Z (one of 2 M or X flares).", text)
-        old = lc.space_notes(dict(quiet, flares=None), start, end)
-        self.assertIn("Flares are not shown.", [a for a, _ in old])
-        self.assertNotIn("should", text)                                                        # no advice
-        after = dict(quiet, kp=[(pd.Timestamp("2026-11-12 12:00"), 1.0), (pd.Timestamp("2026-11-12 22:00"), 5.0)],
-                     flux=[(pd.Timestamp("2026-11-12"), 115.5), (pd.Timestamp("2026-11-13"), 140.0)], flares=[(pd.Timestamp("2026-11-12 23:00"), "X2.0")])
-        text = " ".join(a + " " + b for a, b in lc.space_notes(after, start, pd.Timestamp("2026-11-12 21:30")))
-        self.assertIn("Kp stayed at 1 or lower", text)                                           # the Kp 5 step began after the session ended
-        self.assertIn("Solar flux was about 116.", text)                                         # the next day's flux is not the session's
-        self.assertIn("No flares were listed.", text)                                         # and neither is a flare after the last contact
-
-    def test_the_space_weather_picture_shows_kp_flares_and_your_contacts(self):
-        log = self.cond_log()
-        start, end = lc.space_span(log)
-        self.assertEqual((start, end), (pd.Timestamp("2026-11-18 19:00"), pd.Timestamp("2026-11-18 23:00")))
-        wx = {"kp": [(pd.Timestamp("2026-11-18 18:00"), 1.0), (pd.Timestamp("2026-11-18 21:00"), 5.0)], "flux": [(pd.Timestamp("2026-11-18"), 120.0)],
-              "flares": [(pd.Timestamp("2026-11-18 20:30"), "M1.5"), (pd.Timestamp("2026-11-18 21:30"), "C2.0")]}
-        html = lh.space_weather_html(wx, log, lc.space_notes(wx, start, end))
-        self.assertIn("Space weather during your session", html)
-        self.assertEqual(html.count('class="lc-kp"'), 2)
-        self.assertIn("rgb(76,175,80)", html)                                                    # a quiet step is green
-        self.assertIn("rgb(210,80,80)", html)                                                    # Kp 5 is red
-        self.assertIn("M1.5 flare: R1, a minor radio blackout. Peak 20:30Z.", html)           # with no times from NOAA it still says the class, what it means and the peak
-        self.assertIn('class="lc-fn"', html)                                                     # an M flare is labelled beside its dot
-        self.assertEqual(html.count('class="lc-fn"'), 1)                                         # a C flare is not
-        self.assertEqual(html.count('class="lc-kq"'), 3)                                         # the contacts fall in 3 half hours
-        self.assertEqual(lh.space_weather_html({"kp": None, "flux": None, "flares": None}, log, []), "")
-
-    def test_a_flare_says_when_it_began_peaked_and_ended_and_where_it_came_from_when_hovered(self):
-        log = self.cond_log()
-        start, end = lc.space_span(log)
-        peak = pd.Timestamp("2026-11-18 20:30")
-        detail = {peak: {"begin": pd.Timestamp("2026-11-18 20:10"), "end": pd.Timestamp("2026-11-18 20:55"), "region": "4301"}}
-        wx = {"kp": [(pd.Timestamp("2026-11-18 18:00"), 1.0)], "flux": [(pd.Timestamp("2026-11-18"), 120.0)], "flares": [(peak, "X1.2")], "flare_details": detail}
-        html = lh.space_weather_html(wx, log, [])
-        for text in ("X1.2 flare: R3, a strong radio blackout.", "Began 20:10Z. Peak 20:30Z. Ended 20:55Z (45 min in all).", "Active region 4301.",
-                     "Your log has 2 contacts between its beginning and its end."):
-            self.assertIn(text, html)
-        self.assertIn("width:18px", html)                                                        # an X flare is a big dot, and the smallest is no longer a speck
-        small = lh.space_weather_html(dict(wx, flares=[(peak, "B2.0")], flare_details={}), log, "")
-        self.assertIn("width:11px", small)
-
     def test_flare_levels_follow_noaas_radio_blackout_scale(self):
         self.assertEqual([sw.flare_level(c) for c in ("C9.9", "M1.0", "M4.9", "M5.0", "X1.0", "X10.0", "X20.0")],
                          ["too small to affect HF", "R1, a minor radio blackout", "R1, a minor radio blackout", "R2, a moderate radio blackout",
                           "R3, a strong radio blackout", "R4, a severe radio blackout", "R5, an extreme radio blackout"])
         self.assertEqual(sw.flare_level(""), "")
-
-    def test_no_flares_listed_and_flares_not_available_are_said_differently(self):
-        log = self.cond_log()
-        wx = {"kp": [(pd.Timestamp("2026-11-18 18:00"), 1.0)], "flux": None, "flares": []}
-        self.assertIn("No flares were listed for these hours.", lh.space_weather_html(wx, log, []))
-        self.assertIn("NOAA no longer lists flares for these hours.", lh.space_weather_html(dict(wx, flares=None), log, []))
 
     def pota_log(self):
         def rec(call, day, hhmm, mode, extra):

@@ -15,6 +15,8 @@ import log_foundations as lf
 import log_highlights as hl
 import log_openings as lo
 import log_reach as lreach
+import log_space as lsp
+import log_space_html as lsh
 import share_card as sc
 import space_weather as sw
 from compare_stats import locate as skimmer_location
@@ -961,7 +963,7 @@ def log_page():
         if len(days) <= MAX_DAYS:
             first_t, last_t = lc.space_span(log)
             weather = _space_history(str(first_t), str(last_t))
-            weather_html = lh.space_weather_html(weather, log, lc.space_notes(weather, log["time"].min(), log["time"].max()))
+            weather_html = lsh.space_html(lsp.facts(log, weather, home), BAND_COLORS)
             if weather_html:
                 st.html(lh.CSS + weather_html)
     with work:

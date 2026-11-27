@@ -55,7 +55,7 @@ def history(start, end, timeout=20):
     flux), and 'flares' as (time of the peak, class such as 'C2.1') from the X-ray events NOAA still lists. Each part is None when it could not
     be read; 'flares' is also None when the stretch is older than NOAA's list. Never raises."""
     start, end = pd.Timestamp(start), pd.Timestamp(end)
-    out = {"kp": None, "flux": None, "flares": None, "flare_details": {}}
+    out = {"kp": None, "flux": None, "flares": None, "flare_details": {}, "flare_source": None, "flux_latest": None}
     try:
         out["kp"] = [(t, v) for t, v in _gfz("Kp", start.floor("D"), end.ceil("D"), timeout) if t + timedelta(hours=3) > start and t < end]
     except Exception:
@@ -64,6 +64,8 @@ def history(start, end, timeout=20):
         out["flux"] = [(t, v) for t, v in _gfz("Fobs", start.floor("D"), end.ceil("D"), timeout) if v > 0]
     except Exception:
         pass
+    if out["flux"] is not None and not out["flux"]:                  # the day's flux is not out yet (it is measured at local noon in Canada and published later): the latest earlier one
+        out["flux_latest"] = latest_flux(start, timeout)
     try:
         resp = requests.get(SWPC + EVENTS, headers=HEADERS, timeout=timeout)
         resp.raise_for_status()
@@ -82,9 +84,94 @@ def history(start, end, timeout=20):
                             details[peak] = {"begin": _stamp(e.get("begin_datetime")), "end": _stamp(e.get("end_datetime")), "region": str(e.get("region") or "").strip()}
             out["flares"] = sorted(seen.items())
             out["flare_details"] = details
+            out["flare_source"] = "NOAA SWPC's list of solar events"
     except Exception:
         pass
+    if out["flares"] is None:                                       # NOAA's own list only reaches back about a month: older days come from the HEK
+        found = hek_flares(start, end, timeout)
+        if found is not None:
+            out["flares"], out["flare_details"] = found
+            out["flare_source"] = "NASA's heliophysics event service (the HEK), carrying NOAA SWPC's flare list"
     return out
+
+
+HEK = "https://www.lmsal.com/hek/her"           # NASA's heliophysics event service (run by Lockheed Martin's solar lab): free, no key, flares back many years
+HEK_FEEDER = "SWPC"                              # the entries it carries from NOAA's own flare list, with NOAA's class and times
+
+
+def _flare_rank(cls):
+    return ("ABCMX".index(cls[:1]), float(cls[1:] or 0))
+
+
+def merge_flares(rows):
+    """One flare for each peak minute from a list of the same flare reported more than once, as the HEK does ((peak, class, begin, end, region) tuples, region 0 or
+    empty when NOAA did not give one). Where the entries disagree about the class, the one NOAA tied to an active region wins, then the commonest class, then the
+    lower class (a saturated reading can show a flare as far bigger than it was). Returns ([(peak, class)], {peak: {begin, end, region}}) in time order."""
+    from collections import Counter
+    groups = {}
+    for peak, cls, begin, end, region in rows:
+        groups.setdefault(pd.Timestamp(peak).floor("min"), []).append((cls, begin, end, str(region or "").strip()))
+    flares, details = [], {}
+    for peak, group in sorted(groups.items()):
+        with_region = [g for g in group if g[3] not in ("", "0")] or group
+        counts = Counter(g[0] for g in with_region)
+        cls = max(counts, key=lambda c: (counts[c], -_flare_rank(c)[0], -_flare_rank(c)[1]))
+        chosen = [g for g in with_region if g[0] == cls]
+        begins, ends = [g[1] for g in chosen if g[1] is not None], [g[2] for g in chosen if g[2] is not None]
+        flares.append((peak, cls))
+        details[peak] = {"begin": min(begins) if begins else None, "end": max(ends) if ends else None, "region": next((g[3] for g in chosen if g[3] not in ("", "0")), "")}
+    return flares, details
+
+
+def hek_flares(start, end, timeout=30):
+    """The flares whose peak fell between two naive UTC times, from NASA's HEK, as ([(peak, class)], details), or None when it could not be read. Only the dates are sent.
+    A stretch that ended more than two days ago will not change, so its answer is kept on disk."""
+    import json
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    key = f"{start:%Y%m%d%H}-{end:%Y%m%d%H}"
+    settled = end < pd.Timestamp.now("UTC").tz_localize(None) - timedelta(days=2)
+    try:
+        import disk_cache
+        raw = disk_cache.get_bytes("hekflares", key) if settled else None
+        if raw is None:
+            params = {"cosec": 2, "cmd": "search", "type": "column", "event_type": "fl", "event_coordsys": "helioprojective", "x1": -1200, "x2": 1200, "y1": -1200, "y2": 1200,
+                      "event_starttime": f"{start - timedelta(hours=3):%Y-%m-%dT%H:%M:%S}", "event_endtime": f"{end + timedelta(hours=1):%Y-%m-%dT%H:%M:%S}",
+                      "result_limit": 2000, "return": "event_starttime,event_peaktime,event_endtime,fl_goescls,frm_name,ar_noaanum"}
+            resp = requests.get(HEK, params=params, headers=HEADERS, timeout=timeout)
+            resp.raise_for_status()
+            result = resp.json()["result"]
+            raw = json.dumps(result).encode("utf-8")
+            if settled:
+                disk_cache.put_bytes("hekflares", key, raw)
+        rows = []
+        for e in json.loads(raw):
+            cls = (e.get("fl_goescls") or "").strip()
+            if e.get("frm_name") != HEK_FEEDER or cls[:1] not in ("A", "B", "C", "M", "X") or not e.get("event_peaktime"):
+                continue
+            float(cls[1:] or 0)
+            rows.append((pd.Timestamp(e["event_peaktime"]), cls, _stamp(e.get("event_starttime")), _stamp(e.get("event_endtime")), e.get("ar_noaanum")))
+        flares, details = merge_flares(rows)
+        keep = [(t, c) for t, c in flares if start <= t <= end]
+        return keep, {t: details[t] for t, _ in keep}
+    except Exception:
+        return None
+
+
+def latest_flux(before, timeout=20):
+    """(day, flux) of the latest daily solar flux before a time, from GFZ Potsdam or else NOAA's 30 day list, or None. For a session on a day whose own flux is not published yet."""
+    before = pd.Timestamp(before)
+    try:
+        found = [(t, v) for t, v in _gfz("Fobs", before.floor("D") - timedelta(days=6), before.floor("D"), timeout) if v > 0 and t < before.floor("D") + timedelta(days=1)]
+        if found:
+            return found[-1]
+    except Exception:
+        pass
+    try:
+        rows = [(pd.Timestamp(r["time_tag"]).floor("D"), float(r["flux"])) for r in _get("flux30", timeout) if r.get("flux")]
+        rows = [(t, v) for t, v in rows if t <= before.floor("D")]
+        return rows[-1] if rows else None
+    except Exception:
+        return None
 
 
 def _stamp(text):

@@ -1351,53 +1351,9 @@ def dx_notes(grid, power_w, max_lines=9, view="estimate"):
     return notes[:max_lines]
 
 
-def _k(v):
-    return f"{v:.0f}" if abs(v - round(v)) < 0.17 else f"{v:.1f}"
-
-
-def _kp_word(k):
-    return "quiet" if k < 3 else "unsettled" if k < 4 else "active" if k < 5 else f"a geomagnetic storm, G{int(k) - 4}"
-
-
 def space_span(log):
     """The stretch of time the space weather is shown for: from an hour before the first contact to an hour after the last."""
     return log["time"].min().floor("h") - timedelta(hours=1), log["time"].max().ceil("h") + timedelta(hours=1)
-
-
-def space_notes(wx, start, end):
-    """What the space weather did between `start` and `end` (the first and last contact), as (lead, rest) pairs: the highest Kp, the solar flux,
-    and the flares. `wx` is space_weather.history. Kp and flares are worldwide figures, so they say whether something unusual was going on, not what worked near you."""
-    notes = []
-    when = (lambda t: f"{t:%d %b %H:%M}Z") if (end - start) > timedelta(hours=30) else (lambda t: f"{t:%H:%M}Z")
-    kp = [(t, v) for t, v in (wx.get("kp") or []) if t + timedelta(hours=3) > start and t < end]       # only the steps that touch the session itself
-    if kp:
-        t, top = max(kp, key=lambda p: p[1])
-        if top < 3:
-            notes.append((f"Kp stayed at {_k(top)} or lower (quiet).", "The magnetic field was calm for the whole session."))
-        else:
-            notes.append((f"Kp reached {_k(top)} ({_kp_word(top)}) in the three hours from {when(t)}.",
-                          "Geomagnetic disturbance can weaken HF paths that cross the polar regions. Kp is worldwide, so the picture above is what worked near you."))
-    flux = [v for t, v in (wx.get("flux") or []) if start.normalize() <= t <= end]      # the days the session fell on
-    if flux:
-        lo, hi = min(flux), max(flux)
-        notes.append((f"Solar flux was about {sum(flux) / len(flux):.0f}.", f"Daily readings from {lo:.0f} to {hi:.0f}; the higher it is, the more the upper bands tend to open."
-                      if hi - lo >= 1 else "The higher it is, the more the upper bands tend to open."))
-    flares = wx.get("flares")
-    if flares is None:
-        if wx.get("kp") is not None or wx.get("flux") is not None:
-            notes.append(("Flares are not shown.", "NOAA keeps its flare list for about a month, or it could not be read."))
-    else:
-        flares = [(t, c) for t, c in flares if start <= t <= end]
-        big = [(t, c) for t, c in flares if c[:1] in ("M", "X")]
-        if big:
-            t, c = max(big, key=lambda p: ("MX".index(p[1][:1]), float(p[1][1:] or 0)))
-            notes.append((f"A flare of class {c} peaked at {when(t)}" + (f" (one of {len(big)} M or X flares)." if len(big) > 1 else "."),
-                          "A flare like that can fade HF for a while on the sunlit side of the earth. It does not affect every path."))
-        else:
-            top = max(flares, key=lambda p: ("ABCMX".index(p[1][:1]), float(p[1][1:] or 0)))[1] if flares else None
-            notes.append(("No M or X flares." if top else "No flares were listed.",
-                          f"The strongest flare was {top}, too small to matter for HF." if top else "The X-ray flux stayed low."))
-    return notes
 
 
 def _pc(x):

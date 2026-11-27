@@ -124,11 +124,6 @@ CSS = """<style>
 .lc-key .sw{display:inline-flex;align-items:center;gap:6px}.lc-key .sw b{display:inline-block;width:22px;height:13px;border-radius:4px;border:1px solid var(--line)}
 .lc-reg{border-collapse:collapse;width:100%;font-size:13.5px}.lc-reg td,.lc-reg th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
 .lc-reg th{font-weight:600;font-size:12px;opacity:.7}.lc-reg small{opacity:.65}
-.lc-kp{position:absolute;bottom:6px;border-radius:2px 2px 0 0}.lc-storm{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgb(230,120,40);opacity:.8}
-.lc-fl{position:absolute;top:50%;border-radius:50%;border:1px solid Canvas}.lc-fn{position:absolute;top:2px;transform:translateX(-50%);font-size:10.5px;font-weight:700;opacity:.8;pointer-events:none}
-.lc-fnone{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.55}
-.lc-fl{cursor:help}.lc-fl:focus{outline:2px solid rgb(32,178,170);outline-offset:2px}
-.lc-kq{position:absolute;bottom:6px;background:var(--a);border-radius:1.5px 1.5px 0 0}
 .lc-card a{color:inherit;text-decoration:underline}
 [id^="sec-"]{scroll-margin-top:72px}
 .lc-hl{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:10px}.lc-hl h5{margin:0 0 6px;font-size:14px}
@@ -694,75 +689,6 @@ def balance_html(bal):
             f'{BALANCE_MIN} contacts with a report both ways before it says anything.</p>'
             '<div class="lc-cgw"><table class="lc-reg"><tr><th>Band</th><th>Contacts with reports both ways</th><th>They gave you</th><th>You gave them</th>'
             '<th>Difference</th><th>Reading</th></tr>' + "".join(rows) + "</table></div></div></div>")
-
-
-KP_COLOURS = ("rgb(76,175,80)", "rgb(230,161,23)", "rgb(210,80,80)")
-
-
-def flare_title(cls, peak, detail, log):
-    """The hover text of a flare: its class and what that means for HF, when it began, peaked and ended, the active region it came from, and how many of your
-    contacts the log shows between its beginning and its end (a count, nothing more: it says nothing about cause)."""
-    from space_weather import flare_level
-    parts = [f"{cls} flare" + (f": {flare_level(cls)}." if flare_level(cls) else ".")]
-    begin, end = (detail or {}).get("begin"), (detail or {}).get("end")
-    when = f"Peak {peak:%H:%M}Z"
-    if begin is not None:
-        when = f"Began {begin:%H:%M}Z. " + when
-    if end is not None:
-        when += f". Ended {end:%H:%M}Z" + (f" ({int(round((end - begin).total_seconds() / 60))} min in all)" if begin is not None else "")
-    parts.append(when + ".")
-    if (detail or {}).get("region"):
-        parts.append(f"Active region {detail['region']}.")
-    if begin is not None and end is not None and len(log):
-        n = int(((log["time"] >= begin) & (log["time"] <= end)).sum())
-        parts.append(f"Your log has {n} contact{'s' if n != 1 else ''} between its beginning and its end.")
-    return " ".join(parts)
-
-
-def space_weather_html(wx, log, notes):
-    """The space weather over the session: Kp in 3 hour steps, the flares at their peak, and your contacts in the same hours, with the lines
-    that say it in words. Empty when nothing could be read."""
-    from log_check import space_span
-    if not (wx.get("kp") or wx.get("flux") or wx.get("flares")):
-        return ""
-    start, end = space_span(log)
-    minutes = (end - start).total_seconds() / 60
-    left = lambda t: max(0.0, min(100.0, (t - start).total_seconds() / 60 / minutes * 100))
-    ticks_t = list(_ticks(start, end))
-    ticks = "".join(f'<i class="lc-tick" style="left:{left(t):.3f}%"></i>' for t in ticks_t)
-    axis = "".join(f'<span style="left:{left(t):.3f}%">{t:%H:%M}Z</span>' for t in ticks_t)
-    kp = ""
-    for t, v in wx.get("kp") or []:
-        a, b = max(t, start), min(t + pd.Timedelta(hours=3), end)
-        colour = KP_COLOURS[0 if v < 3 else 1 if v < 5 else 2]
-        kp += (f'<i class="lc-kp" style="left:{left(a):.3f}%;width:calc({left(b) - left(a):.3f}% - 2px);height:{max(3.0, v / 9 * 44):.1f}px;background:{colour}" '
-               f'title="Kp {v:.1f}, the three hours from {t:%H:%M}Z"></i>')
-    flares = ""
-    details = wx.get("flare_details") or {}
-    for t, c in wx.get("flares") or []:
-        size = {"X": 18, "M": 15}.get(c[:1], 11)
-        colour = {"X": "rgb(210,80,80)", "M": "rgb(230,161,23)"}.get(c[:1], "rgb(140,140,140)")
-        flares += (f'<i class="lc-fl" tabindex="0" style="left:{left(t):.3f}%;width:{size}px;height:{size}px;margin:{-size / 2:.1f}px 0 0 {-size / 2:.1f}px;background:{colour}" '
-                   f'title="{escape(flare_title(c, t, details.get(t), log))}"></i>')
-        if c[:1] in ("M", "X"):                    # the bigger flares carry their class beside the dot, so they can be read without hovering
-            flares += f'<span class="lc-fn" style="left:{left(t):.3f}%">{escape(c)}</span>'
-    if not flares:
-        note = "No flares were listed for these hours." if wx.get("flares") is not None else "NOAA no longer lists flares for these hours."
-        flares = f'<span class="lc-fnone">{note}</span>' + ""
-    slot = log.assign(slot=log["time"].dt.floor("30min")).groupby("slot").size()
-    top = max(int(slot.max()), 1) if len(slot) else 1
-    bars = "".join(f'<i class="lc-kq" style="left:{left(t):.3f}%;width:calc({30 / minutes * 100:.3f}% - 1px);height:{max(2.0, n / top * 30):.1f}px" '
-                   f'title="{n} contacts, {t:%H:%M}Z"></i>' for t, n in slot.items())
-    lane = lambda label, body, h: (f'<div class="lc-lane"><div class="lc-lab" style="padding-top:{h // 2 - 8}px"><b>{label}</b></div>'
-                                   f'<div class="lc-plot" style="height:{h}px">{ticks}{body}</div></div>')
-    says = ("<ul class=\"lc-says\">" + "".join(f"<li><b>{escape(a)}</b> {escape(b)}</li>" for a, b in notes) + "</ul>") if notes else ""
-    storm = f'<i class="lc-storm" style="top:{50 - 5 / 9 * 44:.1f}px" title="Kp 5: a geomagnetic storm"></i>'
-    return ('<div class="lc"><div class="lc-card"><h4>Space weather during your session</h4>'
-            '<p class="sub">Kp is the worldwide measure of magnetic disturbance (0 is calm, 5 and above is a storm), shown in three-hour steps; the dots are solar flares at '
-            'their peak (grey C, amber M, red X). Your contacts are along the bottom. These are worldwide figures: they say whether something unusual was going on, '
-            'not what worked near you. Times are UTC.</p>'
-            '<div class="lc-chart">' + lane("Kp", kp + storm, 56) + lane("Flares", flares, 40) + lane("Contacts", bars, 40)
-            + f'<div class="lc-axis">{axis}</div></div>' + says + '</div></div>')
 
 
 def _pota_date(text):
