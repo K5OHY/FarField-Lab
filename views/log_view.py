@@ -726,6 +726,15 @@ def _glance(park_cards, rep, spots, skimmers, home, headline, result):
     return lh.glance_html(items)
 
 
+def _clear_log():
+    """Takes the log off the page, an example or the visitor's own file: everything this page remembered about it goes (the file, the calculations, the maps, the power an example set),
+    and the uploader is made new, because a file chosen in an uploader stays in it otherwise and would be read again."""
+    n = st.session_state.get("log_upload_n", 0)
+    for key in [k for k in st.session_state if k.startswith("log_") and k != "log_upload_n"]:
+        del st.session_state[key]
+    st.session_state["log_upload_n"] = n + 1
+
+
 def _open_example(key):
     """Loads an example log as if it had been uploaded, with the power it was made with."""
     example = log_examples.get(key)
@@ -772,7 +781,7 @@ def _example_banner(name):
             st.link_button("Watch the video", example["video"], icon=":material/play_circle:")
         plan = st.session_state.get("log_power_plan")
         st.caption((f"The power changes during this log ({lf.PowerPlan(plan).words()}) and the estimates follow it. " if plan else "The power above is set to what this log was made with. ")
-                   + "Upload your own log to replace it.")
+                   + "Upload your own log to replace it, or clear it to start over.")
 
 
 def log_page():
@@ -794,7 +803,7 @@ def log_page():
         power = lf.PowerPlan(plan_steps)
         power_box.caption(f"Changes during this log: {power.words()}.")
     # No file-type filter on purpose: iPhones and iPads do not know .adi, so a filter greys out every log in the picker. A file that is not a log is caught below.
-    file = file_box.file_uploader("Your log (ADIF file, .adi or .adif)", key="log_file",
+    file = file_box.file_uploader("Your log (ADIF file, .adi or .adif)", key=f"log_file_{st.session_state.get('log_upload_n', 0)}",
                                   help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
                                        "which is many thousands of contacts. The log is used for this visit only and is not saved or shared.")
     if file is not None and st.session_state.get("log_file_id") != file.file_id:        # a file that was just chosen replaces what is on the page, an example included
@@ -812,9 +821,11 @@ def log_page():
         preview("log", "What you get: where the skimmers heard you on a band, beside the stations you worked on it. Here, a POTA activation on 20m.")
         return
     name, raw = saved
+    st.button("Clear this log and start over", key="clear_log_button", on_click=_clear_log, icon=":material/restart_alt:",
+              help="Takes the log off the page, whether it is an example or your own file, and brings back the empty page with the examples. Nothing was saved anywhere.")
     _example_banner(name)
     if file is None and not st.session_state.get("log_example"):
-        st.caption(f"Showing {name}. Upload another file to replace it.")
+        st.caption(f"Showing {name}. Upload another file to replace it, or clear it to start over.")
     if len(raw) > MAX_LOG_BYTES:
         st.error("That file is larger than 5 MB. Export just the day or two you want to look at.")
         return

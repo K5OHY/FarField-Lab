@@ -250,6 +250,39 @@ class MySpotsPage(unittest.TestCase):
         self.assertTrue(any("Example log: A SOTA summit" in m.value for m in at.main.markdown))
         self.assertTrue(any("Read 91 contacts" in c.value for c in at.main.caption))
 
+    def test_a_loaded_log_can_be_cleared_to_start_over(self):
+        import log_examples
+        at = page("log_page").run()
+        self.assertNotIn("clear_log_button", {b.key for b in at.main.button})                 # nothing loaded, nothing to clear
+        first_uploader = [e.proto.id for e in at.get("file_uploader")]
+        {b.key: b for b in at.main.button}["open_example_sota-efhw"].click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["log_example"], "sota-efhw")
+        self.assertEqual(at.main.number_input[0].value, 5)
+        clear = {b.key: b for b in at.main.button}["clear_log_button"]
+        self.assertEqual(clear.label, "Clear this log and start over")
+        clear.click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        for gone in ("log_saved", "log_example", "log_power_plan", "log_spots", "log_result"):
+            self.assertNotIn(gone, at.session_state)
+        self.assertEqual(at.main.number_input[0].value, 100)                                    # the power an example set is gone too
+        self.assertEqual({b.label for b in at.main.button}, {"Open this example"})              # the empty page and its examples are back
+        self.assertEqual(len([b for b in at.main.button]), len(log_examples.manifest()))
+        self.assertTrue(any("Upload an ADIF log to begin" in i.value for i in at.info))
+        self.assertNotEqual([e.proto.id for e in at.get("file_uploader")], first_uploader)      # a new uploader, so the old file is not read again
+
+    def test_a_log_that_could_not_be_read_can_also_be_cleared(self):
+        at = page("log_page")
+        at.session_state["log_saved"] = ("notes.txt", b"just some words")
+        at.run()
+        self.assertIn("clear_log_button", {b.key for b in at.main.button})
+        {b.key: b for b in at.main.button}["clear_log_button"].click()
+        at.run()
+        self.assertNotIn("log_saved", at.session_state)
+        self.assertEqual(errors(at), [])
+
     def test_an_example_whose_power_changed_runs_on_its_plan_and_says_so(self):
         at = page("log_page").run()
         {b.key: b for b in at.main.button}["open_example_yagi-doublet"].click()
