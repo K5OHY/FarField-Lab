@@ -2,6 +2,7 @@
 and that the entry point stays small."""
 import importlib
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -9,6 +10,16 @@ import unittest
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODULES = ["ui_common", "data_sources", "maps", "charts", "pdfs", "views.compare_view", "views.spots_view",
            "views.conditions_view", "views.help_view", "web"]
+
+
+def docs_files():
+    """Every guide in docs/, as 'docs/name.md'."""
+    return [f"docs/{name}" for name in sorted(os.listdir(os.path.join(HERE, "docs"))) if name.endswith(".md")]
+
+
+def slug(heading):
+    """The anchor GitHub makes from a heading."""
+    return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
 
 
 class Structure(unittest.TestCase):
@@ -36,7 +47,7 @@ class Structure(unittest.TestCase):
 
     def test_the_log_page_is_called_log_analysis_everywhere_a_visitor_reads_it(self):
         """The page was first called Log check; the name a visitor sees is Log analysis, and the address /log stays so shared links keep working."""
-        for name in ("web.py", "README.md", "docs/METHODOLOGY.md", "share_card.py"):
+        for name in ("web.py", "README.md", "share_card.py", *docs_files()):
             with open(os.path.join(HERE, *name.split("/")), encoding="utf-8") as f:
                 text = f.read()
             self.assertNotIn("Log check", text, name)
@@ -48,11 +59,28 @@ class Structure(unittest.TestCase):
 
     def test_receivers_are_described_as_on_the_band_not_listening(self):
         """One word for the idea, everywhere a visitor reads it: a receiver that decoded something in your slots was 'on the band'."""
-        for name in ("views/compare_view.py", "README.md", "docs/METHODOLOGY.md"):
+        for name in ("views/compare_view.py", "README.md", *docs_files()):
             with open(os.path.join(HERE, *name.split("/")), encoding="utf-8") as f:
                 text = f.read()
             for phrase in ("were listening", "not listening", "Listening during", "listening during", "Who was listening"):
                 self.assertNotIn(phrase, text, f"{name} still says {phrase!r}")
+
+    def test_every_link_and_picture_in_the_readme_and_the_guides_points_at_something(self):
+        """A moved guide changes what its relative links are relative to. Every file, picture and heading a link names has to be there."""
+        for name in ("README.md", *docs_files()):
+            path = os.path.join(HERE, *name.split("/"))
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            for target in re.findall(r"\]\(([^)\s]+)\)", text):
+                if target.startswith(("http://", "https://", "mailto:")):
+                    continue
+                where, _, anchor = target.partition("#")
+                other = os.path.normpath(os.path.join(os.path.dirname(path), where)) if where else path
+                self.assertTrue(os.path.exists(other), f"{name}: {target} points at nothing")
+                if anchor and other.endswith(".md"):
+                    with open(other, encoding="utf-8") as g:
+                        slugs = {slug(h) for h in re.findall(r"^#{1,6} (.+)$", g.read(), re.M)}
+                    self.assertIn(anchor, slugs, f"{name}: {target} names a heading that is not there")
 
     def test_the_entry_point_stays_small(self):
         with open(os.path.join(HERE, "web.py"), encoding="utf-8") as f:

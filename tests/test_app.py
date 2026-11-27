@@ -1503,21 +1503,43 @@ class HelpPage(unittest.TestCase):
             self.assertIn(ui_common.GUIDES[key]["purpose"], text, topic)
             self.assertIn(ui_common.GUIDES[key]["limits"], text, topic)   # the limits are not left in a folded block
 
-    def test_the_help_page_has_a_topic_for_each_part_and_loses_no_section_of_the_readme(self):
-        """The Help page splits the README into topics. A section added to the README later must still show up, and a link from one part
-        to another (which would go nowhere from inside a topic) must not be left as a dead link."""
+    def test_the_help_page_has_a_topic_for_each_part_and_loses_no_section_of_the_guides(self):
+        """The Help page shows the guide files in docs/. Every topic has its files, a section added to a guide later must still show up, and a link
+        from one part to another (which would go nowhere from inside a topic) must not be left as a dead link or as raw markdown."""
         import re
-        from views.help_view import TOPICS
+        from views.help_view import LINKED_NOT_SHOWN, TOPICS
         self.assertEqual(list(TOPICS), ["Start here", "My spots", "Compare antennas", "Band conditions", "Log analysis",
                                         "Troubleshooting", "About and methodology"])
-        shown = "\n".join(self._topic_text(topic)[1] for topic in TOPICS)
-        with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
-            readme = f.read()
-        for title in re.findall(r"^## (.+)$", readme, re.M):
-            if title not in ("What it looks like", "Quick start", "Log analysis", "Compare two antennas", "Band conditions now"):
-                self.assertIn(title, shown, f"README section {title!r} is missing from the Help page")   # (those three are the topics themselves)
-        self.assertNotIn("](#", shown)
-        self.assertIn("[Log analysis](#log-analysis)", readme)          # the README's own jump links cover every page
+        docs = os.path.join(HERE, "docs")
+        listed = {name for _, names in TOPICS.values() for name in names}
+        for name in listed:
+            with open(os.path.join(docs, name), encoding="utf-8") as f:
+                self.assertGreater(len(f.read().split()), 50, f"docs/{name} is empty")
+        for name in os.listdir(docs):
+            if name.endswith(".md") and name not in LINKED_NOT_SHOWN:
+                self.assertIn(name, listed, f"docs/{name} is not on any Help topic")
+        shown = chr(10).join(self._topic_text(topic)[1] for topic in TOPICS)
+        for name in listed:
+            with open(os.path.join(docs, name), encoding="utf-8") as f:
+                for title in re.findall(r"^## (.+)$", f.read(), re.M):
+                    if title not in ("Log analysis", "Compare two antennas", "Band conditions now"):          # (those three are the topics themselves)
+                        self.assertIn(title, shown, f"docs/{name} section {title!r} is missing from the Help page")
+        self.assertEqual(re.findall(r"\]\((?!https?://)[^)]*\)", shown), [], "a link inside Help that goes nowhere, or markdown shown raw")
+
+    def test_every_help_topic_draws_its_pictures(self):
+        """A picture in a guide is written relative to docs/ (../images/x.png) so it shows on GitHub; Help draws it from the app's own folder."""
+        import re
+        from views.help_view import TOPICS
+        for topic, (_, names) in TOPICS.items():
+            wanted = 0
+            for name in names:
+                with open(os.path.join(HERE, "docs", name), encoding="utf-8") as f:
+                    pictures = re.findall(r"^!\[[^\]]*\]\(((?:\.\./)?images/[^)]+)\)\s*$", f.read(), re.M)
+                for path in pictures:
+                    self.assertTrue(os.path.exists(os.path.join(HERE, path.replace("../", ""))), path)
+                wanted += len(pictures)
+            at, _ = self._topic_text(topic)
+            self.assertEqual(len(at.get("image")), 1 + wanted, f"{topic}: the brand strip and each picture in its guides")
 
     def test_the_help_topic_can_be_opened_from_a_link_and_from_a_see_also_button(self):
         at = page("help_page")
