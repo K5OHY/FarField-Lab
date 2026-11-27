@@ -11,6 +11,7 @@ import streamlit as st
 
 import disk_cache
 import example_data
+import frozen_data
 from conditions import fetch_nearby
 from log_check import _NORTH_AMERICA, finish_place, listening_from_zip
 from wspr_data import HEADERS
@@ -33,8 +34,15 @@ def rbn_day_zip(date):
     return raw
 
 
-@st.cache_data(show_spinner=False, ttl=3600)
 def download_rbn_day(date, callsign):
+    """One day of RBN history, only the spots of `callsign`: the saved copy when an example log holds this callsign and day, else the download. The saved copy is
+    asked first and is not cached here, because two examples can be cut from one day of one callsign and each has its own stretch of spots."""
+    saved = frozen_data.spots(date, callsign)
+    return saved if saved is not None else _download_rbn_day(date, callsign)
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _download_rbn_day(date, callsign):
     """Download one day of RBN history and keep only spots of `callsign` (streamed, never written to disk)."""
     raw = rbn_day_zip(date)
 
@@ -164,6 +172,9 @@ def load_listening(band, start, end):
 def load_nearby(lat, lon, radius_km, start, end):
     """WSPR spots from every transmitter within `radius_km` of a point, as the Band conditions page uses them. Like load_wspr, a period
     that has ended is remembered on disk, because it will not change and wspr.live allows the whole site only 20 requests a minute."""
+    saved = frozen_data.nearby(lat, lon, radius_km, start, end)         # an example log's stretch, kept with the example
+    if saved is not None:
+        return saved
     key = f"{lat:.3f}|{lon:.3f}|{radius_km:.0f}|{pd.Timestamp(start):%Y-%m-%d %H:%M:%S}|{pd.Timestamp(end):%Y-%m-%d %H:%M:%S}"
     settled = _settled(end)
     if settled:
@@ -179,6 +190,9 @@ def load_nearby(lat, lon, radius_km, start, end):
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_rbn_listening(days, start, end):
     """The skimmers that spotted anyone between two times: (band, slot of 15 minutes, callsign). `days` are the YYYYMMDD files to read."""
+    saved = frozen_data.listening(days, start, end)                      # an example log's stretch, kept with the example
+    if saved is not None:
+        return saved
     frames = [listening_from_zip(rbn_day_zip(d), start, end) for d in days]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["band", "slot", "b"])
 

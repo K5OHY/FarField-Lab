@@ -773,6 +773,7 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
     spots = spots.assign(region=spots["b"].map(region_of_base))
     listening = None if listening is None or listening.empty else listening.assign(region=listening["b"].map(region_of_base)).dropna(subset=["region"])
     cells, matches, spotted_by_band, no_picture = [], [], {}, set()
+    power_by_band = {}       # the power each band was worked out for (it differs by band only when the log has a PowerPlan)
     on_sets, spot_sets = {}, {}     # the distinct skimmers on the band, and that spotted you, for each band and region
     for band, first, last, _ in stretches(own):
         t0, t1 = first - pd.Timedelta(minutes=WINDOW_PAD_MIN), last + pd.Timedelta(minutes=WINDOW_PAD_MIN)
@@ -780,7 +781,9 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
         spotted_by_band.setdefault(band, set()).update(g["b"])
         mid = t0 + (t1 - t0) / 2
         wspr = wspr_for(mid - timedelta(minutes=LOOKBACK_MIN), mid)
-        res = cond.analyze(wspr, home, power_w, mode, mid.to_pydatetime(), LOOKBACK_MIN, antenna_db, 3.0) if len(wspr) else None
+        power_then = lf.power_at(power_w, mid)               # a power that changed during the log is the power at the middle of this stretch
+        power_by_band.setdefault(band, power_then)
+        res = cond.analyze(wspr, home, power_then, mode, mid.to_pydatetime(), LOOKBACK_MIN, antenna_db, 3.0) if len(wspr) else None
         if res is None or res["bands"].empty or band not in res["bands"].index:
             no_picture.add(band)
             continue
@@ -838,7 +841,8 @@ def compare(log, spots, wspr_for, listening, locs, home, power_w, mode="CW", ant
                "spread_db": float(every.std()) if len(every) > 2 else float("nan"),
                "thin_listening": thin_listen, "thin_spotted": int(thin_cells["spotted"].sum()),
                "typical_offset_db": TYPICAL_OFFSET_DB}
-    return {"bands": bands, "regions": _regions(log, mode, cells, solid, on_sets, spot_sets), "overall": overall, "matches": match, "cells": cells}
+    return {"bands": bands, "regions": _regions(log, mode, cells, solid, on_sets, spot_sets), "overall": overall, "matches": match, "cells": cells,
+            "power_by_band": power_by_band}
 
 
 MATCH_COLUMNS = ["Band", "Receiving station", "Matches", "RBN report (dB)", "Estimated from WSPR (dB)", "Above (+) or below (-) the estimate (dB)"]
@@ -956,7 +960,7 @@ def conditions_grid(log, wspr_for, home, power_w, mode=None, antenna_db=0.0, bin
             if len(wspr):
                 inside = wspr[(wspr["time"] > window[0]) & (wspr["time"] <= window[1])]
                 behind = {band: lf.coverage(g) for band, g in inside.groupby("band")}
-            res = (cond.analyze(wspr, home, power_w, mode, window[1].to_pydatetime(), LOOKBACK_MIN,
+            res = (cond.analyze(wspr, home, lf.power_at(power_w, slot), mode, window[1].to_pydatetime(), LOOKBACK_MIN,
                                 antenna_db, 3.0) if len(wspr) else None)
             rec = res["receivers"] if res is not None else pd.DataFrame()
             if len(rec):

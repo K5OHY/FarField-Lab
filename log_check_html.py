@@ -359,7 +359,7 @@ def dx_windows_html(grid, notes, power_w, mode="CW", tz_name=None, view="estimat
                 marks = (f'<em><i></i>{r.contacts}</em>' if r.contacts else "") + ('<em class="st" title="a contact outside North America">&#9733;</em>' if r.dx_contacts else "") \
                     + ('<em title="a skimmer that far away spotted you"><u></u></em>' if r.rbn_far else "")
                 tip = (f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_heard} WSPR stations over {miles} miles decoded WSPR near you; {r.contacts} contacts" if observed else
-                       f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_good} WSPR stations over {miles} miles estimated strong enough for {power_w:g} W; {r.dx_heard} that far "
+                       f"{b} {pd.Timestamp(s):%H:%M}Z: {r.dx_good} WSPR stations over {miles} miles estimated strong enough for {_power_at_text(power_w, s)}; {r.dx_heard} that far "
                        f"decoded WSPR near you; {r.contacts} contacts")
                 cells.append(f'<div class="cell {kind}" title="{escape(tip)}"><span class="p">{n if n else "&ndash;"}</span>'
                              f'<span class="m">{marks}</span></div>')
@@ -1066,18 +1066,27 @@ def signal_example(table):
     return {"band": r["Band"], "rx": r["Receiving station"], "obs": obs, "est": est, "diff": obs - est, "after": obs - est - TYPICAL_OFFSET_DB}
 
 
+def _power_at_text(power_w, when):
+    """The power at one moment as the page writes it ('5 W'), for a box or a band, when the power changed during the log."""
+    from log_foundations import power_text
+    return power_text(power_w, when)
+
+
 def signal_math_html(power_w, mode, offset_db, example=None, thresholds=None):
     """How a bar is worked out, step by step, and what the power and the mode do to it: the power moves every estimate (and so every bar, the other way) dB for dB; the
     mode does not enter the bars at all, only the 'looked strong enough' test of the openings. `example` is one real match (signal_example)."""
     import math
-    dbm = 10 * math.log10(max(power_w, 1e-6) * 1000)
+    from log_foundations import PowerPlan
+    plan = isinstance(power_w, PowerPlan)
+    shown = float((example or {}).get("power_w") or power_w)          # the power the worked example was made for: its band's, when the log changed power
+    dbm = 10 * math.log10(max(shown, 1e-6) * 1000)
     tx_w, tx_snr = 5, -20.0
     tx_dbm = 10 * math.log10(tx_w * 1000)
     restated = tx_snr + (dbm - tx_dbm)
     real = ""
     if example:
         real = (f'<p class="sub"><b>One match from your log:</b> {escape(str(example["rx"]))} on {escape(str(example["band"]))}. The skimmer reported you at {example["obs"]:g} dB. '
-                f'The WSPR estimate for {power_w:g} W at that receiver was {example["est"]:g} dB. The difference is {example["obs"]:g} \u2212 ({example["est"]:g}) = {example["diff"]:+.1f} dB, '
+                f'The WSPR estimate for {shown:g} W at that receiver was {example["est"]:g} dB. The difference is {example["obs"]:g} \u2212 ({example["est"]:g}) = {example["diff"]:+.1f} dB, '
                 f'and taking off the {offset_db:g} dB reference leaves <b>{example["after"]:+.1f} dB</b>. A band\'s bar is the middle of such results across its skimmers, each counted once.</p>')
     modes = ", ".join(f"{m} {t:+g} dB" for m, t in (thresholds or {}).items() if m in ("CW", "SSB", "FT8"))
     return ('<h5 style="margin:10px 0 4px">How a bar is worked out</h5><ol class="lc-steps">'
@@ -1090,9 +1099,11 @@ def signal_math_html(power_w, mode, offset_db, example=None, thresholds=None):
             f'<li><b>Subtract, then take off the reference.</b> RBN report \u2212 WSPR estimate, minus {offset_db:g} dB, because an ordinary station reads about {offset_db:g} dB higher on RBN than on WSPR '
             '(the two services measure noise differently). That fixed correction is the only thing added or taken off by hand; it is not tied to power or mode.</li>'
             '<li><b>Count each skimmer once.</b> A skimmer’s results across stretches (and names of one callsign) are reduced to their middle; a band’s bar is the middle across its skimmers, and the line through it is the middle half of them.</li></ol>'
-            + real +
-            f'<p class="sub"><b>Power.</b> You entered {power_w:g} W, so ' + (f'every estimate is {10 * math.log10(power_w / 100):+.1f} dB from what a 100 W station would get. ' if power_w != 100 else
-                                                                         'the estimates are the ones a 100 W station would get, the power the reference was found for. ')
+            + real
+            + (f'<p class="sub"><b>Power.</b> This log changed power ({power_w.words()}), so each estimate uses the power at the time you worked that band, and a band that was worked at a lower power than a 100 W station has its estimate lower by the difference. '
+               if plan else
+               f'<p class="sub"><b>Power.</b> You entered {power_w:g} W, so ' + (f'every estimate is {10 * math.log10(power_w / 100):+.1f} dB from what a 100 W station would get. ' if power_w != 100 else
+                                                                                 'the estimates are the ones a 100 W station would get, the power the reference was found for. '))
             + 'A different power moves every estimate by the '
             'same number of dB (doubling it adds 3 dB), and so moves every bar the other way by that amount. It has to be the power you ran, or the bars are shifted by the difference.</p>'
             f'<p class="sub"><b>Mode.</b> The bars do not use it: the comparison reads your {escape(mode)} contacts, because RBN hears only CW and RTTY, and takes off the same reference whatever you ran. '

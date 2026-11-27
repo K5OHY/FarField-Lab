@@ -305,7 +305,7 @@ def cell_evidence(grid, log, places, spots, locs, wspr_for, home, band, slot, vi
 
     receivers = pd.DataFrame(columns=["Receiver", "Direction", "Km from you", "Looked strong enough", "First decode", "Last decode", "Reports"])
     if len(wspr):
-        res = cond.analyze(wspr, home, power_w, mode, end.to_pydatetime(), lc.LOOKBACK_MIN, 0.0, 3.0)
+        res = cond.analyze(wspr, home, lf.power_at(power_w, slot), mode, end.to_pydatetime(), lc.LOOKBACK_MIN, 0.0, 3.0)
         rec = res["receivers"]
         if len(rec):
             rec = rec.assign(sector=rec["bearing"].map(lf.sector_of), continent=rec["region"].map(lf.continent_of_region))

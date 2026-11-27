@@ -10,6 +10,7 @@ import callbook
 import conditions as cond
 import log_check as lc
 import log_check_html as lh
+import log_examples
 import log_foundations as lf
 import log_highlights as hl
 import log_openings as lo
@@ -30,9 +31,14 @@ MAPS_HEADING = "Maps for CW: where RBN heard you, and who you worked"
 HEARD_TITLE, WORKED_TITLE = "Where RBN heard you on {band}", "Stations you worked on {band}"
 
 
+def _power_key(power):
+    """The power as a key for what was calculated from it: a plan is told from a plain power of the same first value."""
+    return repr(power) if isinstance(power, lf.PowerPlan) else float(power)
+
+
 def _signature(raw, power, call, grid, spots, radius_km=lf.DEFAULT_RADIUS_KM):
     """What a finished comparison was made from, so a new file, power, callsign, place, radius or spots start again."""
-    return (hashlib.sha1(raw).hexdigest(), float(power), call, grid, len(spots), str(spots["time"].min()), str(spots["time"].max()), float(radius_km))
+    return (hashlib.sha1(raw).hexdigest(), _power_key(power), call, grid, len(spots), str(spots["time"].min()), str(spots["time"].max()), float(radius_km))
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -262,7 +268,7 @@ def _run(log, spots, locs, home, power, label, radius_km=lf.DEFAULT_RADIUS_KM):
 def _conditions(log, home, power, label, digest, radius_km=lf.DEFAULT_RADIUS_KM):
     """The grid of how open each band looked while you were on the air, kept for this log, power and place. It needs only WSPR, so it works
     on the day of the activation, before RBN has published its file."""
-    key = (digest, float(power), round(home[0], 3), round(home[1], 3), float(radius_km))
+    key = (digest, _power_key(power), round(home[0], 3), round(home[1], 3), float(radius_km))
     held = st.session_state.get("log_conditions")
     if held and held["key"] == key:
         return held["grid"]
@@ -710,6 +716,55 @@ def _glance(park_cards, rep, spots, skimmers, home, headline, result):
     return lh.glance_html(items)
 
 
+def _open_example(key):
+    """Loads an example log as if it had been uploaded, with the power it was made with."""
+    example = log_examples.get(key)
+    if example:
+        st.session_state["log_saved"] = (log_examples.file_name(key), log_examples.log_bytes(key))
+        st.session_state["log_power"] = int(example["power_w"])
+        st.session_state["log_example"] = key
+        if example.get("power_plan"):
+            st.session_state["log_power_plan"] = [tuple(step) for step in example["power_plan"]]
+        else:
+            st.session_state.pop("log_power_plan", None)
+
+
+def _example_picker():
+    """A card for each example log under the empty page: what it is, the antenna and power, a link to the video and a button that opens it."""
+    examples = log_examples.manifest()
+    if not examples:
+        return
+    st.markdown("#### Or try an example log")
+    st.caption("Real logs, each with the RBN and WSPR data from its day saved with it, so they open at once. They are cut to the stretch each one is about.")
+    cols = st.columns(len(examples))
+    for col, example in zip(cols, examples):
+        with col.container(border=True):
+            st.markdown(f"**{example['title']}**")
+            st.caption(example["when"])
+            st.markdown(f"{example['antenna']}")
+            st.caption(example["blurb"])
+            if example.get("video"):
+                st.link_button("Watch the video", example["video"], icon=":material/play_circle:")
+            st.button("Open this example", key=f"open_example_{example['key']}", on_click=_open_example, args=(example["key"],), icon=":material/folder_open:")
+
+
+def _example_banner(name):
+    """A note over the results when the log on the page is one of the examples: what it is, with its video, and that another log replaces it."""
+    key = st.session_state.get("log_example")
+    example = log_examples.get(key) if key else None
+    if not example or name != log_examples.file_name(key):
+        return
+    with st.container(border=True):
+        st.markdown(f"**Example log: {example['title']}**")
+        st.caption(f"{example['when']} · {example['antenna']}")
+        st.markdown(example["blurb"])
+        if example.get("video"):
+            st.link_button("Watch the video", example["video"], icon=":material/play_circle:")
+        plan = st.session_state.get("log_power_plan")
+        st.caption((f"The power changes during this log ({lf.PowerPlan(plan).words()}) and the estimates follow it. " if plan else "The power above is set to what this log was made with. ")
+                   + "Upload your own log to replace it.")
+
+
 def log_page():
     """The page."""
     brand_strip()
@@ -720,25 +775,35 @@ def log_page():
     skimmers, _ = skimmer_data()
     # The power sits beside the uploader and is set first: the work starts the moment a log is uploaded, so it has to be known by then. A log does not say it.
     power_box, file_box = st.columns([1, 3])
-    power = power_box.number_input("Your power (watts)", min_value=1, max_value=1500, value=100, step=5, key="log_power",
+    st.session_state.setdefault("log_power", 100)         # an example log sets it too, so the box has no default of its own
+    plan_steps = st.session_state.get("log_power_plan") if st.session_state.get("log_example") else None       # an example whose power changed during the log
+    power = power_box.number_input("Your power (watts)", min_value=1, max_value=1500, step=5, key="log_power", disabled=bool(plan_steps),
                                    help="This page does not read the power from the log, so enter what you ran. Set it before you upload: the calculations start as soon as a log is "
                                         "loaded, and they use it to restate the WSPR stations' signals to your power. Changing it later works, but starts them again.")
+    if plan_steps:
+        power = lf.PowerPlan(plan_steps)
+        power_box.caption(f"Changes during this log: {power.words()}.")
     # No file-type filter on purpose: iPhones and iPads do not know .adi, so a filter greys out every log in the picker. A file that is not a log is caught below.
     file = file_box.file_uploader("Your log (ADIF file, .adi or .adif)", key="log_file",
                                   help="Most logging programs can export one. Contacts need a call, date, time and band. A file can be up to 5 MB, "
                                        "which is many thousands of contacts. The log is used for this visit only and is not saved or shared.")
-    if file is not None:
+    if file is not None and st.session_state.get("log_file_id") != file.file_id:        # a file that was just chosen replaces what is on the page, an example included
         st.session_state["log_saved"] = (file.name, file.getvalue())
+        st.session_state["log_file_id"] = file.file_id
+        st.session_state.pop("log_example", None)
+        st.session_state.pop("log_power_plan", None)
     saved = st.session_state.get("log_saved")
     with guide:
         page_guide("log")
     if saved is None:
         st.info(icon=":material/upload_file:", body="Upload an ADIF log to begin. Set your power above first if you ran something other than 100 W: "
                                                            "the calculations start as soon as a log is loaded and use it.")
+        _example_picker()
         preview("log", "What you get: where the skimmers heard you on a band, beside the stations you worked on it. Here, a POTA activation on 20m.")
         return
     name, raw = saved
-    if file is None:
+    _example_banner(name)
+    if file is None and not st.session_state.get("log_example"):
         st.caption(f"Showing {name}. Upload another file to replace it.")
     if len(raw) > MAX_LOG_BYTES:
         st.error("That file is larger than 5 MB. Export just the day or two you want to look at.")
@@ -965,7 +1030,10 @@ def log_page():
         st.html(lh.CSS + lh.signal_intro_html(lc.TYPICAL_OFFSET_DB, o, power))
         st.html(lh.CSS + lh.band_table_html(result["bands"]))
         with st.expander("How this estimate works: the steps, the power, the mode and a worked example"):
-            st.html(lh.CSS + lh.signal_method_html(power, "CW", lc.TYPICAL_OFFSET_DB, lh.signal_example(table), cond.MODES))
+            example = lh.signal_example(table)
+            if example and result.get("power_by_band"):
+                example["power_w"] = result["power_by_band"].get(example["band"])         # the power that band was worked out for, when the log changed power
+            st.html(lh.CSS + lh.signal_method_html(power, "CW", lc.TYPICAL_OFFSET_DB, example, cond.MODES))
         if len(table):
             with st.expander(f"The {len(table)} receiver-band comparisons behind these bars ({table['Receiving station'].nunique()} receiving stations)"):
                 st.caption("One row for each band and receiving station (a comparison). A station that was matched in more than one stretch of the log has more than one match in its row; in the bars a skimmer still counts once, however many rows it has.")

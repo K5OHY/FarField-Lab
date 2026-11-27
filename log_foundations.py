@@ -284,3 +284,58 @@ def rbn_applicability(mode, running=None):
     if running is not True:
         return False, "RBN spots you when you call CQ, and it is not known that you were." if running is None else "You were not calling CQ."
     return True, ""
+
+
+# ------------------------------------------------------------------------------------------------------------------------ power that changed
+
+class PowerPlan(float):
+    """A power that changed during the log, such as 75 W on a beam until 17:00 UTC and then 5 W on a doublet. As a number it is the first power, so code that wants one
+    number still has one; `power_at(plan, time)` is the power at a moment and `{plan:g} W` is written out in words ("75 W until 17:00 UTC, then 5 W"). `steps` is
+    ((time the power starts, watts), ...) in order of time, the first applying from the start of the log."""
+
+    def __new__(cls, steps):
+        steps = sorted(((pd.Timestamp(t), float(w)) for t, w in steps), key=lambda x: x[0])
+        if not steps or any(w <= 0 for _, w in steps):
+            raise ValueError("a power plan needs at least one step, each with a power above zero")
+        self = super().__new__(cls, steps[0][1])
+        self.steps = tuple(steps)
+        return self
+
+    def at(self, when):
+        watts = self.steps[0][1]
+        for start, w in self.steps:
+            if pd.Timestamp(when) >= start:
+                watts = w
+        return watts
+
+    def words(self):
+        """'75 W until 17:00 UTC, then 5 W', with the date of a change when the log spans more than one day."""
+        steps = self.steps
+        dated = any(t.date() != steps[0][0].date() for t, _ in steps[1:])         # a change on another day than the log's first power starts
+        out = f"{steps[0][1]:g} W"
+        for (_, w), (t, w2) in zip(steps, steps[1:]):
+            out += f" until {t:%d %b %H:%M} UTC, then {w2:g} W" if dated else f" until {t:%H:%M} UTC, then {w2:g} W"
+        return out
+
+    def __format__(self, spec):
+        if spec == "g":
+            return self.words()[:-2]                                   # the caller writes ' W' after it
+        return float.__format__(float(self), spec)
+
+    def __repr__(self):
+        return "PowerPlan(" + ", ".join(f"({t:%Y-%m-%d %H:%M}, {w:g})" for t, w in self.steps) + ")"
+
+    def __reduce__(self):
+        return (PowerPlan, (list(self.steps),))
+
+
+def power_at(power, when):
+    """The power in watts at a moment: a plain power is the same all the time, a PowerPlan changes at its steps."""
+    return power.at(when) if isinstance(power, PowerPlan) else float(power)
+
+
+def power_text(power, when=None):
+    """The power as the page writes it: '100 W', or for a plan the words ('75 W until 17:00 UTC, then 5 W'), or with `when` the one power at that moment."""
+    if isinstance(power, PowerPlan) and when is None:
+        return power.words()
+    return f"{power_at(power, when) if when is not None else float(power):g} W"

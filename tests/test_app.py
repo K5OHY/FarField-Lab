@@ -230,10 +230,37 @@ class MySpotsPage(unittest.TestCase):
         at = page("log_page").run()
         self.assertEqual(errors(at), [])
         self.assertTrue(any("Upload an ADIF log to begin" in i.value for i in at.info))
-        self.assertEqual([b.label for b in at.main.button], [])         # nothing to press: the comparison starts when a log is loaded
+        self.assertEqual({b.label for b in at.main.button}, {"Open this example"})      # only the example cards have a button: the comparison starts when a log is loaded
         self.assertEqual(len(at.main.text_input), 0)                    # the callsign and grid appear once the log has been read
         self.assertEqual([n.label for n in at.main.number_input], ["Your power (watts)"])    # the power is asked for before the upload, not after
         self.assertEqual(at.main.number_input[0].value, 100)
+
+    def test_an_example_log_opens_from_its_card_with_its_own_power_and_no_wait(self):
+        import log_examples
+        at = page("log_page").run()
+        cards = log_examples.manifest()
+        self.assertEqual(len(at.main.button), len(cards))
+        by_key = {b.key: b for b in at.main.button}
+        by_key["open_example_sota-efhw"].click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["log_example"], "sota-efhw")
+        self.assertEqual(at.main.number_input[0].value, 5)                                  # the power the log was made with
+        self.assertFalse(at.main.number_input[0].disabled)
+        self.assertTrue(any("Example log: A SOTA summit" in m.value for m in at.main.markdown))
+        self.assertTrue(any("Read 91 contacts" in c.value for c in at.main.caption))
+
+    def test_an_example_whose_power_changed_runs_on_its_plan_and_says_so(self):
+        at = page("log_page").run()
+        {b.key: b for b in at.main.button}["open_example_yagi-doublet"].click()
+        at.run()
+        self.assertEqual(errors(at), [])
+        self.assertTrue(at.main.number_input[0].disabled)                                   # one number would be wrong for this log
+        self.assertEqual(at.main.number_input[0].value, 75)
+        self.assertTrue(any("Changes during this log: 75 W until 17:00 UTC, then 5 W." in c.value for c in at.main.caption))
+        self.assertTrue(any("Read 281 contacts" in c.value for c in at.main.caption))
+        at.session_state["log_file_id"] = None                                              # a log of the visitor's own replaces the example and its plan
+        self.assertEqual(at.session_state["log_power_plan"], [("2025-10-23 00:00", 75), ("2025-10-23 17:00", 5)])
 
     def test_the_uploader_does_not_filter_by_file_type_so_iphones_can_pick_a_log(self):
         at = page("log_page").run()

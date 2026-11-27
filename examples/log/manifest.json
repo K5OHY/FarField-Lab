@@ -1,0 +1,39 @@
+[
+  {
+    "key": "yagi-doublet",
+    "title": "A 3-element Yagi on 10m, then a doublet at 5 W",
+    "when": "23 Oct 2025 · Big Spring State Park (POTA US-2989)",
+    "antenna": "3-element Yagi on 10m at 75 W, then a doublet at 5 W, CW",
+    "power_w": 75,
+    "power_plan": [
+      [
+        "2025-10-23 00:00",
+        75
+      ],
+      [
+        "2025-10-23 17:00",
+        5
+      ]
+    ],
+    "blurb": "One day, two setups: 140 contacts on 10m with the Yagi at 75 W (13:47 to 16:51 UTC, 79 of them with Europe), then I put up a doublet and ran 5 watts, 141 contacts from 17:56 to 20:55 UTC, mostly on 20m, 15m and 12m. The estimates use 75 W before 17:00 UTC and 5 W after.",
+    "video": "https://youtu.be/eSS1dw3e5Oc"
+  },
+  {
+    "key": "sota-efhw",
+    "title": "A SOTA summit with a KX2 and an end-fed half-wave",
+    "when": "31 Mar 2026 · W5T/GU-018, Guadalupe Mountains National Park",
+    "antenna": "KX2 at 5 W, CW; end-fed half-wave with a homebrew MM0OPX-style winding on a board I made",
+    "power_w": 5,
+    "blurb": "The second activation of this unnamed summit, and the biggest: 91 contacts on 10m, 15m and 20m, with Europe on 10m in the first half hour.",
+    "video": "https://youtu.be/piYfr5mdwfo"
+  },
+  {
+    "key": "efhw-black-friday",
+    "title": "A homebrew end-fed half-wave, inverted L, 100 W",
+    "when": "28 Nov 2025 (Black Friday) · Big Spring State Park (POTA US-2989)",
+    "antenna": "Homebrew end-fed half-wave, MM0OPX winding, as an inverted L, 100 W, CW",
+    "power_w": 100,
+    "blurb": "257 contacts from 14:45 to 20:02 UTC on 20m, 15m and 10m, 22 of them with Europe and 13 park to park. Part 3 of a 3 part series on building and testing this antenna.",
+    "video": "https://youtu.be/5IcLyyPcqxw"
+  }
+]
