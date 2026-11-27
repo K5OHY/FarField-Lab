@@ -173,7 +173,8 @@ def facts(log, wx, home):
     kp = [(t, v) for t, v in (kp_all or []) if t + timedelta(hours=3) > start and t < end]
     kp_session = [(t, v) for t, v in kp if t + timedelta(hours=3) > first and t < last]          # only the steps that touch the contacts themselves
     flux_days = [(t, v) for t, v in (flux_all or []) if first.normalize() <= t <= last]
-    latest = wx.get("flux_latest") if not flux_days else None                    # the session's own day has no flux yet: the latest earlier one, said to be that
+    earlier = [(t, v) for t, v in flux_all if t < first.normalize()]
+    latest = (earlier[-1] if earlier else wx.get("flux_latest")) if not flux_days else None       # the session's own day has no flux yet: the latest earlier one, said to be that
     flares = None if flares_all is None else [(t, c) for t, c in flares_all if start <= t <= end]
     runs = activity_runs(log)
     lat, lon = home

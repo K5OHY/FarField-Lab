@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 import callbook
+import donki
 import conditions as cond
 import log_check as lc
 import log_check_html as lh
@@ -16,6 +17,7 @@ import log_highlights as hl
 import log_openings as lo
 import log_reach as lreach
 import log_space as lsp
+import log_story as lstory
 import log_space_html as lsh
 import share_card as sc
 import space_weather as sw
@@ -47,6 +49,12 @@ def _signature(raw, power, call, grid, spots, radius_km=lf.DEFAULT_RADIUS_KM):
 def _space_history(start_iso, end_iso):
     """The Kp, solar flux and flares over a past stretch of time, kept for an hour (GFZ Potsdam and NOAA)."""
     return sw.history(pd.Timestamp(start_iso), pd.Timestamp(end_iso))
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _donki_events(start_iso, end_iso):
+    """NASA's DONKI storms, ejections and flares for the days around a session (None when it could not be read), kept for an hour."""
+    return donki.events(pd.Timestamp(start_iso), pd.Timestamp(end_iso))
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
@@ -961,9 +969,11 @@ def log_page():
             st.html(lh.CSS + balance)
     with space_slot:
         if len(days) <= MAX_DAYS:
-            first_t, last_t = lc.space_span(log)
-            weather = _space_history(str(first_t), str(last_t))
-            weather_html = lsh.space_html(lsp.facts(log, weather, home), BAND_COLORS)
+            story_from, story_to = lstory.window(log)
+            weather = _space_history(str(story_from), str(story_to))             # the days around the session: the session's own hours are cut from it
+            asked = lstory.needs_donki(weather, log)                              # NASA is asked only when there was a storm to explain
+            found = _donki_events(str(story_from), str(story_to)) if asked else None
+            weather_html = lsh.space_html(lsp.facts(log, weather, home), BAND_COLORS, lstory.build(log, weather, found, asked))
             if weather_html:
                 st.html(lh.CSS + weather_html)
     with work:

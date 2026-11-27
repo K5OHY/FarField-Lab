@@ -33,6 +33,12 @@ CSS = """<style>
 .sw-sun{position:absolute;bottom:3px;transform:translateX(-50%);font-size:11.5px;white-space:nowrap;padding:0 6px;border-radius:99px;background:rgba(0,0,0,.3);color:#fff}
 .sw-run{position:absolute;height:15px;border-radius:5px;font-size:11px;font-weight:700;line-height:15px;text-align:center;overflow:hidden;white-space:nowrap}
 .sw-focus{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed #34c7d9;z-index:2}
+.lc-card ul.sw-story{margin:0 0 10px;padding:0 0 0 18px;font-size:14px;line-height:1.5}.sw-story li{margin:3px 0}
+.sw-sess{position:absolute;top:0;bottom:0;background:rgba(52,199,217,.17);border-left:1px solid rgba(52,199,217,.7);border-right:1px solid rgba(52,199,217,.7);z-index:1}
+.sw-slab{position:absolute;top:2px;left:3px;font-size:11px;font-weight:700;color:#34c7d9;white-space:nowrap}
+.sw-cme{position:absolute;width:9px;height:9px;background:#b07cff;transform:translate(-50%,-50%) rotate(45deg);border:1px solid rgba(0,0,0,.4)}
+.sw-arrow{position:absolute;height:0;border-top:1.5px solid rgba(176,124,255,.75)}.sw-arrow::after{content:"";position:absolute;right:-1px;top:-5px;border-left:7px solid rgba(176,124,255,.95);border-top:4px solid transparent;border-bottom:4px solid transparent}
+.sw-tag{position:absolute;font-size:11px;white-space:nowrap;padding:0 5px;border-radius:99px;background:rgba(128,128,128,.22);border:1px solid var(--line)}
 .sw-2{display:grid;grid-template-columns:1fr 1.15fr;gap:12px;margin:0 0 12px}
 .sw-big{font-size:26px;font-weight:700;margin:0 0 2px}.lc-card ul.sw-bul{list-style:none;margin:0;padding:0}.sw-bul li{margin:6px 0;font-size:14px;line-height:1.4}.sw-bul b{margin-right:4px}
 .sw-foot{font-size:12px;opacity:.65;margin:8px 0 0}.sw-box details summary{cursor:pointer;font-weight:700;font-size:15px}.sw-box details ul{margin:8px 0 2px 18px;font-size:13px;line-height:1.45}
@@ -168,6 +174,86 @@ def _ink(colour):
     return "#000" if 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2] > 0.18 else "#fff"
 
 
+def _story_box(story):
+    """The days around your session: the sentences that tell what the sun did, and a chart of Kp, flares and the ejections NASA links to a storm, with your session shaded."""
+    start, end = story["start"], story["end"]
+    span = (end - start).total_seconds()
+    left = lambda t: max(0.0, min(100.0, (pd.Timestamp(t) - start).total_seconds() / span * 100))
+    ticks = []
+    t = start.ceil("D")
+    while t <= end:
+        ticks.append(t)
+        t += pd.Timedelta(days=1)
+    grid = "".join(f'<i class="sw-tick" style="left:{left(t):.3f}%"></i>' for t in ticks)
+    axis = "".join(f'<span style="left:{left(t):.3f}%">{t.day} {t:%b}</span>' for t in ticks)
+    a, b = story["session"]
+    sess = f'<i class="sw-sess" style="left:{left(a):.3f}%;width:{max(left(b) - left(a), 0.6):.3f}%" title="Your session, {a:%d %b %H:%M} to {b:%d %b %H:%M} UTC"></i>'
+    kp_h = 72
+    bars, labels = "", ""
+    for t, v in story["kp"]:
+        x0, x1 = left(max(t, start)), left(min(t + pd.Timedelta(hours=3), end))
+        colour = KP_COLOUR[0 if v < 3 else 1 if v < 5 else 2]
+        bars += (f'<i class="sw-kp" style="left:{x0:.3f}%;width:calc({x1 - x0:.3f}% - 1px);height:{max(3.0, v / 9 * (kp_h - 8)):.1f}px;background:{colour}" '
+                 f'title="Kp {ls.kp_text(v)} ({ls.kp_label(v)}), the three hours from {t:%d %b %H:%M} UTC"></i>')
+    for s in story["storms"]:
+        x = left(s["peak_time"])
+        anchor = "translate(0,0)" if x < 9 else "translate(-100%,0)" if x > 91 else "translate(-50%,0)"
+        labels += (f'<span class="sw-fn" style="left:{x:.3f}%;top:2px;transform:{anchor};background:rgba(220,80,80,.2);border-color:rgba(220,80,80,.6)" '
+                   f'title="Storm from {s["start"]:%d %b %H:%M} to {s["end"]:%d %b %H:%M} UTC">{escape(s["level"])} storm · Kp {ls.kp_text(s["peak_kp"])}</span>')
+    storm_line = f'<i class="sw-storm" style="top:{kp_h - 5 / 9 * (kp_h - 8) - 2:.1f}px"></i>'
+    fl = '<i class="sw-base" style="top:70%"></i>'
+    if story["flares_unavailable"]:
+        fl += '<span style="position:absolute;left:8px;top:14px;font-size:12.5px;opacity:.75">Flare data is not available for these days.</span>'
+    last_label = -100.0
+    for t, c in story["flares"]:
+        size = 14 if c[:1] == "X" else 9
+        fl += (f'<i class="sw-fl" style="left:{left(t):.3f}%;top:70%;width:{size}px;height:{size}px;background:{FLARE_COLOUR[c[:1]]}" '
+               f'title="{escape(c)} flare, peak {t:%d %b %H:%M} UTC, {ls.r_level(c)}"></i>')
+        if c[:1] == "X" and left(t) - last_label > 3.5:                  # a label too close to the one before is left off (the dot still has its hover text)
+            x = last_label = left(t)
+            anchor = "translate(0,0)" if x < 9 else "translate(-100%,0)" if x > 91 else "translate(-50%,0)"
+            fl += f'<span class="sw-fn" style="left:{x:.3f}%;top:0;transform:{anchor}">{escape(c)}</span>'
+    ce = ""
+    cmes = story["cmes"]
+    fastest = max((c for c in cmes if c.get("speed")), key=lambda c: c["speed"], default=None)
+    shocks = {s["shock"] for s in story["storms"] if s.get("shock") is not None}
+    for i, c in enumerate(cmes):
+        y = 12 + (i % 4) * 9
+        x0 = left(c["start"])
+        for s in story["storms"]:
+            if s["shock"] is not None and c in s["cmes"]:
+                x1 = left(s["shock"])
+                ce += f'<i class="sw-arrow" style="left:{x0:.3f}%;width:{max(x1 - x0, 0.3):.3f}%;top:{y}px"></i>'
+        speed = f", about {c['speed']:,.0f} km/s" if c.get("speed") else ""
+        ce += f'<i class="sw-cme" style="left:{x0:.3f}%;top:{y}px" title="CME launched {c["start"]:%d %b %H:%M} UTC{speed}"></i>'
+    for sh in sorted(shocks):
+        ce += f'<span class="sw-tag" style="left:{left(sh):.3f}%;top:2px;transform:translate(-100%,0)">shock reaches Earth {sh:%H:%M}</span>'
+    if fastest is not None:
+        ce += f'<span class="sw-tag" style="left:{left(fastest["start"]):.3f}%;top:44px;transform:translate(-50%,0)">fastest about {fastest["speed"]:,.0f} km/s</span>'
+    if not cmes:
+        if story["donki_state"] == "unavailable":
+            why = "Ejections could not be read from NASA's DONKI just now."
+        elif not story["storms"]:
+            why = "No storm to link ejections to."
+        else:
+            why = "NASA's DONKI links no ejection to a storm in these days."
+        ce += f'<span style="position:absolute;left:8px;top:14px;font-size:12.5px;opacity:.75">{why}</span>'
+
+    def row(label, sub, body, h):
+        return (f'<div class="sw-row"><div class="sw-lab" style="min-height:{h}px"><b>{label}</b><small>{sub}</small></div>'
+                f'<div class="sw-plot" style="height:{h}px">{grid}{sess}{body}</div></div>')
+    items = "".join(f"<li>{escape(x)}</li>" for x in story["sentences"])
+    session_label = f'<span class="sw-slab" style="left:{left(a):.3f}%;top:{kp_h - 14}px">Your session</span>'
+    return ('<div class="sw-box"><h5>The days around your session</h5>'
+            + (f'<ul class="sw-story">{items}</ul>' if items else "")
+            + '<div class="sw-grid">'
+            + row("Magnetic activity", "Kp, 3-hour steps", bars + storm_line + labels + session_label, kp_h)
+            + row("Flares", "M and X, at their peak", fl, 44)
+            + (row("Ejections from the Sun", "CMEs NASA links to a storm", ce, 62) if story["storms"] else "")
+            + f'<div></div><div class="sw-axis">{axis}</div></div>'
+            + '<p class="sw-foot">Times are UTC.' + (" Purple diamonds are ejections at the moment they left the Sun, each with an arrow to the shock NASA links to the storm." if story["storms"] else "") + ' The shaded band is your session.</p></div>')
+
+
 def _focus_box(f, colours):
     focus = f["focus"]
     if f["flares"] is None:
@@ -196,7 +282,7 @@ def _means_box(f):
     return f'<div class="sw-box"><h5>What this means for HF</h5><ul class="sw-bul">{items}</ul></div>'
 
 
-def _details(f):
+def _details(f, story=None):
     lines = []
     if f["kp"]:
         lines.append(f"<b>Magnetic activity:</b> {len(f['kp'])} three-hour Kp value{'s' if len(f['kp']) != 1 else ''} from GFZ Potsdam ({f['kp'][0][0]:%d %b %H:%M} to {f['kp'][-1][0] + pd.Timedelta(hours=3):%d %b %H:%M} UTC). "
@@ -215,17 +301,24 @@ def _details(f):
                      "with the class NOAA tied to an active region.")
     lat, lon = f["home"]
     lines.append(f"<b>Daylight:</b> the sun's height at {lat:.2f}, {lon:.2f} (where you operated): up above 0.83° below the horizon, twilight down to 6°, night below that.")
+    if story:
+        why = {"ok": "NASA's DONKI (api.nasa.gov) records which coronal mass ejections it links to each storm, the flare an ejection came with, and the interplanetary shock that reached Earth; the sentences say what NASA links and do not state a cause of their own. A storm here is any run of three-hour Kp values of 5 or more, whether or not DONKI lists it.",
+               "partial": "NASA's DONKI could only be read in part just now, so some causes are missing from the story.",
+               "unavailable": "NASA's DONKI could not be read just now, so the story says what the Kp shows and not why.",
+               "not_needed": "There was no storm (Kp 5 or more) in these days, so NASA's DONKI was not asked for a cause."}[story["donki_state"]]
+        extra = "" if story["own_key"] or story["donki_state"] in ("unavailable", "not_needed") else " The page is using NASA's shared demo key, which is limited to a few requests an hour; a key of its own removes the limit."
+        lines.append(f"<b>The story:</b> three days before your session to two days after, from GFZ Potsdam's Kp. {why}{extra}")
     lines.append("<b>MUF:</b> not shown. A real MUF needs ionosonde measurements for the time of the session, and this page has no source for them; it is left out rather than guessed.")
     lines.append("<b>Times:</b> all UTC.")
     return '<div class="sw-box"><details><summary>Technical details and data coverage</summary><ul>' + "".join(f"<li>{x}</li>" for x in lines) + "</ul></details></div>"
 
 
-def space_html(f, colours):
+def space_html(f, colours, story=None):
     """The card as HTML for st.html (with log_check_html.CSS), or '' when there are no facts."""
     if not f:
         return ""
     return (CSS + '<div class="lc"><div class="lc-card"><h4 class="sw-head">Space weather during your session</h4>'
             '<p class="sw-sub">The solar background, the magnetic field and the events that can affect HF, set beside the hours you were on the air.</p>'
-            f'<div class="sw-line">{escape(f["headline"])}</div>' + _tiles(f, None) + _timeline(f, colours)
-            + f'<div class="sw-2">{_focus_box(f, colours)}{_means_box(f)}</div>' + _details(f)
+            f'<div class="sw-line">{escape(f["headline"])}</div>' + _tiles(f, None) + (_story_box(story) if story else "") + _timeline(f, colours)
+            + f'<div class="sw-2">{_focus_box(f, colours)}{_means_box(f)}</div>' + _details(f, story)
             + '<p class="sw-foot">Sources: GFZ Potsdam (Kp and solar flux), NOAA SWPC (flares, through NOAA or NASA\'s HEK for past dates). All times UTC.</p></div></div>')
