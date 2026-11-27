@@ -11,9 +11,10 @@ import log_check as lc
 import log_examples as ex
 import log_foundations as lf
 import log_openings as lo
+import log_story as lstory
 from rbn_data import maidenhead_to_latlon
 
-KEYS = ("yagi-doublet", "sota-efhw", "efhw-black-friday")
+KEYS = ("yagi-doublet", "sota-efhw", "efhw-black-friday", "bush-house-ocf", "storm-kp9")
 
 
 def log_of(key):
@@ -50,11 +51,15 @@ class TheCards(unittest.TestCase):
 
 class TheLogs(unittest.TestCase):
     def test_each_log_is_the_whole_of_its_session(self):
-        yagi, sota, efhw = (log_of(k) for k in KEYS)
+        yagi, sota, efhw, bush, storm = (log_of(k) for k in KEYS)
         self.assertEqual(len(yagi), 281)                                                 # the whole day, in one log
         self.assertEqual(len(sota), 91)
         self.assertEqual(set(sota["mode"]), {"CW"})
         self.assertEqual((len(efhw), set(efhw["band"])), (257, {"20m", "15m", "10m"}))
+        self.assertEqual((len(bush), set(bush["band"])), (179, {"20m", "15m", "17m", "12m", "10m"}))
+        self.assertEqual((len(storm), set(storm["band"]), storm["time"].dt.date.nunique()), (24, {"20m", "30m"}, 1))
+        self.assertEqual(lc.pota_refs(storm), ["US-10272"])                                       # a park the logging program wrote in its own field is still read
+        self.assertEqual(lc.log_origin(storm)[0], "K5OHY")
 
     def test_nothing_about_a_person_worked_is_kept(self):
         for key in KEYS:
@@ -70,6 +75,75 @@ class TheLogs(unittest.TestCase):
             call, grid = lc.log_origin(log_of(key))
             self.assertEqual(call, "K5OHY")
             self.assertEqual(len(grid), 6)
+
+
+class TheLookups(unittest.TestCase):
+    """What the page looks up about an example is saved with it and handed back only while that example is open."""
+
+    def setUp(self):
+        self._open = fz._open_example
+
+    def tearDown(self):
+        fz._open_example = self._open
+
+    def test_each_example_carries_where_its_stations_were_and_its_park_and_space_weather(self):
+        for key in KEYS:
+            fz._open_example = lambda key=key: key
+            log = log_of(key)
+            places = fz.lookup("places")
+            self.assertEqual(places.index.name, "call", key)
+            self.assertGreater(len(places), 0.7 * log["call"].nunique(), key)                          # most stations placed; the rest could not be
+            self.assertEqual(set(places.columns), {"lat", "lon", "source", "level", "grid"}, key)
+            self.assertTrue(places["grid"].dropna().astype(str).str.len().le(6).all(), key)             # a place is a grid square, never an address
+            a, b = lstory.window(log)
+            history = fz.lookup("space_history", str(a), str(b))
+            self.assertTrue(history["kp"], key)
+            park_refs = lc.pota_refs(log) + lc.sota_refs(log)
+            found = [fz.lookup("pota_park", r) or fz.lookup("sota_summit", r) for r in park_refs]
+            self.assertTrue(all(f is not None for f in found) and found, key)
+
+    def test_nothing_is_handed_back_when_no_example_is_open_or_the_question_is_different(self):
+        fz._open_example = lambda: None
+        self.assertIsNone(fz.lookup("places"))
+        self.assertIsNone(fz.result("compare", "x", 1, 2, 3))
+        fz._open_example = lambda: "bush-house-ocf"
+        self.assertIsNone(fz.lookup("pota_park", "US-0000"))                                          # another park: looked up as always
+        self.assertIsNone(fz.lookup("space_history", "2020-01-01 00:00:00", "2020-01-08 00:00:00"))
+        self.assertIsNone(fz.lookup("no_such_lookup"))
+
+    def test_what_is_handed_back_is_a_copy_and_the_saved_one_is_unchanged(self):
+        fz._open_example = lambda: "bush-house-ocf"
+        first = fz.lookup("places")
+        first.loc[first.index[0], "lat"] = 0.0
+        self.assertNotEqual(fz.lookup("places").iloc[0]["lat"], 0.0)
+
+    def test_the_two_long_calculations_are_saved_for_the_examples_power_and_place(self):
+        from views.log_view import _power_key
+        card = {e["key"]: e for e in ex.manifest()}
+        for key in KEYS:
+            fz._open_example = lambda key=key: key
+            power = lf.PowerPlan(card[key]["power_plan"]) if card[key].get("power_plan") else float(card[key]["power_w"])
+            lat, lon = maidenhead_to_latlon(lc.log_origin(log_of(key))[1])
+            args = (_power_key(power), round(lat, 3), round(lon, 3), float(lf.DEFAULT_RADIUS_KM))
+            grid, compared = fz.result("conditions_grid", *args), fz.result("compare", *args)
+            self.assertGreater(len(grid), 10, key)
+            self.assertIn("evidence", grid.attrs, key)
+            self.assertIn("bands", compared, key)
+            self.assertIsNone(fz.result("compare", args[0], args[1], args[2], 1500.0), key)            # another radius is calculated, not guessed
+            self.assertIsNone(fz.result("compare", "75.0" if args[0] != "75.0" else "5.0", *args[1:]), key)
+
+    def test_the_storm_example_has_nasas_cause_saved_and_the_story_names_the_storm(self):
+        fz._open_example = lambda: "storm-kp9"
+        log = log_of("storm-kp9")
+        a, b = lstory.window(log)
+        history = fz.lookup("space_history", str(a), str(b))
+        found = fz.lookup("donki_events", str(a), str(b))
+        self.assertIsNotNone(found)
+        story = lstory.build(log, history, found)
+        text = " ".join(story["sentences"])
+        self.assertIn("G5", text)
+        self.assertIn("NASA's DONKI links it to", text)
+        self.assertIn("You were on the air while the storm was under way", text)
 
 
 class TheStripping(unittest.TestCase):
@@ -93,6 +167,17 @@ class TheStripping(unittest.TestCase):
         for field, value in (("MODE", "print(1)"), ("RST_SENT", "599; rm -rf"), ("CALL", "K1ABC <script>"), ("STATE", "x = 1; y = {2}")):
             with self.assertRaises(ValueError, msg=field):
                 b.sanitized([self.record(**{field: value})])
+
+    def test_a_park_a_logging_program_wrote_in_its_own_fields_and_a_missing_callsign_are_filled_in(self):
+        import build_log_examples as b
+        text, _ = b.sanitized([self.record(MY_SIG_INFO="US-10272", SIG_INFO="US-2495", STATION_CALLSIGN="", COMMENT="note")], own_call="K5OHY")
+        self.assertIn("<MY_POTA_REF:8>US-10272", text)
+        self.assertIn("<POTA_REF:7>US-2495", text)
+        self.assertIn("<STATION_CALLSIGN:5>K5OHY", text)
+        self.assertNotIn("note", text)
+        stray, _ = b.sanitized([self.record(MY_SIG_INFO="import os")])                                  # something that is not a park reference is not kept
+        self.assertNotIn("import", stray)
+        self.assertNotIn("MY_POTA_REF", stray)
 
     def test_the_odd_but_real_values_in_the_logs_are_accepted(self):
         import build_log_examples as b
@@ -122,7 +207,7 @@ class TheSavedData(unittest.TestCase):
                 start, end = cw["time"].min() - pd.Timedelta(minutes=lc.LOOKBACK_MIN), cw["time"].max() + pd.Timedelta(minutes=lc.WINDOW_PAD_MIN)
                 days = tuple(sorted({f"{d:%Y%m%d}" for d in pd.date_range(start.floor("D"), end.floor("D"))}))
                 spots = pd.concat([ds.download_rbn_day(d, call) for d in days])
-                self.assertGreater(len(spots), 50, key)
+                self.assertGreater(len(spots), 20, key)
                 self.assertGreater(len(fz.listening(days, start, end)), 1000, key)
                 lat, lon = self.home(key)
                 first = cw["time"].min() - pd.Timedelta(minutes=lc.LOOKBACK_MIN)

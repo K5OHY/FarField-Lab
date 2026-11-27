@@ -250,6 +250,39 @@ class MySpotsPage(unittest.TestCase):
         self.assertTrue(any("Example log: A SOTA summit" in m.value for m in at.main.markdown))
         self.assertTrue(any("Read 91 contacts" in c.value for c in at.main.caption))
 
+    def example_asks_no_outside_service(self, key):
+        """An example opens from what is saved with it: no station, park, space weather or WSPR lookup is made, so it opens in seconds and cannot be held up by a service."""
+        import requests
+        asked = []
+
+        def watch(session, method, url, **kwargs):
+            asked.append(url)
+            raise RuntimeError("blocked in this test")
+        with mock.patch.object(requests.sessions.Session, "request", watch):
+            at = page("log_page").run()
+            {b.key: b for b in at.main.button}[f"open_example_{key}"].click()
+            at.run()
+        self.assertEqual(errors(at), [])
+        self.assertEqual(at.session_state["log_example"], key)
+        lookups = ("hamdb", "callook", "hamqth", "pota.app", "sota.org", "lmsal", "gfz-potsdam", "swpc", "api.nasa", "wspr.live", "reversebeacon")
+        self.assertEqual([u for u in asked if any(h in u for h in lookups)], [], key)
+        self.assertGreater(len(at.session_state["log_places"]["places"]), 5)                       # where the stations were came from the saved data
+
+    def test_the_yagi_and_doublet_example_asks_no_outside_service(self):
+        self.example_asks_no_outside_service("yagi-doublet")
+
+    def test_the_sota_example_asks_no_outside_service(self):
+        self.example_asks_no_outside_service("sota-efhw")
+
+    def test_the_efhw_example_asks_no_outside_service(self):
+        self.example_asks_no_outside_service("efhw-black-friday")
+
+    def test_the_bush_house_example_asks_no_outside_service(self):
+        self.example_asks_no_outside_service("bush-house-ocf")
+
+    def test_the_storm_example_asks_no_outside_service(self):
+        self.example_asks_no_outside_service("storm-kp9")
+
     def test_a_loaded_log_can_be_cleared_to_start_over(self):
         import log_examples
         at = page("log_page").run()

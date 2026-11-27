@@ -35,5 +35,33 @@
     "power_w": 100,
     "blurb": "257 contacts from 14:45 to 20:02 UTC on 20m, 15m and 10m, 22 of them with Europe and 13 park to park. Part 3 of a 3 part series on building and testing this antenna.",
     "video": "https://youtu.be/5IcLyyPcqxw"
+  },
+  {
+    "key": "bush-house-ocf",
+    "title": "My biggest at Bush House: an OCF whip dipole on homebrew open line",
+    "when": "21 Nov 2026 · Bush Family Home State Historic Site (POTA US-10272)",
+    "antenna": "OCF dipole made of whips, fed with homebrew open-wire line, 100 W, CW",
+    "power_w": 100,
+    "blurb": "179 contacts in three hours, 20:27 to 23:25 UTC, on 20m, 15m, 17m, 12m and 10m, and 69 RBN skimmers heard me. My biggest activation at this park.",
+    "video": "https://youtu.be/-lY9WkxCMBA"
+  },
+  {
+    "key": "storm-kp9",
+    "title": "Kp 9 and still calling CQ",
+    "when": "11 May 2024 · Bush Family Home State Historic Site (POTA US-10272)",
+    "antenna": "Quarter-wave vertical, CW, 20 W in the morning and 80 W in the afternoon",
+    "power_w": 20,
+    "power_plan": [
+      [
+        "2024-05-11 00:00",
+        20
+      ],
+      [
+        "2024-05-11 19:00",
+        80
+      ]
+    ],
+    "blurb": "A quarter-wave vertical in the middle of the G5 geomagnetic storm of May 2024: 24 contacts on 30m and 20m, seven in the morning and seventeen in the afternoon. Open the space weather card to see the storm, the ejections NASA links to it and where the session fell.",
+    "video": ""
   }
 ]

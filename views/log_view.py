@@ -8,6 +8,7 @@ import streamlit as st
 
 import callbook
 import donki
+import frozen_data
 import conditions as cond
 import log_check as lc
 import log_check_html as lh
@@ -45,28 +46,51 @@ def _signature(raw, power, call, grid, spots, radius_km=lf.DEFAULT_RADIUS_KM):
     return (hashlib.sha1(raw).hexdigest(), _power_key(power), call, grid, len(spots), str(spots["time"].min()), str(spots["time"].max()), float(radius_km))
 
 
+# Each lookup below asks frozen_data first: while an example log is open, what the page derived from the lookup when the example was made is handed back at once (and only then),
+# otherwise the lookup runs as it always did and is kept. The saved answer is checked before the cache, so a real log never gets an example's.
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def _space_history(start_iso, end_iso):
-    """The Kp, solar flux and flares over a past stretch of time, kept for an hour (GFZ Potsdam and NOAA)."""
+def _space_history_live(start_iso, end_iso):
     return sw.history(pd.Timestamp(start_iso), pd.Timestamp(end_iso))
 
 
+def _space_history(start_iso, end_iso):
+    """The Kp, solar flux and flares over a past stretch of time, kept for an hour (GFZ Potsdam and NOAA)."""
+    saved = frozen_data.lookup("space_history", start_iso, end_iso)
+    return saved if saved is not None else _space_history_live(start_iso, end_iso)
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def _donki_events(start_iso, end_iso):
-    """NASA's DONKI storms, ejections and flares for the days around a session (None when it could not be read), kept for an hour."""
+def _donki_events_live(start_iso, end_iso):
     return donki.events(pd.Timestamp(start_iso), pd.Timestamp(end_iso))
 
 
+def _donki_events(start_iso, end_iso):
+    """NASA's DONKI storms and ejections for the days around a session (None when it could not be read), kept for an hour."""
+    saved = frozen_data.lookup("donki_events", start_iso, end_iso)
+    return saved if saved is not None else _donki_events_live(start_iso, end_iso)
+
+
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def _pota_park(ref):
-    """POTA's record of a park and its activations, kept for six hours. Raises RuntimeError when POTA cannot be reached (and so is not kept)."""
+def _pota_park_live(ref):
     return load_pota_park(ref)
 
 
+def _pota_park(ref):
+    """POTA's record of a park and its activations, kept for six hours. Raises RuntimeError when POTA cannot be reached (and so is not kept)."""
+    saved = frozen_data.lookup("pota_park", ref)
+    return saved if saved is not None else _pota_park_live(ref)
+
+
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _sota_summit_live(ref):
+    return load_sota_summit(ref)
+
+
 def _sota_summit(ref):
     """SOTA's record of a summit and its activations, kept for six hours. Raises RuntimeError when SOTA cannot be reached (and so is not kept)."""
-    return load_sota_summit(ref)
+    saved = frozen_data.lookup("sota_summit", ref)
+    return saved if saved is not None else _sota_summit_live(ref)
 
 
 def _log_grids(log):
@@ -103,16 +127,26 @@ def _ref_grids(log):
 
 
 @st.cache_data(ttl=86400, show_spinner="Looking up where the stations outside North America are…")
-def _dx_places(calls):
-    """Where the stations outside North America with no grid in the log are, kept for a day: {call: {'lat', 'lon', 'source', 'where'}} from HamQTH (their call area, or
-    their home when the app has a HamQTH key). Only callsigns are sent."""
+def _dx_places_live(calls):
     return callbook.load_places(calls)
 
 
+def _dx_places(calls):
+    """Where the stations outside North America with no grid in the log are, kept for a day: {call: {'lat', 'lon', 'source', 'where'}} from HamQTH (their call area, or
+    their home when the app has a HamQTH key). Only callsigns are sent."""
+    saved = frozen_data.lookup("dx_places", calls)
+    return saved if saved is not None else _dx_places_live(calls)
+
+
 @st.cache_data(ttl=86400, show_spinner="Looking up where the parks and summits you contacted are…")
+def _reference_places_live(pota, sota):
+    return load_reference_places(pota, sota)
+
+
 def _reference_places(pota, sota):
     """Where the parks and summits of the other stations are, kept for a day: {reference: (lat, lon)}. Only the references are sent."""
-    return load_reference_places(pota, sota)
+    saved = frozen_data.lookup("reference_places", pota, sota)
+    return saved if saved is not None else _reference_places_live(pota, sota)
 
 
 def _p2p_block(col, log, ref, program, own, noun):
@@ -258,6 +292,9 @@ def _reach_card(cw, log, spots, locs, home, days, missing):
 
 def _run(log, spots, locs, home, power, label, radius_km=lf.DEFAULT_RADIUS_KM):
     """Fetches what the comparison needs, with progress shown, and returns lc.compare's tables (or None after saying what went wrong)."""
+    saved = frozen_data.result("compare", _power_key(power), round(home[0], 3), round(home[1], 3), float(radius_km))        # an example: made once and saved with it
+    if saved is not None:
+        return saved
     cw = log[log["mode"] == "CW"]
     start, end = cw["time"].min() - pd.Timedelta(minutes=lc.LOOKBACK_MIN), cw["time"].max() + pd.Timedelta(minutes=lc.WINDOW_PAD_MIN)
     days = tuple(sorted({f"{d:%Y%m%d}" for d in pd.date_range(start.floor("D"), end.floor("D"))}))
@@ -282,6 +319,10 @@ def _conditions(log, home, power, label, digest, radius_km=lf.DEFAULT_RADIUS_KM)
     held = st.session_state.get("log_conditions")
     if held and held["key"] == key:
         return held["grid"]
+    saved = frozen_data.result("conditions_grid", key[1], key[2], key[3], key[4])                       # an example: made once and saved with it
+    if saved is not None:
+        st.session_state["log_conditions"] = {"key": key, "grid": saved}
+        return saved
     with st.status(f"Looking at how open each band was near {label}…", expanded=True) as status:
         try:
             st.write(f"Fetching the WSPR stations within {lf.radius_text(radius_km)} of you for the hours of the activation…")
@@ -611,6 +652,10 @@ def _prefetch_places(log, skimmers, digest):
     if st.session_state.get("log_prefetch") == digest:
         return
     st.session_state["log_prefetch"] = digest
+    saved = frozen_data.lookup("places")                   # an example: where every station was is saved with it, so nothing is looked up
+    if saved is not None:
+        st.session_state["log_places"] = {"digest": digest, "places": saved, "tried": set(log["call"])}
+        return
     jobs = [list(log[log["band"] == band].drop_duplicates("call")[["call", "state", "country"]].itertuples(index=False, name=None))
             for band in log["band"].value_counts().index]
 
@@ -755,7 +800,11 @@ def _example_picker():
         return
     st.markdown("#### Or try an example log")
     st.caption("Real logs, each with the RBN and WSPR data from its day saved with it, so they open at once. They are cut to the stretch each one is about.")
-    cols = st.columns(len(examples))
+    per_row = 3
+    cols = []
+    for i in range(0, len(examples), per_row):
+        row = st.columns(per_row)
+        cols += row[:len(examples[i:i + per_row])]
     for col, example in zip(cols, examples):
         with col.container(border=True):
             st.markdown(f"**{example['title']}**")
