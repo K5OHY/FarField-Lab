@@ -13,6 +13,7 @@ import log_check_html as lh
 import log_foundations as lf
 import log_highlights as hl
 import log_openings as lo
+import log_reach as lreach
 import share_card as sc
 import space_weather as sw
 from compare_stats import locate as skimmer_location
@@ -217,6 +218,26 @@ def _rbn_spots(raw_key, call, days):
     spots = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     st.session_state["log_spots"] = {"key": (raw_key, call), "spots": spots, "missing": missing}
     return spots, missing
+
+
+def _reach_card(cw, log, spots, locs, home, days, missing):
+    """"Where RBN heard you": the skimmers that reported you on each band, counted over the half hours that hold a logged CW contact, beside the skimmers that were
+    reporting anyone then. The list of skimmers that were reporting is the one the comparison reads, so it is read once. RBN having no file, the file not being readable
+    and a file with no reports of you are three different things, and each says so."""
+    if len(missing) >= len(days):
+        st.caption("Where RBN heard you needs the RBN file for your log's days, and RBN has no file for them yet.")
+        return
+    start, end = cw["time"].min() - pd.Timedelta(minutes=lc.LOOKBACK_MIN), cw["time"].max() + pd.Timedelta(minutes=lc.WINDOW_PAD_MIN)
+    span = tuple(sorted({f"{d:%Y%m%d}" for d in pd.date_range(start.floor("D"), end.floor("D"))}))
+    try:
+        listening = load_rbn_listening(span, start, end)
+    except (RuntimeError, OSError, ValueError):
+        listening = None
+    rows = lreach.reach_by_band(log, spots, listening, locs, home, set(missing))
+    base = spots["spotter"].map(lc._base) if len(spots) else pd.Series(dtype=str)
+    html = lh.reach_html(rows, BAND_COLORS, len(spots), int(base.nunique()))
+    if html:
+        st.html(lh.CSS + lh.with_id(html, "sec-rbn"))
 
 
 def _run(log, spots, locs, home, power, label, radius_km=lf.DEFAULT_RADIUS_KM):
@@ -602,7 +623,7 @@ def _view_points(home, spots, worked, locs):
 
 @st.fragment
 def _maps_section(log, result, spots, locs, home, label, who, tiles, units, digest, spots_url=None):
-    """Two maps of one band, side by side and framed alike: the skimmers that spotted you, and the stations you worked. They open on the
+    """Two maps of one band, side by side and framed alike: the skimmers that reported you in the half hours with your logged CW contacts on it, and the stations you worked. They open on the
     band with the most DX; placing that band's stations takes a few seconds the first time, and each band is only looked up once. It is a fragment, so choosing another
     band redraws only the maps (not the whole page), and a band that has been drawn is kept, so going back to it is instant."""
     st.markdown(f"#### {MAPS_HEADING}")
@@ -636,18 +657,22 @@ def _maps_section(log, result, spots, locs, home, label, who, tiles, units, dige
         places = _places_for(rows, digest, locs, _log_grids(log), log.attrs.get("call_places"), _ref_grids(log))
         worked = lc.where_worked(shown_log, places)
         worked = worked.assign(bands_worked=worked["call"].map(log.groupby("call")["band"].nunique()))
-        t_lo, t_hi = mine["time"].min() - pd.Timedelta(minutes=10), mine["time"].max() + pd.Timedelta(minutes=10)
-        heard = spots[(spots["band"] == pick) & (spots["time"] >= t_lo) & (spots["time"] <= t_hi)]
+        heard, half_hours = lreach.window_spots(log, spots, pick)        # the same half hours, and the same skimmers, as the card under the maps
+        n_heard = lreach.reporter_count(heard)
         view = _view_points(home, heard, worked, locs)
         missing = shown_log["call"].nunique() - worked["call"].nunique()
         drawn = {
             "left": build_map(heard, locs, home, label, who, False, tiles, units, None, title=f"{who} \u00b7 RBN heard you on {pick}", view=view, show_legend=False).get_root().render(),
             "right": build_map(spots.iloc[0:0], locs, home, label, who, False, tiles, units, None, title=f"{who} \u00b7 worked on {pick}",
                                contacts=worked if len(worked) else None, show_spots=False, contact_paths=False, view=view, show_legend=False).get_root().render(),
-            "left_caption": (f"{heard['spotter'].nunique()} skimmers between {t_lo:%H:%M}Z and {t_hi:%H:%M}Z. Dots are coloured and sized by the best SNR."
-                             if len(heard) else (f"No RBN spots on {pick} while you were working it." if result is not None
-                                                 else "The RBN spots are not available, so there is no skimmer map. The stations you worked are on the right.")),
-            "right_caption": (f"{worked['call'].nunique()} stations" + (f" ({missing} could not be placed)" if missing else "")
+            "left_caption": (f"{n_heard} skimmer{'s' if n_heard != 1 else ''} reported you on {pick} in the {half_hours} half hour{'s' if half_hours != 1 else ''} with your logged CW "
+                             "contacts, the same half hours and the same count as the card below the maps. Dots are coloured and sized by the best SNR."
+                             if len(heard) else (f"No skimmer reported you on {pick} in the {half_hours} half hour{'s' if half_hours != 1 else ''} with your logged CW contacts."
+                                                 if half_hours and result is not None else
+                                                 f"There are no logged CW contacts on {pick}, so there are no half hours to look at." if not half_hours and result is not None else
+                                                 "The RBN spots are not available, so there is no skimmer map. The stations you worked are on the right.")),
+            "right_caption": (f"{worked['call'].nunique()} stations from {len(shown_log)} contact{'s' if len(shown_log) != 1 else ''}" + (f" ({missing} could not be placed)" if missing else "")
+                              + (f", {int((shown_log['mode'] != 'CW').sum())} of them in other modes, which skimmers cannot hear" if (shown_log["mode"] != "CW").any() else "")
                               + ". Colour is the report they gave you, from weak (green) to strong (red), grey where the log has none. "
                                 "A black ring marks a station that worked you on more than one band. Click one for the contacts. "
                                 "Each is at the centre of its grid square, state or country."),
@@ -768,11 +793,11 @@ def log_page():
     # conditions, the progress of the RBN download, and last the comparison with RBN and the band conditions page. The log alone is drawn
     # first; the RBN spots are added to the chart, and the maps appear, when the spots have been read.
     glance_slot = st.empty()
-    # The order of the page: what happened (the park, who worked you on more than one band, the highlights and the rate), who heard you (the session chart and the two
-    # maps), the openings and the space weather, the signals, and last the reference lists. Each group opens with a heading. The share box stays under the park card,
+    # The order of the page: what happened (the park, who worked you on more than one band, the highlights and the rate), who heard you (the session chart, the two
+    # maps and, under them, the numbers by band), the openings and the space weather, the signals, and last the reference lists. Each group opens with a heading. The share box stays under the park card,
     # where it was, folded: a picture and a text to post are one click away from the top, not a scroll to the bottom.
-    (overview_head, pota_slot, share_slot, followers_slot, highlights_slot, heard_head, chart_slot, maps_slot, open_head, conditions_slot, space_slot, signal_head,
-     reports_slot, work, compare_slot, ref_slot) = (st.container() for _ in range(16))
+    (overview_head, pota_slot, share_slot, followers_slot, highlights_slot, heard_head, chart_slot, maps_slot, reach_slot, open_head, conditions_slot, space_slot, signal_head,
+     reports_slot, work, compare_slot, ref_slot) = (st.container() for _ in range(17))
     for slot, ident, title, note in ((overview_head, "sec-overview", "Session overview", "What happened: the park, who worked you on more than one band, the highlights and how fast the contacts came in."),
                                      (heard_head, "sec-heard", "Who heard you", "Your session against the RBN skimmers that spotted you, and the stations you worked."),
                                      (open_head, "sec-reach", "Openings and reach", "Where nearby WSPR showed a path, and the space weather around your session."),
@@ -821,7 +846,6 @@ def log_page():
                 st.caption(line)
             if len(hl.stretches(log)) > 1:
                 st.caption("The log has long pauses, so each stretch of activity has its own chart and its own date, as on the session chart; the pauses are not drawn.")
-        timing_hold = st.empty()           # when RBN first and last spotted you on each band, added when the spots have been read
     days = sorted({f"{d:%Y%m%d}" for d in log["time"].dt.date})
     no_spots = pd.DataFrame({"spotter": [], "band": [], "snr": [], "time": pd.to_datetime([])})
     chart = chart_slot.empty()
@@ -892,15 +916,9 @@ def log_page():
         speed = lh.speed_line(log, spots)
         if speed:
             speed_hold.markdown(f":material/speed: {speed}")
-    timing = hl.rbn_timing(log, spots)
-    if len(timing):
-        with timing_hold.container():
-            with st.expander("When RBN first and last spotted you on each band, beside your first and last contact"):
-                st.caption("Times in UTC. A spot says a skimmer decoded you, a contact says you logged someone: the two are shown side by side, and neither says "
-                           "when you were calling or listening.")
-                show = timing.assign(**{c: timing[c].dt.strftime("%H:%M:%S") for c in ("first_contact", "last_contact", "first_spot", "last_spot")}).fillna("none")
-                st.dataframe(show.rename(columns={"band": "Band", "first_contact": "First contact", "last_contact": "Last contact", "first_spot": "First RBN spot",
-                                                  "last_spot": "Last RBN spot", "spots": "Spots"}), hide_index=True, width="stretch", height=min(300, 38 + 35 * len(show)))
+    reach_hold = reach_slot.empty()            # "Where RBN heard you": drawn once the skimmers that were listening have been counted
+    if not cw.empty and len(missing) < len(days):
+        reach_hold.caption("Counting the skimmers that were reporting while you were on each band…")
     headline = ""
     if openings_note is not None:   # the openings, with the skimmers that spotted you now the spots have been read (or are known to be missing)
         openings_note.empty()
@@ -930,6 +948,9 @@ def log_page():
                     result = _run(loaded, spots, skimmers, home, power, label, radius_km)
                     if result is not None:
                         st.session_state["log_result"] = {"signature": signature, "result": result}
+    if not cw.empty:
+        with reach_hold.container():
+            _reach_card(cw, log, spots, skimmers, home, days, missing)
     st.session_state["log_maps_seen"] = digest
     with maps_hold.container():
         _maps_section(log, result, spots, skimmers, home, label, call, tiles, units, digest, lc.spots_link(call, grid, log))

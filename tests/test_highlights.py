@@ -72,16 +72,6 @@ class Highlights(unittest.TestCase):
         for line in hl.highlight_lines(first, far, both):
             self.assertEqual(lo.unsupported_claims(line), [], line)
 
-    def test_the_timing_of_the_spots_sits_beside_the_contacts_band_by_band(self):
-        spots = pd.DataFrame({"spotter": ["A", "B", "C"], "band": ["20m", "20m", "15m"], "snr": [10.0] * 3,
-                              "time": [T("2026-11-18 19:58"), T("2026-11-18 22:41"), T("2026-11-18 20:05")]})
-        timing = hl.rbn_timing(self.log(), spots).set_index("band")
-        self.assertEqual(timing.loc["20m", "first_spot"], T("2026-11-18 19:58"))
-        self.assertEqual(timing.loc["20m", "last_spot"], T("2026-11-18 22:41"))
-        self.assertEqual(timing.loc["20m", "first_contact"], T("2026-11-18 20:00"))
-        self.assertEqual(timing.loc["15m", "spots"], 1)
-        self.assertEqual(len(hl.rbn_timing(self.log(), None)), 0)
-
     def test_the_sentences_pass_the_wording_guard_and_say_when_things_happened(self):
         p = self.places()
         first, far = hl.first_by_continent(p), hl.farthest_by_band(p)

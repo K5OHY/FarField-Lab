@@ -140,6 +140,12 @@ CSS = """<style>
 .dv-look b{font-size:17px}.dv-look div{font-size:14.5px}
 .dv-row{display:grid;grid-template-columns:92px 1fr;align-items:center;margin-top:7px}.dv-row.top{margin-top:2px}
 .dv-lab{color:inherit;opacity:.65;font-size:12.5px}.dv-name{font-weight:800;font-size:16px}
+.lc-take{margin:6px 0 10px;padding:10px 12px;border-left:3px solid var(--t);background:rgba(32,178,170,.07);border-radius:0 8px 8px 0;font-size:14.5px}
+.lc-rrow{display:grid;grid-template-columns:170px 1fr;gap:14px;padding:12px 0;border-top:1px solid var(--line)}.lc-rwho{display:flex;flex-direction:column;gap:4px;align-items:flex-start;font-size:13px}.lc-rwho .m{font-size:12px;opacity:.65}
+.lc-rhead{font-size:16px;margin-bottom:3px}.lc-rline{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin:3px 0;font-size:13px}.lc-rline .lab{width:150px;opacity:.65;font-size:12px}
+.lc-rsup{font-size:12px;opacity:.68;margin-top:8px}.lc-rfoot{font-size:12.5px;opacity:.68;margin:12px 0 2px}
+.lc-rg{display:inline-block;border-radius:99px;padding:1px 10px;font-size:12.5px}.lc-rg.on{background:rgba(32,178,170,.18);border:1px solid rgba(32,178,170,.55)}.lc-rg.off{opacity:.65;border:1px dashed var(--line)}
+@media (max-width:700px){.lc-rrow{grid-template-columns:1fr}.lc-rline .lab{width:100%}}
 .dv-bandkey{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 2px;font-size:.85rem}.dv-bandkey b{font-weight:600;margin-right:2px}
 .dv-chip{display:inline-block;padding:0 9px;border-radius:7px;font-weight:800;line-height:1.5;border:1px solid rgba(128,128,128,.55)}
 .dv-strip{position:relative;height:28px;border-radius:7px;overflow:hidden;background:var(--lane)}
@@ -1403,6 +1409,99 @@ def _long_time(minutes):
         return f"{minutes:.0f} minutes"
     h, m = divmod(int(round(minutes)), 60)
     return f"{h} h" if m == 0 else f"{h} h {m:02d} min"
+
+
+def _approx_km(km):
+    """A distance as the page writes a rough one: to the nearest 100 km once it is over 1,000."""
+    return f"{round(km, -2):,.0f}" if km >= 1000 else f"{round(km, -1):,.0f}"
+
+
+def _utc(t):
+    return "" if pd.isna(t) else f"{t:%H:%M}"
+
+
+def _span_utc(a, b):
+    """Two times as one stretch, '17:04–17:08 UTC', each with its date when they are on different days, so a log over two days does not read as ending before it began."""
+    if pd.isna(a) or pd.isna(b):
+        return "none"
+    if a.date() == b.date():
+        return f"{a:%H:%M}–{b:%H:%M} UTC"
+    return f"{a:%d %b %H:%M} to {b:%d %b %H:%M} UTC"
+
+
+def _days_text(days):
+    return ", ".join(f"{pd.Timestamp(d):%d %b}" for d in days)
+
+
+def _reach_band_html(r, colours, open_it):
+    """One band of the "Where RBN heard you" card: a chip, the count of skimmers that reported you, how far, and where, with the regional counts folded under it."""
+    from log_reach import region_label
+    band = r["band"]
+    who = (f'<div class="lc-rwho">{band_chip(band, colours.get(band, "#888888"))}<span>{r["contacts"]} contact{"s" if r["contacts"] != 1 else ""}</span>'
+           f'<span class="m">First to last logged contact {_span_utc(r["first_contact"], r["last_contact"])}</span>'
+           + (f'<span class="m">{r["other_mode"]} more in other modes, which RBN cannot hear</span>' if r["other_mode"] else "") + "</div>")
+    if r["state"] == "unavailable":
+        why = (f"RBN has no file for {_days_text(r['missing_days'])} yet, so the half hours with your {band} contacts cannot be counted."
+               if r["missing_days"] else "The list of skimmers that were reporting could not be read, so these half hours cannot be counted.")
+        return f'<div class="lc-rrow">{who}<div class="lc-rmain"><div class="lc-rhead">No RBN data for {band}</div><div class="lc-rsup">{escape(why)}</div></div></div>'
+    half = f"{r['windows']} half hour{'s' if r['windows'] != 1 else ''}"
+    if r["state"] == "no_activity":
+        return (f'<div class="lc-rrow">{who}<div class="lc-rmain"><div class="lc-rhead">No skimmer reported any station on {band} in the {half} with your logged CW contacts</div>'
+                '<div class="lc-rsup">There is nothing to set your reports against for those half hours: RBN has no reports on this band then, from you or from anyone else.</div></div></div>')
+    n = r["reporters"]
+    head = f'<b>{n} skimmer{"s" if n != 1 else ""}</b> reported you on {band}'
+    lines = []
+    if r["farthest"]:
+        km, call, region = r["farthest"]
+        lines.append(f'<div class="lc-rline"><span class="lab">Farthest report</span>{escape(call)} · ~{_approx_km(km)} km · {escape(region_label(region))}</div>')
+        names = [region_label(k) for k, (h, _) in sorted(r["regions"].items(), key=lambda kv: (-kv[1][0], kv[0])) if h]
+        lines.append(f'<div class="lc-rline"><span class="lab">Reports from</span>{escape(", ".join(names))}</div>')
+    elif n:
+        lines.append('<div class="lc-rline"><span class="lab">Farthest report</span>not known: no skimmer that reported you has a place in the skimmer list</div>')
+    else:
+        lines.append(f'<div class="lc-rline">{r["active"]} skimmer{"s" if r["active"] != 1 else ""} reported other stations on {band} in the {half} with your logged CW contacts.</div>')
+    on = "".join(f'<span class="lc-rg on"><b>{escape(region_label(k))}</b> {h} of {a}</span>' for k, (h, a) in sorted(r["regions"].items(), key=lambda kv: (-kv[1][0], -kv[1][1])) if h)
+    off = "".join(f'<span class="lc-rg off">{escape(region_label(k))} 0 of {a}</span>' for k, (h, a) in sorted(r["regions"].items(), key=lambda kv: -kv[1][1]) if not h)
+    nobody = '<span class="lc-rg off">none</span>'
+    spot_span = _span_utc(r["first_spot"], r["last_spot"]) if r["spots_total"] else "none"
+    detail = (f'<div class="lc-rline"><span class="lab">Reports from</span>{on or nobody}</div>'
+              f'<div class="lc-rline"><span class="lab">No RBN reports from</span>{off or nobody}</div>'
+              f'<div class="lc-rsup">{r["active"]} skimmer{"s" if r["active"] != 1 else ""} reported any station on {band} in the {half} with your logged CW contacts, you included; '
+              f'{n} of them reported you ({r["reports"]} report{"s" if r["reports"] != 1 else ""}). Your first and last spot on {band} over the whole log: '
+              f'{spot_span} ({r["spots_total"]} in all).</div>')
+    return (f'<div class="lc-rrow">{who}<div class="lc-rmain"><div class="lc-rhead">{head}</div>{"".join(lines)}'
+            f'<details class="dv-more"{" open" if open_it else ""}><summary>Regional breakdown</summary>{detail}</details></div></div>')
+
+
+def reach_takeaway(rows):
+    """The sentence or two over the card: the farthest report of any band, and the busiest band's reports all being from North America when that is so."""
+    from log_reach import overall, region_label
+    facts = overall(rows)
+    best = facts["farthest_band"]
+    if best is None:
+        return "No skimmer reported you in the half hours with your logged CW contacts." if any(r["state"] == "ok" for r in rows) else ""
+    km, call, region = best["farthest"]
+    text = f'Your farthest RBN report was on {best["band"]}: {call} in {region_label(region)}, approximately {_approx_km(km)} km away.'
+    if facts["busiest"]:
+        text += f' Your {facts["busiest"]["band"]} reports came from North America.'
+    return text
+
+
+def reach_html(rows, colours, total_spots=0, total_skimmers=0):
+    """The "Where RBN heard you" card: for each band with logged CW contacts, how many skimmers reported you, how far, and where, from RBN, counted over the half hours that
+    hold a logged CW contact on the band (log_reach.reach_by_band). The band with the farthest report is open. Empty text when there are no rows."""
+    if not rows:
+        return ""
+    best = max((x for x in rows if x["farthest"]), key=lambda x: x["farthest"][0], default=None)
+    take = reach_takeaway(rows)
+    colours = colours or {}
+    sub = ("The Reverse Beacon Network skimmers that reported you, band by band, and where they are. Each count covers the half hours that hold a logged CW contact on that band; "
+           "a skimmer is counted once per band." + (f" Over the whole log, {total_spots:,} RBN spots of you came from {total_skimmers} skimmers." if total_spots else ""))
+    foot = ("These counts show where RBN skimmers reported you, not everywhere you could be heard. A skimmer is active when it reported any station on the band in those half hours, "
+            "you included. A spot says a skimmer decoded you and a contact says you logged someone: neither says when you were calling or listening. Times are UTC.")
+    return ('<div class="lc"><div class="lc-card"><h4>Where RBN heard you</h4>'
+            f'<p class="sub">{escape(sub)}</p>' + (f'<div class="lc-take">{escape(take)}</div>' if take else "")
+            + "".join(_reach_band_html(r, colours, r is best) for r in rows) + f'<p class="lc-rfoot">{escape(foot)}</p></div></div>')
 
 
 def followers_html(log, summary, rows=LADDER_ROWS):

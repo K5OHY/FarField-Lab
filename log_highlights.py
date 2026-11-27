@@ -77,20 +77,6 @@ def repeat_contacts(log):
     return out
 
 
-def rbn_timing(log, spots):
-    """For each band: the first and last of your contacts and the first and last RBN spot of you, in UTC, with the number of spots. Highest band first. A band
-    with spots but no contact is left out (the log is what is being read). Columns: band, first_contact, last_contact, first_spot, last_spot, spots."""
-    cols = ["band", "first_contact", "last_contact", "first_spot", "last_spot", "spots"]
-    if log is None or len(log) == 0 or spots is None or len(spots) == 0:
-        return pd.DataFrame(columns=cols)
-    rows = []
-    for band in lc.bands_top_down(log):
-        mine, sp = log[log["band"] == band]["time"], spots[spots["band"] == band]["time"]
-        rows.append({"band": band, "first_contact": mine.min(), "last_contact": mine.max(), "first_spot": sp.min() if len(sp) else pd.NaT,
-                     "last_spot": sp.max() if len(sp) else pd.NaT, "spots": int(len(sp))})
-    return pd.DataFrame(rows, columns=cols)
-
-
 def _names(calls, limit=3):
     calls = list(calls)
     shown = ", ".join(calls[:limit]) if len(calls) <= 2 else ", ".join(calls[:limit]) + (f" and {len(calls) - limit} more" if len(calls) > limit else "")
