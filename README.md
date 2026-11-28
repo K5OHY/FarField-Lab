@@ -4,19 +4,25 @@
 
 **Explore propagation. Compare antennas.**
 
-FarField Lab helps you explore how your station gets out. Map the receivers that reported you, compare two antenna setups, check recent propagation near your location, or explore an operating session from your log.
+FarField Lab helps you explore how your station gets out. Map the receivers that reported you, compare two antenna setups, check recent propagation near your location, or explore an operating session from your log, such as a POTA or SOTA activation.
 
 It uses reception reports from the [Reverse Beacon Network](https://www.reversebeacon.net/) (RBN) and [WSPR](https://wsprnet.org/), alongside your uploaded log when you provide one.
 
 **[Open FarField Lab](https://farfieldlab.streamlit.app/)**. Nothing to install. (It was called RBN Signal Mapper before; the old addresses still work.)
+
+| | |
+|---|---|
+| **[My spots](https://farfieldlab.streamlit.app/spots)**<br>[![My spots](images/ui/thumb_spots.jpg)](https://farfieldlab.streamlit.app/spots) | **[Compare antennas](https://farfieldlab.streamlit.app/compare)**<br>[![Compare antennas](images/ui/thumb_compare.jpg)](https://farfieldlab.streamlit.app/compare) |
+| **[Band conditions](https://farfieldlab.streamlit.app/conditions)**<br>[![Band conditions](images/ui/thumb_conditions.jpg)](https://farfieldlab.streamlit.app/conditions) | **[Log analysis](https://farfieldlab.streamlit.app/log)**<br>[![Log analysis](images/ui/thumb_log.jpg)](https://farfieldlab.streamlit.app/log) |
 
 ## New here? Start with an example
 
 You can explore these without uploading a file or owning any equipment.
 
 - **[My spots](https://farfieldlab.streamlit.app/spots):** open it and click **Try an example** to explore a real reception map.
-- **[Log analysis](https://farfieldlab.streamlit.app/log):** open it and choose an example log. In *My biggest at Bush House*, find the station that worked all five bands, then explore where RBN reported the activation.
 - **[Compare antennas](https://farfieldlab.streamlit.app/compare):** open it and choose one of the real antenna tests.
+- **[Band conditions](https://farfieldlab.streamlit.app/conditions):** there is nothing to load. Enter your callsign or a grid square (a park, say) and see which bands look open near you right now.
+- **[Log analysis](https://farfieldlab.streamlit.app/log):** open it and choose an example log, such as a POTA or SOTA activation. In *My biggest at Bush House*, find the station that worked all five bands, then explore where RBN reported the activation.
 
 ## Or use your own data
 
@@ -25,19 +31,14 @@ You can explore these without uploading a file or owning any equipment.
 | See where your signal was reported | **[My spots](https://farfieldlab.streamlit.app/spots)** ([guide](docs/my-spots.md)) | Your callsign and a day with RBN or WSPR reports | The map, then the band buttons above it |
 | Compare two antennas, frequencies or power levels | **[Compare antennas](https://farfieldlab.streamlit.app/compare)** ([guide](docs/compare-antennas.md)) | Reports from a test where you switched between them, and how you switched | The coloured *Summary* card |
 | See which bands look open near you now | **[Band conditions](https://farfieldlab.streamlit.app/conditions)** ([guide](docs/band-conditions.md)) | A callsign or grid square, your power and your mode | The band tiles |
-| Make sense of an operating session | **[Log analysis](https://farfieldlab.streamlit.app/log)** ([guide](docs/log-analysis.md)) | An ADIF file (.adi or .adif) exported from your logging program, and the power you used | The row of findings under the numbers |
+| Make sense of an operating session, such as a POTA or SOTA activation | **[Log analysis](https://farfieldlab.streamlit.app/log)** ([guide](docs/log-analysis.md)) | An ADIF file (.adi or .adif) exported from your logging program, and the power you used | The row of findings under the numbers |
 
-**Three things that prevent most mistakes**
+**Two things that prevent most mistakes**
 
-- **My spots with RBN:** pick a day that has finished (UTC). RBN publishes a day's file after the day ends; the guide explains today's options.
 - **Log analysis:** set your power before you upload. The page does not read it from the log.
 - **Compare antennas:** check which antenna is A and which is B, and how you switched, before you read the result.
 
 **Do I need a WSPR transmitter?** Not for **Band conditions** or **Log analysis**: they use transmissions from other WSPR stations near your operating location. **My spots** and **Compare antennas** need your own signal to have been reported, either on RBN or from a WSPR transmitter of your own.
-
-![The Compare antennas summary](images/compare-summary.png)
-
-*The Summary from a real test: 12 transmissions switched between a 40m loop and a 20m dipole. It gives the signal difference with its 95% range, how many receivers heard each antenna, and how consistently the same antenna won.*
 
 ## Understand the three data sources
 

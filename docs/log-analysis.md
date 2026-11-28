@@ -6,6 +6,8 @@
 
 **What happened during an operating session, and who reported hearing you?**
 
+It was made with POTA and SOTA activations in mind, and it works for any ADIF log. For a POTA or SOTA log it also shows how your activation compares with the others at that park or summit.
+
 ## Before you begin
 
 - **An ADIF file** (.adi or .adif) exported from your logging program, up to 5 MB. Each contact needs a call, date, time and band. Or skip this and open an example: no file needed.
