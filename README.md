@@ -40,22 +40,24 @@ You can explore these without uploading a file or owning any equipment.
 
 **Do I need a WSPR transmitter?** Not for **Band conditions** or **Log analysis**: they use transmissions from other WSPR stations near your operating location. **My spots** and **Compare antennas** need your own signal to have been reported, either on RBN or from a WSPR transmitter of your own.
 
-## Understand the three data sources
+## Understand the data sources
 
-| Source | What it tells you |
-|---|---|
-| **Your log** | Who you worked, on which band, and when. |
-| **RBN** | Which automated receivers (skimmers) decoded your signal. The log comparison uses your CW contacts. |
-| **Nearby WSPR** | Which paths were reported from near your location, by other people's transmissions. It describes the path, not you. |
+| Source | What it tells you | Used by |
+|---|---|---|
+| **Your log** | Who you worked, on which band, and when. | Log analysis |
+| **RBN reports of you** | Which automated receivers (skimmers) decoded your CW signal. | My spots, Compare antennas (a quick CW check), Log analysis (your CW contacts) |
+| **WSPR reports of your own transmitter** | Which WSPR receivers decoded your WSPR transmissions, and how strongly. | My spots, Compare antennas (the recommended test) |
+| **Nearby WSPR** | Which paths were reported from near your location, by other people's transmissions. It describes the path, not you. | Band conditions, Log analysis |
 
-A logged contact confirms communication between those two stations at that time. An RBN report confirms that a particular receiver decoded your signal. Nearby WSPR adds evidence from other transmitters around your location. Missing reports can reflect gaps in monitoring coverage, so a band with no reports is not necessarily a closed band.
+A logged contact confirms communication between those two stations at that time. An RBN or WSPR report of you confirms that a particular receiver decoded your signal. Nearby WSPR adds evidence from other transmitters around your location. Missing reports can reflect gaps in monitoring coverage, so a band with no reports is not necessarily a closed band.
 
 ## Help and more detail
 
 - **Help** is in the app's menu, and every page has a *What this page does and how to use it* box.
 - **Something looks wrong?** [Troubleshooting](docs/troubleshooting.md)
 - **How it is calculated,** including the check against a published study: [Methodology](docs/METHODOLOGY.md)
-- **Run it on your own computer, add the optional keys, or contribute:** [Developer guide](docs/developer.md)
+- **Install it, update your copy, add the optional keys or run a collector:** [Run it yourself](docs/run-it-yourself.md)
+- **What each file is for, and where the data comes from:** [Developer guide](docs/developer.md)
 
 ## Your data
 

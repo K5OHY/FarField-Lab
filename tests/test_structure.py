@@ -67,7 +67,7 @@ class Structure(unittest.TestCase):
 
     def test_every_link_and_picture_in_the_readme_and_the_guides_points_at_something(self):
         """A moved guide changes what its relative links are relative to. Every file, picture and heading a link names has to be there."""
-        for name in ("README.md", *docs_files()):
+        for name in ("README.md", "collector/SETUP.md", *docs_files()):
             path = os.path.join(HERE, *name.split("/"))
             with open(path, encoding="utf-8") as f:
                 text = f.read()

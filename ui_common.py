@@ -175,7 +175,7 @@ GUIDES = {
                "can report you, so a quiet part of the map can mean no one was listening there, not that the path was closed."),
     "compare": dict(
         purpose="Which of two antennas (or two power levels) gets out better? It compares the reports one station received while switching "
-                "between them. The page walks you through three steps: load your spots (WSPR is the careful way, RBN a quick check for CW), say how you "
+                "between them. The page walks you through three steps: load your spots (WSPR is the recommended test, RBN a quick check for CW), say how you "
                 "switched, then read the result.",
         steps=[],            # the three steps are the strip drawn just under this box
         shows=["Which antenna was stronger and by how many dB, with a range and a plain statement of how sure the test can be.",

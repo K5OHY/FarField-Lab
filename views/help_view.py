@@ -15,14 +15,19 @@ TOPICS = {
     "Band conditions": ("conditions", ["band-conditions.md"]),
     "Log analysis": ("log", ["log-analysis.md"]),
     "Troubleshooting": (None, ["troubleshooting.md"]),
+    "Run it yourself": (None, ["run-it-yourself.md"]),
     "About and methodology": (None, ["about.md", "developer.md"]),
 }
+# Start here is the README's own text, so the front page on GitHub and this one say the same. These are the README sections it shows, in order.
+START_SECTIONS = ["New here? Start with an example", "Or use your own data", "Understand the data sources", "Your data"]
+SITE = "https://farfieldlab.streamlit.app/"          # the README links the pages by their address; inside the app they are the same address on whichever site this is
+EXTRA = {"Run it yourself": [("The live collector, step by step", "collector/SETUP.md")]}   # a guide outside docs/, shown folded at the end of a topic
 LINKED_NOT_SHOWN = {"METHODOLOGY.md"}
 REPLACES_GUIDE = "<!-- help:replaces-page-guide -->"   # on a line of its own in a guide file: Help shows that guide, not the page's short one above it
 SEE_ALSO = {"My spots": ["Troubleshooting"], "Compare antennas": ["Troubleshooting", "About and methodology"],
             "Band conditions": ["Troubleshooting", "About and methodology"], "Log analysis": ["Troubleshooting"],
-            "Start here": ["Troubleshooting"]}
-BUTTONS = {"Troubleshooting": "Open troubleshooting", "About and methodology": "Methodology and calculations"}
+            "Start here": ["Troubleshooting", "Run it yourself", "About and methodology"]}
+BUTTONS = {"Troubleshooting": "Open troubleshooting", "Run it yourself": "Install and run it yourself", "About and methodology": "Methodology and calculations"}
 INTRO = ("See where your signal is heard, how strong it is, and how conditions change. Map the [Reverse Beacon Network](https://www.reversebeacon.net/) "
          "stations that spotted your CQ, or the [WSPR](https://wsprnet.org/) stations that heard your beacon. Compare which of two antennas, frequencies or "
          "power levels is getting out better, using real-world signal measurements. And check which bands are open and where you would be heard right now.")
@@ -39,7 +44,7 @@ def _link(match):
     to another guide or to another part of the same one would go nowhere from inside a topic, so it becomes plain text: the 'See also' buttons
     carry the real navigation."""
     label, target = match.group(1), match.group(2)
-    if target.startswith(("http://", "https://", "mailto:")):
+    if target.startswith(("http://", "https://", "mailto:", "/")):      # a page of this app ("/spots") stays a link
         return match.group(0)
     if target.startswith("../"):
         return f"[{label}]({github_url()}/blob/main/{target[3:]})"
@@ -129,10 +134,34 @@ def _see_also(topic):
             col.button(BUTTONS[name], key=f"see_{_slug(topic)}_{_slug(name)}", on_click=_go, args=(name,), width="stretch")
 
 
-def _start_here():
-    """The quick start: the four things the app does, each a link to its page."""
-    st.markdown("#### Quick start")
-    st.markdown("Pick what you want to do. The topics above explain each part, with the long explanations folded closed.")
+def _readme_parts(root):
+    """The README's opening lines and its '## ' sections: ({title: [heading, lines...]}, opening lines). ({}, []) when it is not there."""
+    try:
+        text = (root / "README.md").read_text(encoding="utf-8")
+    except OSError:
+        return {}, []
+    intro, sections, current = [], {}, None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            current = line[3:].strip()
+            sections[current] = [line]
+        else:
+            (sections[current] if current else intro).append(line)
+    return sections, intro
+
+
+def _readme_line(line):
+    """A README line made for the app: the 'guide' links go (the topics are one click above), and the pages are linked on this site, not the main one."""
+    return re.sub(r"\s*\(\[guide\]\(docs/[^)]+\)\)", "", line).replace(SITE, "/")
+
+
+def _start_here(root):
+    """Start here: the README's opening, a button for each page, and the README's own sections on examples, your own data and the data sources."""
+    sections, intro = _readme_parts(root)
+    for line in intro:
+        if line.strip() and not line.startswith(("![", "# ", "|", "**Explore propagation", "**[Open FarField Lab]")):
+            st.markdown(_fix(_readme_line(line)))
+    st.markdown("**Open a page**")
     for row in (CHOOSER[:2], CHOOSER[2:]):
         for col, (key, title, blurb, icon, action) in zip(st.columns(2), row):
             with col, st.container(border=True):
@@ -140,8 +169,13 @@ def _start_here():
                 st.caption(blurb)
                 if key in PAGES:
                     st.page_link(PAGES[key], label=action, icon=icon)
-    st.markdown("**Just looking?** My spots has a **Try an example** button, and Compare antennas "
-                "opens with six real tests (listed below).")
+    missing = [title for title in START_SECTIONS if title not in sections]
+    if missing:
+        st.warning(f"The README no longer has: {', '.join(missing)}. The front page is on [GitHub]({github_url()}#readme).")
+    lines = []
+    for title in START_SECTIONS:
+        lines += [_readme_line(l) for l in sections.get(title, [])] + [""]
+    _show(lines, root)
 
 
 def _about():
@@ -175,7 +209,12 @@ def help_page():
     if missing:
         st.warning(f"Part of this topic isn't here ({', '.join(missing)}). The guides are on [GitHub]({github_url()}/tree/main/docs).")
     if topic == "Start here":
-        _start_here()
+        _start_here(root)
+        if lines:                                  # what Start here used to say: the examples in detail, and how to share a view
+            with st.expander("More: the examples in detail, and sharing a view"):
+                _show(lines, root)
+        _see_also(topic)
+        return
     if last:
         _about()
     replaces = REPLACES_GUIDE in (l.strip() for l in lines)   # a guide file that has its own purpose, steps and limits stands in for the page's short guide
@@ -185,4 +224,10 @@ def help_page():
     if guide and not replaces and sum(1 for l in lines if l.startswith("## ")) == 1:   # the topic's own name is the heading already
         lines = [l for l in lines if not l.startswith("## ")]
     _show(lines, root)
+    for label, path in EXTRA.get(topic, []):
+        extra, gone = _topic_lines(root, [path])
+        with st.expander(label):
+            if gone:
+                st.markdown(f"This guide is on [GitHub]({github_url()}/blob/main/{path}).")
+            _show(extra, root)
     _see_also(topic)

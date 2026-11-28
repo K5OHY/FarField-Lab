@@ -1477,8 +1477,8 @@ class HelpPage(unittest.TestCase):
         at = page("help_page").run()
         self.assertEqual(errors(at), [])
         text = "\n".join(m.value for m in at.markdown)
-        self.assertIn("Quick start", text)              # it opens on Start here
-        self.assertIn("Open an example", text)
+        self.assertIn("New here? Start with an example", text)   # it opens on Start here, which is the README's own text
+        self.assertIn("Open an example", text)                    # the examples in detail are folded under it
         self.assertIn("DX Commander", text)
         _, about = self._topic_text("About and methodology")
         self.assertIn("/blob/main/docs/METHODOLOGY.md", about)  # the README's relative link, pointed at the repository
@@ -1518,7 +1518,7 @@ class HelpPage(unittest.TestCase):
         import re
         from views.help_view import LINKED_NOT_SHOWN, TOPICS
         self.assertEqual(list(TOPICS), ["Start here", "My spots", "Compare antennas", "Band conditions", "Log analysis",
-                                        "Troubleshooting", "About and methodology"])
+                                        "Troubleshooting", "Run it yourself", "About and methodology"])
         docs = os.path.join(HERE, "docs")
         listed = {name for _, names in TOPICS.values() for name in names}
         for name in listed:
@@ -1533,7 +1533,30 @@ class HelpPage(unittest.TestCase):
                 for title in re.findall(r"^## (.+)$", f.read(), re.M):
                     if title not in ("Log analysis", "Compare two antennas", "Band conditions now"):          # (those three are the topics themselves)
                         self.assertIn(title, shown, f"docs/{name} section {title!r} is missing from the Help page")
-        self.assertEqual(re.findall(r"\]\((?!https?://)[^)]*\)", shown), [], "a link inside Help that goes nowhere, or markdown shown raw")
+        self.assertEqual(re.findall(r"\]\((?!https?://|/(?:spots|compare|conditions|log)\))[^)]*\)", shown), [], "a link inside Help that goes nowhere, or markdown shown raw")
+
+    def test_start_here_is_the_readmes_own_text_and_leads_to_the_details_for_the_curious(self):
+        """One source: the front page on GitHub and Start here in the app say the same. The pages are linked on whichever site this is, and the
+        guide links (the topics are one click above) are gone. The install, update, keys and collector guide is its own topic."""
+        import re
+        from views.help_view import START_SECTIONS
+        with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        at, text = self._topic_text("Start here")
+        for title in START_SECTIONS:
+            self.assertIn(f"## {title}", readme, f"the README lost {title!r}, which Start here shows")
+            self.assertIn(title, text)
+        self.assertIn("Do I need a WSPR transmitter?", text)
+        self.assertIn("(/log)", text)                                        # the page, on this site
+        self.assertNotIn("streamlit.app/", text)
+        self.assertNotIn("[guide]", text)
+        self.assertEqual([b.label for b in at.button], ["Open troubleshooting", "Install and run it yourself", "Methodology and calculations"])
+        _, yourself = self._topic_text("Run it yourself")
+        for heading in ("Run it locally", "Update your copy", "Optional keys for your own copy", "Live spots and collectors"):
+            self.assertIn(heading, yourself)
+        at2, _ = self._topic_text("Run it yourself")
+        self.assertIn("The live collector, step by step", [e.label for e in at2.expander])      # the long collector guide is there, folded
+        self.assertTrue(re.search(r"git pull", yourself))
 
     def test_every_help_topic_draws_its_pictures(self):
         """A picture in a guide is written relative to docs/ (../images/x.png) so it shows on GitHub; Help draws it from the app's own folder."""

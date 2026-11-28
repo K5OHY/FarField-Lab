@@ -128,7 +128,7 @@ this guide does not cover. Use Option A for that.
 
 ## Option C: on your own computer, inside the app (nothing to set up)
 
-When you run the app on your own computer (see *Run it locally* in the [Developer guide](../docs/developer.md)), it can start a collector inside itself. The first time, the sidebar
+When you run the app on your own computer (see *Run it locally* in [Run it yourself](../docs/run-it-yourself.md)), it can start a collector inside itself. The first time, the sidebar
 asks for your own callsign to log in to the feed with; type it and click **Start collecting today's spots**. After that it starts by itself each time the
 app does. There is nothing to install: today's spots appear on **My spots** once the app has been running for a little while, and the sidebar says when
 it began collecting.

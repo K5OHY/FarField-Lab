@@ -1,71 +1,8 @@
 # Developer guide
 
-## Run it locally
-
-You need [Python 3.9+](https://www.python.org/downloads/). These steps install the main branch, the version that is live. The `beta` branch has newer changes that are still being tested.
-
-When you run it yourself, days that have already ended are remembered in a folder (in your computer's temporary folder, or the folder named by the `RBN_CACHE_DIR` setting), up to about 400 MB, so loading the same day again does not download it again. Anything from the last hour is always fetched fresh.
-
-**Windows (PowerShell).** Set it up once:
-
-```bash
-git clone https://github.com/K5OHY/FarField-Lab.git
-cd FarField-Lab
-python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-```
-
-Then start it from the project folder:
-
-```bash
-.venv\Scripts\streamlit run web.py
-```
-
-Use exactly that command. Plain `streamlit run web.py` can fail with "not recognized" unless the virtual environment is activated, because the packages live inside `.venv`. If `python` is not found, try `py -m venv .venv`.
-
-**macOS / Linux.**
-
-```bash
-git clone https://github.com/K5OHY/FarField-Lab.git
-cd FarField-Lab
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/streamlit run web.py
-```
-
-Next time, just run the last command again. Open http://localhost:8501 if the browser does not open, and stop the app with Ctrl+C (close the browser tab first if it hangs).
-
-**Today's spots, built in.** While the app is open on your own computer it also listens to RBN's live feed by itself, so My spots can show today. The first time, the sidebar asks for your own callsign to log in with and remembers it (nothing connects until you give it; set `LIVE_RBN_CALL` to give it without being asked), and it only has the spots from when the app started: the page says when it began listening and where it lost its connection, and a restart the same day carries on. The spots are kept for 48 hours in a small file in your local app-data folder (not in the project folder). It is on by default; set `LIVE_RBN_LOCAL=0` to switch it off. To use a collector on another machine instead, set `LIVE_RBN_URL` (see [collector/SETUP.md](../collector/SETUP.md)).
-
-The skimmer list refreshes itself every 24 hours, from RBN's node list and, for any skimmer RBN's page could not give (or when it cannot be read from the server), from [HamQTH.com](https://www.hamqth.com)'s copy of it (data provided by HamQTH.com); a skimmer that has since dropped off is kept. To force it: `.venv\Scripts\python rbn_to_csv.py` (macOS/Linux: `.venv/bin/python rbn_to_csv.py`).
-
-### Optional keys for your own copy
-
-The app works without any key. Two free keys make the Log page a little better, and each one is only used for that:
-
-| Key | What it adds | Without it |
-|---|---|---|
-| `HAMQTH_API_KEY` | Places a station outside North America at its callbook home instead of the middle of its call area. | It uses the call area, as it always did. |
-| `NASA_API_KEY` | The "why" under a geomagnetic storm: which ejections NASA's DONKI links to it. | It uses NASA's shared demo key, which allows only about 10 requests an hour for everyone, so the "why" is often missing and the story says it could not be read. Kp, flux and flares still show. |
-
-**HamQTH.** You need a free HamQTH account ([register here](https://www.hamqth.com/register)). Sign in, open your settings (Modify profile, then Account & privacy), choose **Apps and API keys**, and make a key. Give it a name such as "FarField Lab". It starts with `hqk_`. HamQTH's own description is on its [developers page](https://www.hamqth.com/developers.php). A key does not expire and can be revoked there at any time, and it has the same rights as your password, so treat it like one.
-
-**NASA.** Fill in the "Generate API Key" form at [api.nasa.gov](https://api.nasa.gov). The key is shown at once and emailed to you.
-
-**Where to put them.** Make a file called `secrets.toml` in the `.streamlit` folder of the project (create the folder if it is missing), with one line for each key you have:
-
-```toml
-HAMQTH_API_KEY = "paste your HamQTH key here"
-NASA_API_KEY = "paste your NASA key here"
-```
-
-That file is listed in `.gitignore`, so git never uploads it. Do not put a key in the code, in a commit, in a screenshot or in a message to anyone. Instead of the file you can set an environment variable for one window, for example in PowerShell `$env:NASA_API_KEY = "..."`. Restart the app after adding a key.
-
-To check that a key works without showing it, run `.venv\Scripts\python check_hamqth_key.py` or `.venv\Scripts\python check_nasa_key.py` (macOS/Linux: `.venv/bin/python ...`). Each prints only whether the key was accepted. If you host your own copy on Streamlit Community Cloud, paste the same lines into the app's **Settings, Secrets** box instead of a file.
-
 ## Help inside the app
 
-The **Help** page in the app opens with the same four tasks as the home page, then has one tab for each part (My spots, Compare antennas, Band conditions, Log analysis, Troubleshooting, About and methodology), built from the guide files in `docs/`, with the long explanations folded closed. The sidebar has a link to the README and code on GitHub.
+The **Help** page in the app has one tab for each part: **Start here** (the README's text, so the two say the same, with the four pages one click away), then My spots, Compare antennas, Band conditions, Log analysis, Troubleshooting, **Run it yourself** and About and methodology. They are built from the guide files in `docs/`, with the long explanations folded closed. The sidebar has a link to the README and code on GitHub.
 
 ## Files
 
