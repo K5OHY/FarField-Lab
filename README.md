@@ -21,7 +21,7 @@ You can explore these without uploading a file or owning any equipment.
 
 - **[My spots](https://farfieldlab.streamlit.app/spots):** open it and click **Try an example** to explore a real reception map.
 - **[Compare antennas](https://farfieldlab.streamlit.app/compare):** open it and choose one of the real antenna tests.
-- **[Band conditions](https://farfieldlab.streamlit.app/conditions):** there is nothing to load. Enter your callsign or a grid square (a park, say) and see which bands look open near you right now.
+- **[Band conditions](https://farfieldlab.streamlit.app/conditions):** there is nothing to load. Enter your callsign or the grid square you are operating from, and see which bands look open near you right now.
 - **[Log analysis](https://farfieldlab.streamlit.app/log):** open it and choose an example log, such as a POTA or SOTA activation. In *My biggest at Bush House*, find the station that worked all five bands, then explore where RBN reported the activation.
 
 ## Or use your own data
@@ -33,10 +33,7 @@ You can explore these without uploading a file or owning any equipment.
 | See which bands look open near you now | **[Band conditions](https://farfieldlab.streamlit.app/conditions)** ([guide](docs/band-conditions.md)) | A callsign or grid square, your power and your mode | The band tiles |
 | Make sense of an operating session, such as a POTA or SOTA activation | **[Log analysis](https://farfieldlab.streamlit.app/log)** ([guide](docs/log-analysis.md)) | An ADIF file (.adi or .adif) exported from your logging program, and the power you used | The row of findings under the numbers |
 
-**Two things that prevent most mistakes**
-
-- **Log analysis:** set your power before you upload. The page does not read it from the log.
-- **Compare antennas:** check which antenna is A and which is B, and how you switched, before you read the result.
+**Comparing antennas?** Check which antenna is A and which is B, and how you switched, before you read the result.
 
 **Do I need a WSPR transmitter?** Not for **Band conditions** or **Log analysis**: they use transmissions from other WSPR stations near your operating location. **My spots** and **Compare antennas** need your own signal to have been reported, either on RBN or from a WSPR transmitter of your own.
 

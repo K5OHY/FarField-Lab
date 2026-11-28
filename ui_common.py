@@ -188,7 +188,7 @@ GUIDES = {
     "conditions": dict(
         purpose="Which bands look open from here right now? It takes the WSPR stations transmitting near you in the last half hour and "
                 "restates their reports for your power and mode.",
-        steps=["Enter your callsign or grid square in the sidebar (a park, say), or use **My location**.",
+        steps=["Enter your callsign or grid square in the sidebar (the one you are operating from, if you are portable), or use **My location**.",
                "Set your power and mode.",
                "Read the band tiles and highlights, then pick a band or two under them to look closer."],
         shows=["A tile for each band: open, marginal or quiet, whether it is opening or fading, and how far the best receiver was.",
@@ -216,6 +216,28 @@ GUIDES = {
                "CW contacts. The signal comparison rests on a reference correction that is experimental, and it says nothing about your antenna. The log is used "
                "for this visit only; your callsign is sent to public services (RBN, WSPR and callsign lookups) to get the data."),
 }
+
+
+# The four goals as Help's Start here shows them: what you need, three steps, and what to know about examples. The steps follow the page guides above.
+QUICK = [
+    dict(key="spots", goal="See where I was heard", icon=":material/cell_tower:", page="My spots",
+         need="Your callsign and a day that has RBN or WSPR reports.",
+         steps=["Type your callsign and pick a day. Use RBN for CW or WSPR for a WSPR transmitter.", "Click **Load spots**.", "Look at the map, then the band buttons above it."],
+         note="No data handy? Click **Try an example** on that page."),
+    dict(key="compare", goal="Compare two antennas", icon=":material/balance:", page="Compare antennas",
+         need="Reports from a test where you switched between two antennas. A WSPR transmitter is the recommended test; RBN is a quick check for CW.",
+         steps=["Load the spots from your test.", "Say how you switched, and check which antenna is A and which is B.", "Read the **Summary** card."],
+         note="Real example tests open from the page, so you can see a result first."),
+    dict(key="conditions", goal="Check which bands are open", icon=":material/public:", page="Band conditions",
+         need="A callsign or grid square, your power and your mode. Nothing to upload.",
+         steps=["Enter your callsign or a grid square (the one you are operating from, if you are portable), or use **My location**.", "Set your power and mode.",
+                "Read the band tiles."],
+         note="It uses WSPR stations near you, so you don't need a transmitter."),
+    dict(key="log", goal="Make sense of a session", icon=":material/fact_check:", page="Log analysis",
+         need="An ADIF file (.adi or .adif) exported from your logging program, and the power you used. Made with POTA and SOTA activations in mind; any log works.",
+         steps=["Set your power.", "Upload your ADIF file.", "Start with the row of findings under the numbers."],
+         note="Example logs open from the page: a POTA activation, a SOTA summit, a solar-storm day."),
+]
 
 
 def show_guide(key):

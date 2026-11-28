@@ -1477,7 +1477,7 @@ class HelpPage(unittest.TestCase):
         at = page("help_page").run()
         self.assertEqual(errors(at), [])
         text = "\n".join(m.value for m in at.markdown)
-        self.assertIn("New here? Start with an example", text)   # it opens on Start here, which is the README's own text
+        self.assertIn("See where I was heard", text)              # it opens on Start here: a card for each goal
         self.assertIn("Open an example", text)                    # the examples in detail are folded under it
         self.assertIn("DX Commander", text)
         _, about = self._topic_text("About and methodology")
@@ -1535,21 +1535,30 @@ class HelpPage(unittest.TestCase):
                         self.assertIn(title, shown, f"docs/{name} section {title!r} is missing from the Help page")
         self.assertEqual(re.findall(r"\]\((?!https?://|/(?:spots|compare|conditions|log)\))[^)]*\)", shown), [], "a link inside Help that goes nowhere, or markdown shown raw")
 
-    def test_start_here_is_the_readmes_own_text_and_leads_to_the_details_for_the_curious(self):
-        """One source: the front page on GitHub and Start here in the app say the same. The pages are linked on whichever site this is, and the
-        guide links (the topics are one click above) are gone. The install, update, keys and collector guide is its own topic."""
+    def test_start_here_has_a_card_for_each_goal_and_the_details_for_the_curious_below(self):
+        """Start here: a card for each of the four goals (what you need, three steps, what to know about examples), the data sources and privacy folded
+        from the README (so they are written once), and, for the curious, the install and methodology topics one click away."""
         import re
-        from views.help_view import START_SECTIONS
+        import ui_common
+        from views.help_view import DATA_SECTIONS
         with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
             readme = f.read()
         at, text = self._topic_text("Start here")
-        for title in START_SECTIONS:
-            self.assertIn(f"## {title}", readme, f"the README lost {title!r}, which Start here shows")
+        self.assertEqual(len(ui_common.QUICK), 4)
+        captions = " ".join(c.value for c in at.caption)
+        for q in ui_common.QUICK:
+            self.assertEqual(len(q["steps"]), 3, q["goal"])
+            for part in (q["goal"], *q["steps"]):
+                self.assertIn(part, text, q["goal"])
+            for part in (q["need"], q["note"]):                              # the 'you need' and the example note are captions
+                self.assertIn(part, captions, q["goal"])
+        for title in DATA_SECTIONS:
+            self.assertIn(f"## {title}", readme, f"the README lost {title!r}, which Start here shows folded")
             self.assertIn(title, text)
-        self.assertIn("Do I need a WSPR transmitter?", text)
-        self.assertIn("(/log)", text)                                        # the page, on this site
+        labels = [e.label for e in at.expander]
+        self.assertEqual(labels, ["Where the data comes from, and what happens to yours", "More: the examples in detail, and sharing a view"])
         self.assertNotIn("streamlit.app/", text)
-        self.assertNotIn("[guide]", text)
+        self.assertNotIn("a park, say", text)                                # there is no park lookup: the grid you operate from, or My location
         self.assertEqual([b.label for b in at.button], ["Open troubleshooting", "Install and run it yourself", "Methodology and calculations"])
         _, yourself = self._topic_text("Run it yourself")
         for heading in ("Run it locally", "Update your copy", "Optional keys for your own copy", "Live spots and collectors"):

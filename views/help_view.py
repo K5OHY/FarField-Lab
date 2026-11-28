@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from ui_common import CHOOSER, PAGES, brand_strip, github_url, show_guide
+from ui_common import PAGES, QUICK, brand_strip, github_url, show_guide
 
 # Each topic: the page guide that opens it (if it has one) and the docs/ files that follow. A docs/ file not listed here goes in the last topic, so
 # nothing in docs/ is ever left out of the page (METHODOLOGY.md is the exception: it is long, and the About topic links to it).
@@ -18,9 +18,10 @@ TOPICS = {
     "Run it yourself": (None, ["run-it-yourself.md"]),
     "About and methodology": (None, ["about.md", "developer.md"]),
 }
-# Start here is the README's own text, so the front page on GitHub and this one say the same. These are the README sections it shows, in order.
-START_SECTIONS = ["New here? Start with an example", "Or use your own data", "Understand the data sources", "Your data"]
-SITE = "https://farfieldlab.streamlit.app/"          # the README links the pages by their address; inside the app they are the same address on whichever site this is
+# Start here: four goal cards (ui_common.QUICK), then these README sections folded away, so the data sources and the privacy note are written once.
+DATA_SECTIONS = ["Understand the data sources", "Your data"]
+START_INTRO = ("**FarField Lab shows how your station gets out:** who heard you, which antenna works better, which bands are open, and what happened in a "
+               "session. Pick what you want to do.")
 EXTRA = {"Run it yourself": [("The live collector, step by step", "collector/SETUP.md")]}   # a guide outside docs/, shown folded at the end of a topic
 LINKED_NOT_SHOWN = {"METHODOLOGY.md"}
 REPLACES_GUIDE = "<!-- help:replaces-page-guide -->"   # on a line of its own in a guide file: Help shows that guide, not the page's short one above it
@@ -126,10 +127,10 @@ def _sync():
         st.query_params["topic"] = _slug(topic)
 
 
-def _see_also(topic):
+def _see_also(topic, heading="See also"):
     names = SEE_ALSO.get(topic, [])
     if names:
-        st.markdown("**See also**")
+        st.markdown(f"**{heading}**")
         for col, name in zip(st.columns(max(len(names), 3)), names):
             col.button(BUTTONS[name], key=f"see_{_slug(topic)}_{_slug(name)}", on_click=_go, args=(name,), width="stretch")
 
@@ -150,32 +151,28 @@ def _readme_parts(root):
     return sections, intro
 
 
-def _readme_line(line):
-    """A README line made for the app: the 'guide' links go (the topics are one click above), and the pages are linked on this site, not the main one."""
-    return re.sub(r"\s*\(\[guide\]\(docs/[^)]+\)\)", "", line).replace(SITE, "/")
-
-
 def _start_here(root):
-    """Start here: the README's opening, a button for each page, and the README's own sections on examples, your own data and the data sources."""
-    sections, intro = _readme_parts(root)
-    for line in intro:
-        if line.strip() and not line.startswith(("![", "# ", "|", "**Explore propagation", "**[Open FarField Lab]")):
-            st.markdown(_fix(_readme_line(line)))
-    st.markdown("**Open a page**")
-    for row in (CHOOSER[:2], CHOOSER[2:]):
-        for col, (key, title, blurb, icon, action) in zip(st.columns(2), row):
+    """Start here: what the app is, a card for each goal with its steps and a button to the page, and the data sources and privacy folded below."""
+    st.markdown(START_INTRO)
+    for row in (QUICK[:2], QUICK[2:]):
+        for col, q in zip(st.columns(2), row):
             with col, st.container(border=True):
-                st.markdown(f"**{title}**")
-                st.caption(blurb)
-                if key in PAGES:
-                    st.page_link(PAGES[key], label=action, icon=icon)
-    missing = [title for title in START_SECTIONS if title not in sections]
-    if missing:
-        st.warning(f"The README no longer has: {', '.join(missing)}. The front page is on [GitHub]({github_url()}#readme).")
-    lines = []
-    for title in START_SECTIONS:
-        lines += [_readme_line(l) for l in sections.get(title, [])] + [""]
-    _show(lines, root)
+                st.markdown(f"#### {q['goal']}")
+                st.caption(f"**You need:** {q['need']}")
+                st.markdown("\n".join(f"{i}. {step}" for i, step in enumerate(q["steps"], 1)))
+                st.caption(q["note"])
+                if q["key"] in PAGES:
+                    st.page_link(PAGES[q["key"]], label=f"Open {q['page']}", icon=q["icon"])
+    st.markdown("**Not sure what a result means?** The tabs above explain each page and how to read what it shows.")
+    sections, _ = _readme_parts(root)
+    missing = [title for title in DATA_SECTIONS if title not in sections]
+    with st.expander("Where the data comes from, and what happens to yours"):
+        if missing:
+            st.warning(f"The README no longer has: {', '.join(missing)}. It is on [GitHub]({github_url()}#readme).")
+        lines = []
+        for title in DATA_SECTIONS:
+            lines += [f"#### {title}"] + sections.get(title, [""])[1:] + [""]
+        _show(lines, root)
 
 
 def _about():
@@ -213,7 +210,7 @@ def help_page():
         if lines:                                  # what Start here used to say: the examples in detail, and how to share a view
             with st.expander("More: the examples in detail, and sharing a view"):
                 _show(lines, root)
-        _see_also(topic)
+        _see_also(topic, "For the curious")
         return
     if last:
         _about()
