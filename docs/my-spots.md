@@ -26,3 +26,9 @@ WSPR differs from RBN in a few ways: SNR is mostly negative (about -30 to +5 dB)
 - A **Log analysis** page in the menu: upload a contact log from your logging program and see it beside your RBN spots and the WSPR stations around you. See below.
 
 Your location comes from the grid you typed, else (for WSPR) the grid square your own spots report, else the RBN skimmer list, else the FCC ([callook.info](https://callook.info)), else [HamDB](https://hamdb.org), else the centre of your country (the app warns you, because a country's centre can be hundreds of km from you). A WSPR station is always placed by the grid in its spots, 6 characters when there is one, so a station outside the US lands where it really is. Enter the grid square where you operate to place the pin somewhere else.
+
+## Sharing a view
+
+**Share what you are looking at.** Once spots are loaded, the sidebar shows a link to this view and your browser's address bar holds the same link. Send it to someone and they land on the same callsign, date and band, with the spots already loaded. The same link also brings your sidebar choices back if you refresh the page or your computer sleeps. On the Compare page the link also carries the whole test: the antenna names, how you switched, the start and order, a pasted block schedule, any antenna cells you corrected by hand, and the averaging choices, so the person you send it to sees the same summary.
+
+Free hosting can fall asleep: click the button to wake it. A local copy also remembers your settings in `settings.json`.

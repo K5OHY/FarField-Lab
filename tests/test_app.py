@@ -1478,8 +1478,11 @@ class HelpPage(unittest.TestCase):
         self.assertEqual(errors(at), [])
         text = "\n".join(m.value for m in at.markdown)
         self.assertIn("See where I was heard", text)              # it opens on Start here: a card for each goal
-        self.assertIn("Open an example", text)                    # the examples in detail are folded under it
-        self.assertIn("DX Commander", text)
+        _, compare = self._topic_text("Compare antennas")
+        self.assertIn("Open an example", compare)                 # the examples in detail are with the Compare guide
+        self.assertIn("DX Commander", compare)
+        _, spots = self._topic_text("My spots")
+        self.assertIn("Share what you are looking at", spots)     # and sharing a view with My spots
         _, about = self._topic_text("About and methodology")
         self.assertIn("/blob/main/docs/METHODOLOGY.md", about)  # the README's relative link, pointed at the repository
         self.assertNotIn("](docs/METHODOLOGY.md)", about)
@@ -1556,7 +1559,7 @@ class HelpPage(unittest.TestCase):
             self.assertIn(f"## {title}", readme, f"the README lost {title!r}, which Start here shows folded")
             self.assertIn(title, text)
         labels = [e.label for e in at.expander]
-        self.assertEqual(labels, ["Where the data comes from, and what happens to yours", "More: the examples in detail, and sharing a view"])
+        self.assertEqual(labels, ["Where the data comes from, and what happens to yours"])
         self.assertNotIn("streamlit.app/", text)
         self.assertNotIn("a park, say", text)                                # there is no park lookup: the grid you operate from, or My location
         self.assertEqual([b.label for b in at.button], ["Open troubleshooting", "Install and run it yourself", "Methodology and calculations"])

@@ -9,7 +9,7 @@ from ui_common import PAGES, QUICK, brand_strip, github_url, show_guide
 # Each topic: the page guide that opens it (if it has one) and the docs/ files that follow. A docs/ file not listed here goes in the last topic, so
 # nothing in docs/ is ever left out of the page (METHODOLOGY.md is the exception: it is long, and the About topic links to it).
 TOPICS = {
-    "Start here": (None, ["start-here.md"]),
+    "Start here": (None, []),
     "My spots": ("spots", ["my-spots.md"]),
     "Compare antennas": ("compare", ["compare-antennas.md"]),
     "Band conditions": ("conditions", ["band-conditions.md"]),
@@ -207,9 +207,6 @@ def help_page():
         st.warning(f"Part of this topic isn't here ({', '.join(missing)}). The guides are on [GitHub]({github_url()}/tree/main/docs).")
     if topic == "Start here":
         _start_here(root)
-        if lines:                                  # what Start here used to say: the examples in detail, and how to share a view
-            with st.expander("More: the examples in detail, and sharing a view"):
-                _show(lines, root)
         _see_also(topic, "For the curious")
         return
     if last:
