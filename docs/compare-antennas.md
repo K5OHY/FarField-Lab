@@ -1,6 +1,89 @@
 # Compare antennas
 
-## Examples
+<!-- help:replaces-page-guide -->
+
+## What this page answers
+
+**Which of two antennas (or power levels) gets out better, and by how much?**
+
+It compares the reports from the same receivers while you switch between antenna A and antenna B. Because the same receivers hear both, everything that stays the same for both drops out, and what is left is the difference between the antennas.
+
+## Before you begin
+
+- **A test you have already run:** one transmitter, one band and one power, switched between two antennas, A and B.
+  - **WSPR is the recommended test.** Both antennas get the same power and timing, and many receivers hear both.
+  - **RBN is a quick check for CW.**
+- **How long:** at least 8 to 12 transmissions (16 to 24 minutes); 16 to 28 is better. Repeat it on another day before you trust the result.
+- **Or skip all of this** and click **Open this example** on any card to look at a real test first.
+
+## Run a WSPR test
+
+1. Connect your WSPR transmitter to an A/B coax switch, with antenna A on one output and B on the other. Keep the band, power and callsign the same.
+2. A WSPR transmission lasts about 110 seconds of each 2-minute slot. Flip the switch in the short break between transmissions.
+3. Switch in the order **A, B, B, A, A, B, B, A …** (recommended: each antenna gets the same mix of earlier and later turns, so a steady change in the band cancels out), or **A, B, A, B …** (simpler, but B always goes second). Always start on A, and note the time of the first transmission.
+4. Run enough transmissions (see above).
+5. Wait about five minutes after the last one.
+
+**Check what your switch does to the antenna you are not using.** Many coax switches ground it. An unused antenna that is grounded (or left open) can inadvertently interfere with the one that is transmitting, skew its radiation pattern and even act like a parasitic element, and that can skew the result. How much depends on how far apart the antennas are, their polarization and whether they are resonant on that band. Keep them as far apart as practical, and remember the page cannot see this: it only sees what the receivers heard.
+
+For a long test with one antenna for 30 minutes or an hour at a time, or for a quick CW check with RBN, see the Reference at the bottom.
+
+## Get your first result
+
+1. Open **Compare antennas**. To look first, click **Open this example**.
+2. In the sidebar, type your **Callsign** (the one your WSPR transmitter sends) and pick the **Date (UTC)**. Under **Filters**, set **Band** to the band you tested: the page compares one band at a time.
+3. Click **Load spots**.
+4. The page guesses how you switched. In **Check how this test was set up**, name your antennas if you like, then check **How did you switch antennas?**, **Transmissions in your test**, **Starting at (UTC)**, **Order** and the **Antenna** column against your notes. Fix any row that is wrong.
+5. Click **This matches what I did: show the result**.
+6. Read the **Summary** card first, then the three numbers above it.
+
+## Read the result
+
+Open the first example (a 40m loop against a 20m dipole, 12 transmissions on 20m). The Summary says the dipole was stronger by **4.8 dB** (95% range 3.9 to 5.8 dB), measured at 158 receivers, and it won all 6 rounds. Read it like this:
+
+- **How much:** the number and its range. Here the whole range is above zero, so the dipole really was stronger in this test. A range that crosses zero means too close to call.
+- **How many receivers:** 189 receivers heard both antennas, and 158 of them were compared. The rest heard an antenna only once or twice, so they swing more. A handful of receivers can mislead; a hundred or more give the number weight.
+- **How consistent:** the dipole won 6 of 6 rounds (an A transmission and the B one after it). An antenna that wins only some rounds points to changing conditions.
+- **What it covers:** this test and the paths it sampled (here toward N, NE, E and NW). It does not mean the dipole is better in every direction or in every condition. Repeat the test on another day.
+
+A side is called ahead only when the whole range is on its side of zero and the gap is at least 1 dB. A smaller gap is called *no meaningful difference*. That does not prove the antennas are identical.
+
+## Look deeper
+
+The tabs under the Summary each answer a different question:
+
+- **Result:** a scoreboard for each side, who heard you, a timeline of every spot, **Download report (PDF)**, **Numbers at a glance** and **Data used** (both folded).
+- **Direction & distance:** a world map centred on you, coloured by which antenna is stronger in each direction and distance.
+- **Receiver by receiver:** every station that heard both sides, with its relative gain, and the slider that sets how many reports a receiver needs on each antenna.
+- **Linear average:** the same comparison averaging power instead of dB, as a cross-check.
+- **Maps:** A's map and B's map side by side.
+
+Other options:
+
+- **Each antenna sent under its own callsign:** type the second one in **Second callsign (optional)**.
+- **Different power on A and B:** the page corrects for it (**Correct for any power difference**).
+- **Share it:** the link in the sidebar carries the whole test, so the person you send it to sees the same summary.
+
+## What it cannot tell you
+
+A short test, or few stations, gives a rough answer, and the page says so. The range shown is approximate: it does not include every source of error, such as changing band conditions or several receivers at one site. It compares what receivers heard, not the antennas' own patterns. It also cannot see how your two antennas affect each other. An antenna that is connected but not in use, for example grounded by the switch, can interfere with the other one, skew its radiation pattern or even act like a parasitic element.
+
+## Your data
+
+The app asks WSPR or RBN sources for spots of your callsign (or callsigns), and looks up where you are and where the receivers are. Public lookup results may be cached.
+
+## Common questions
+
+- **"Only one transmission was found."** An antenna test needs at least two. Spots take a few minutes to show up after you transmit, so try again shortly, or pick another day.
+- **"These spots cover 2 bands."** Test one band at a time: pick it under **Filters → Band** in the sidebar.
+- **"A is on 20m and B is on 40m."** That compares two bands, not two antennas. Use the same band for both.
+- **An odd number of transmissions.** The last one has no partner and is left out. Use an even number.
+- **"The newest transmission is less than 5 minutes old."** Not all its spots may be in yet. Click **Load spots** again after the time the page gives.
+- **"Too close to call".** The data are not strong enough to separate the antennas. Run more transmissions, or on another day.
+- **RBN: which frequency is A?** The two biggest frequency groups become A and B. Change them with the dropdowns.
+- **Both antennas at the same time on two transmitters?** That is what [WSPRadar](https://www.wspradar.org/) by Markus (DL1MKS) is built for.
+
+## The real examples
 
 **Just looking? Open an example.** The Compare page opens with six real tests, each set up the way it was run and each labelled with how its antennas were switched:
 
@@ -9,13 +92,15 @@
 - **Told apart by frequency:** a quick CW check on the Reverse Beacon Network, the same loop and dipole on 14069.5 and 14070.5 kHz (K5OHY).
 - **Each antenna has its own callsign:** two short WSPR tests by Callum (M0MCX, DX Commander) on 14 January 2026, a delta loop against a vertical, on 20m and on 40m. A is the antenna that sent first, as in his log: the delta loop (M0MCX) on 20m and the vertical (M0XXT) on 40m. Each is only three pairs of transmissions, so treat them as a demonstration of how the page works and what a short test can and cannot say, not a ruling on the antennas.
 
-## Compare two antennas
+## Reference: what every part of the page shows
+
+### Compare two antennas
 
 Open **Compare antennas** in the menu. It shows three steps: load your spots, say how you switched, and read the result. What you load on **My spots** is already there, and the other way round. Name your antennas under *Name your antennas* if you like.
 
 **For your first test:** use the same transmitter, band and power. Run at least 8 to 12 transmissions, though 16 to 28 is better, switching between transmissions in A, B, B, A order (each antenna gets the same mix of earlier and later turns, so a steady change in the band cancels out). Note the start time, wait about five minutes after the last transmission, then load the spots. Repeat on another day before you trust the result. Shorter tests can be analysed, down to 4 transmissions, but may be inconclusive. More data narrows the uncertainty, and a long test also shows how changing band conditions affect the result. You can also switch after a set time, for example every 10 to 30 minutes (see *How do I run a long-block test?* below). The page tells you how small a difference your number of transmissions can reliably show.
 
-**Reading a result, for example.** In the real example test (a 40m loop against a 20m dipole, 12 transmissions on 20m), the summary says the dipole was stronger by **4.8 dB** (95% range 3.9 to 5.8 dB) at the 158 receivers that heard both antennas, and it won all 6 rounds. Read it like this:
+**Reading a result, for example.** In the real example test (a 40m loop against a 20m dipole, 12 transmissions on 20m), the summary says the dipole was stronger by **4.8 dB** (95% range 3.9 to 5.8 dB) at the 158 receivers compared (189 heard both antennas; the rest heard one only once or twice, so they swing more), and it won all 6 rounds. Read it like this:
 
 - **How much:** the number and its range. Here the whole range is above zero, so the dipole really was stronger in this test. A range that crosses zero means too close to call.
 - **How many receivers:** 158 gives the number weight. A handful of receivers can mislead.
@@ -28,12 +113,12 @@ A WSPR transmission lasts about 110 seconds of each 2-minute slot, so there is a
 
 The numbered steps below are for the **After every transmission** option. For **In long blocks**, see *How do I run a long-block test?* below.
 
-1. Connect the transmitter to an A/B coax switch with one antenna on each output. Use one band, one power and one callsign for the whole test.
+1. Connect the transmitter to an A/B coax switch with one antenna on each output. Use one band, one power and one callsign for the whole test. **Check what your switch does to the antenna you are not using.** Many coax switches ground it. An unused antenna that is grounded (or left open) can inadvertently interfere with the one that is transmitting, skew its radiation pattern and even act like a parasitic element, and that can skew the result. How much depends on how far apart the antennas are, their polarization and whether they are resonant on that band. Keep them as far apart as practical, and remember the page cannot see this: it only sees what the receivers heard.
 2. Let the transmitter send in every slot. If it can send an extra packet between cycles (for example a 6-character locator option), turn that off.
 3. Wait for the transmission to end, flip the switch, and let the next one start. Go **A, B, B, A, A, B, B, A …** (recommended: each antenna gets the same mix of earlier and later turns, so a steady change in the band cancels out) or **A, B, A, B …** (simpler, but B always goes second), always starting on A. Note the time of the first transmission.
 4. Run at least 8 to 12 transmissions (4 to 6 pairs, 16 to 24 minutes); 16 to 28 is better. Eight is a first look at signal strength. It is too few to tell which antenna reached more receivers, because that needs at least 6 pairs where one antenna clearly reached more (pairs that tie don't count), so plan on 16 to 28 transmissions, or more, for small differences or a reach summary.
 5. Wait about 5 minutes, pick the date, and click Load spots.
-6. Under **Your test**, set **Transmissions in your test** (every 2-minute cycle on either antenna counts: A then B is 2), and **Starting at** if it was not the latest test. It shows how small a difference that many pairs can reliably show. Check the **Order** and the Antenna column match your notes, and read the result. Fix any row, or clear it to leave it out.
+6. Under **Filters**, set **Band** to the band you tested (the page compares one band at a time). Then, in **Check how this test was set up**, set **Transmissions in your test** (every 2-minute cycle on either antenna counts: A then B is 2), and **Starting at (UTC)** if it was not the latest test. It shows how small a difference that many pairs can reliably show. Check the **Order** and the Antenna column match your notes. Fix any row, or clear it to leave it out. When it matches what you did, click **This matches what I did: show the result**.
 
 For **After every transmission**, use an even number of transmissions: an odd one has no partner and is left out. (In long blocks nothing is paired, so this does not apply.)
 
@@ -46,7 +131,7 @@ For **After every transmission**, use an even number of transmissions: an odd on
 
 ### With RBN
 
-Call CQ with the first antenna on one frequency, then with the other antenna on a nearby frequency, back to back (a minute or two apart). Paste the spots and click Load spots. The two biggest frequency groups become A and B; change them with the dropdowns. Skimmers report slightly different frequencies for the same signal, so spots closer than 0.5 kHz count as one (it looks closer if your two tests are nearer than that). RBN is compared by frequency only, because skimmers report a spot a minute or more after you send, which is too blurry to separate A and B by the clock.
+Call CQ with the first antenna on one frequency, then with the other antenna on a nearby frequency, back to back (a minute or two apart). Under **How to get them**, choose **Download a day** for a finished day (today too when live spots are available) or paste the spots from reversebeacon.net, then click **Load spots**. The two biggest frequency groups become A and B; change them with the dropdowns, then click **This matches what I did: show the result**. Skimmers report slightly different frequencies for the same signal, so spots closer than 0.5 kHz count as one (it looks closer if your two tests are nearer than that). RBN is compared by frequency only, because skimmers report a spot a minute or more after you send, which is too blurry to separate A and B by the clock.
 
 Send plenty of CQs on each side, at the same power and speed (or enter the power under **Power**).
 
@@ -216,8 +301,8 @@ In a long-blocks test there are no pairs, so the Signal advantage and the Averag
 <details>
 <summary><b>How is the summary decided?</b></summary>
 
-- **Strength.** Only stations that heard both sides count, so each station is its own control. Each station's difference is averaged, with a 95% range. A side wins if the whole range favours it and the gap is at least 1 dB. A smaller gap is called *no meaningful difference*, meaning either that the range sits inside 1 dB or that a lead is real but too small to matter; it does not prove the antennas are identical.
-- **Reach.** How many different stations heard each side. For WSPR it is judged one pair of transmissions at a time, because fading on your end moves every receiver together. It needs at least 6 decisive pairs, ones where one antenna reached more stations (ties don't count), so a short test often can't call it.
+- **Strength.** Only stations that heard both sides count, so each station is its own control. It needs at least 5 stations that heard both sides. Each station's difference is averaged, with a 95% range. A side wins if the whole range favours it and the gap is at least 1 dB. A smaller gap is called *no meaningful difference*, meaning either that the range sits inside 1 dB or that a lead is real but too small to matter; it does not prove the antennas are identical.
+- **Reach.** How many different stations heard each side. For WSPR it is judged one pair of transmissions at a time, because fading on your end moves every receiver together. It needs at least 6 decisive pairs, ones where one antenna reached more stations (ties don't count), so a short test often can't call it. For RBN and long-block tests, which have no pairs, reach is judged on the stations that heard only one side, and needs at least 4 of them.
 - **Too close to call** means the data aren't strong enough to separate the antennas. One may look ahead, but ordinary variation could explain the gap, and the summary says how often a lead that size, in that direction, would still appear if the two truly reached equally (for example about 12% of the time). That is not the same as the antennas being equal, and it is not the probability that one is better. For RBN it also says how much more data would settle it.
 - **Direction and distance** are only called when at least 4 stations heard both sides there, the gap is at least 2 dB, and a stricter 99% range agrees. With this many sectors checked at once, treat a direction result as a lead to follow up, not a finding.
 - **Two ways of averaging.** The dB average and the linear (power) average are explained under *How the comparison works*, above. The **Linear average** tab shows both so you can check that they agree.

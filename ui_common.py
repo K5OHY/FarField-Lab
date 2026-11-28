@@ -174,8 +174,8 @@ GUIDES = {
         limits="It shows where your signal was decoded, not everywhere it could be heard. Only stations running a skimmer or a WSPR receiver "
                "can report you, so a quiet part of the map can mean no one was listening there, not that the path was closed."),
     "compare": dict(
-        purpose="Which of two antennas (or two power levels) gets out better? It compares the reports one station received while switching "
-                "between them. The page walks you through three steps: load your spots (WSPR is the recommended test, RBN a quick check for CW), say how you "
+        purpose="Which of two antennas (or power levels) gets out better, and by how much? It compares the reports from the same receivers while you switch between "
+                "antenna A and antenna B. The page walks you through three steps: load your spots (WSPR is the recommended test, RBN a quick check for CW), say how you "
                 "switched, then read the result.",
         steps=[],            # the three steps are the strip drawn just under this box
         shows=["Which antenna was stronger and by how many dB, with a range and a plain statement of how sure the test can be.",
@@ -184,7 +184,8 @@ GUIDES = {
                "Real example tests you can open first, to see what a result looks like."],
         limits="A short test, or few stations, gives a rough answer, and the page says so. The range shown is approximate: it does not include "
                "every source of error, such as changing band conditions or several receivers at one site. It compares what receivers heard, "
-               "not the antennas' own patterns."),
+               "not the antennas' own patterns. It also cannot see how your two antennas affect each other: one that is connected but not in use, "
+               "for example grounded by the switch, can interfere with the other, skew its radiation pattern or even act like a parasitic element."),
     "conditions": dict(
         purpose="Which bands look open from here right now? It takes the WSPR stations transmitting near you in the last half hour and "
                 "restates their reports for your power and mode.",
