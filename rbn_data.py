@@ -236,11 +236,63 @@ def country_location(callsign):
     return None
 
 
-def lookup_callsign_location(callsign, skimmers=None):
-    """Best-effort (lat, lon, grid, source) for a callsign, or None.
+_US_CALL = re.compile(r"^(A[A-L]|[KNW][A-Z]?)\d[A-Z]{1,3}$")      # a callsign the FCC licenses (the states and the territories: KH6, KL7, KP4 ...)
 
-    Order: RBN skimmer with this callsign, callook.info (US/FCC), hamdb.org, and finally the
-    centre of the callsign's DXCC country (approximate).
+
+def _fcc_location(base):
+    """(lat, lon, grid, source) from the FCC through callook.info, or None."""
+    try:
+        data = requests.get(f"https://callook.info/{base}/json", headers=HEADERS, timeout=10).json()
+        if data.get("status") == "VALID":
+            loc = data["location"]
+            return float(loc["latitude"]), float(loc["longitude"]), loc.get("gridsquare"), "FCC (callook.info)"
+    except Exception:
+        pass
+    return None
+
+
+def _hamdb_location(base):
+    """(lat, lon, grid, source) from hamdb.org, or None."""
+    try:
+        data = requests.get(f"https://api.hamdb.org/{base}/json/farfield-lab", headers=HEADERS, timeout=10).json()
+        info = data["hamdb"]["callsign"]
+        if info.get("call") != "NOT_FOUND" and info.get("grid"):
+            lat, lon = maidenhead_to_latlon(info["grid"])
+            return lat, lon, info["grid"], "HamDB"
+    except Exception:
+        pass
+    return None
+
+
+def _hamqth_location(base):
+    """(lat, lon, grid, source) from HamQTH.com's callbook, or None. Its home position (with the key set on the app) is used as the centre of its 4 character grid
+    square, so a street is never drawn; without a key, or without a callbook entry, its call-area place is used and called approximate."""
+    try:
+        import callbook
+        found = callbook.locate(base)
+    except Exception:
+        return None
+    if not found:
+        return None
+    where = str(found.get("where") or "")
+    if found.get("source") == "home" and len(where) >= 4:
+        try:
+            grid = where[:4].upper()
+            lat, lon = maidenhead_to_latlon(grid)
+            return lat, lon, grid, "HamQTH callbook"
+        except ValueError:
+            return None
+    return found["lat"], found["lon"], None, f"HamQTH call area{', ' + where if where else ''} (approximate - enter a grid for accuracy)"
+
+
+def lookup_callsign_location(callsign, skimmers=None):
+    """Best-effort (lat, lon, grid, source) for a callsign, or None. The first of these that knows the callsign wins:
+
+    1. the RBN skimmer list (instant, no request);
+    2. for a US callsign, the FCC through callook.info, then hamdb.org (both are US databases, so any other callsign skips them: asking would only cost the time of
+       two failed requests);
+    3. HamQTH.com's callbook (its home grid with the key set, else its call area, which is called approximate);
+    4. the centre of the callsign's DXCC country, which is approximate.
     """
     call = callsign.strip().upper()
     base = call.split("/")[0] if "/" in call else call
@@ -253,22 +305,11 @@ def lookup_callsign_location(callsign, skimmers=None):
                 lat, lon = skimmers[key]
                 return lat, lon, None, "RBN skimmer list"
 
-    try:
-        data = requests.get(f"https://callook.info/{base}/json", headers=HEADERS, timeout=10).json()
-        if data.get("status") == "VALID":
-            loc = data["location"]
-            return float(loc["latitude"]), float(loc["longitude"]), loc.get("gridsquare"), "FCC (callook.info)"
-    except Exception:
-        pass
-
-    try:
-        data = requests.get(f"https://api.hamdb.org/{base}/json/farfield-lab", headers=HEADERS, timeout=10).json()
-        info = data["hamdb"]["callsign"]
-        if info.get("call") != "NOT_FOUND" and info.get("grid"):
-            lat, lon = maidenhead_to_latlon(info["grid"])
-            return lat, lon, info["grid"], "HamDB"
-    except Exception:
-        pass
+    steps = [_fcc_location, _hamdb_location, _hamqth_location] if _US_CALL.match(base) else [_hamqth_location]
+    for step in steps:
+        found = step(base)
+        if found:
+            return found
 
     approx = country_location(call)
     if approx:

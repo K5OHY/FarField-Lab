@@ -2430,3 +2430,59 @@ class SpotGridComesFirst(unittest.TestCase):
             lat, lon, _ = ds.resolve_home("SV8ANW", "", None, spot_grid=wd.grid_from_spots(spots, "SV8ANW"))
         self.assertAlmostEqual(lat, 38.52083, places=3)
         self.assertGreater(abs(lon - 21.78), 2.0)                                  # nowhere near the centre it used to land on
+
+
+class YourPinIsFoundFromTheBestSourceFirst(unittest.TestCase):
+    """rbn_data.lookup_callsign_location: the skimmer list, then (US callsigns only) the FCC and HamDB, then HamQTH's callbook, then the centre of the country."""
+
+    def run_lookup(self, call, fcc=None, hamdb=None, hamqth=None, skimmers=None):
+        import rbn_data
+        asked = []
+
+        def step(name, answer):
+            def one(base):
+                asked.append(name)
+                return answer
+            return one
+        with mock.patch.object(rbn_data, "_fcc_location", step("fcc", fcc)), mock.patch.object(rbn_data, "_hamdb_location", step("hamdb", hamdb)), \
+                mock.patch.object(rbn_data, "_hamqth_location", step("hamqth", hamqth)):
+            return rbn_data.lookup_callsign_location(call, skimmers), asked
+
+    def test_a_us_callsign_asks_the_fcc_then_hamdb_then_hamqth_and_stops_at_the_first_answer(self):
+        found, asked = self.run_lookup("K5OHY", fcc=(31.9, -102.1, "DM81wx", "FCC (callook.info)"))
+        self.assertEqual((found[3], asked), ("FCC (callook.info)", ["fcc"]))
+        found, asked = self.run_lookup("K5OHY", hamdb=(31.9, -102.1, "DM81", "HamDB"))
+        self.assertEqual((found[3], asked), ("HamDB", ["fcc", "hamdb"]))
+        found, asked = self.run_lookup("K5OHY", hamqth=(31.5, -101.0, "DM81", "HamQTH callbook"))
+        self.assertEqual((found[3], asked), ("HamQTH callbook", ["fcc", "hamdb", "hamqth"]))
+
+    def test_any_other_callsign_goes_straight_to_hamqth_and_never_asks_the_us_databases(self):
+        found, asked = self.run_lookup("JA1ZZZ", hamqth=(35.5, 139.5, "PM95", "HamQTH callbook"))
+        self.assertEqual((found[3], asked), ("HamQTH callbook", ["hamqth"]))
+        found, asked = self.run_lookup("KH6ZZZ", fcc=(21.3, -157.8, "BL11", "FCC (callook.info)"))       # a US territory is still a US callsign
+        self.assertEqual(asked, ["fcc"])
+
+    def test_the_centre_of_the_country_is_the_last_resort_and_says_it_is_approximate(self):
+        found, asked = self.run_lookup("JA1ZZZ")
+        self.assertEqual(asked, ["hamqth"])
+        self.assertIn("center of Japan", found[3])
+        self.assertIn("approximate", found[3])
+
+    def test_the_skimmer_list_comes_first_and_asks_nobody(self):
+        found, asked = self.run_lookup("W3LPL", skimmers={"W3LPL": (39.0, -77.0), "W3LPL-2": (39.0, -77.0)})
+        self.assertEqual((found, asked), ((39.0, -77.0, None, "RBN skimmer list"), []))
+
+    def test_hamqth_gives_the_centre_of_its_four_character_grid_and_a_call_area_is_called_approximate(self):
+        import callbook
+        import rbn_data
+        with mock.patch.object(callbook, "locate", return_value={"lat": 35.123, "lon": 139.456, "source": "home", "where": "PM95tq"}):
+            lat, lon, grid, source = rbn_data._hamqth_location("JA1ZZZ")
+        self.assertEqual((grid, source), ("PM95", "HamQTH callbook"))
+        self.assertEqual((lat, lon), rbn_data.maidenhead_to_latlon("PM95"))                       # not the street the callbook gave
+        with mock.patch.object(callbook, "locate", return_value={"lat": 36.0, "lon": 137.0, "source": "area", "where": "Japan, Kanto"}):
+            found = rbn_data._hamqth_location("JA1ZZZ")
+        self.assertEqual(found[:3], (36.0, 137.0, None))
+        self.assertIn("HamQTH call area, Japan, Kanto (approximate", found[3])
+        with mock.patch.object(callbook, "locate", return_value=None):
+            self.assertIsNone(rbn_data._hamqth_location("JA1ZZZ"))
+

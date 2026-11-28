@@ -28,7 +28,7 @@ You can explore these without uploading a file or owning any equipment.
 
 | Your goal | Open | What you need | Start by looking at |
 |---|---|---|---|
-| See where your signal was reported | **[My spots](https://farfieldlab.streamlit.app/spots)** ([guide](docs/my-spots.md)) | Your callsign and a day with RBN or WSPR reports | The map, then the band buttons above it |
+| See where your signal was decoded | **[My spots](https://farfieldlab.streamlit.app/spots)** ([guide](docs/my-spots.md)) | Your callsign and a day with RBN or WSPR reports | The map, then the band buttons above it |
 | Compare two antennas, frequencies or power levels | **[Compare antennas](https://farfieldlab.streamlit.app/compare)** ([guide](docs/compare-antennas.md)) | Reports from a test where you switched between them, and how you switched | The coloured *Summary* card |
 | See which bands look open near you now | **[Band conditions](https://farfieldlab.streamlit.app/conditions)** ([guide](docs/band-conditions.md)) | A callsign or grid square, your power and your mode | The band tiles |
 | Make sense of an operating session, such as a POTA or SOTA activation | **[Log analysis](https://farfieldlab.streamlit.app/log)** ([guide](docs/log-analysis.md)) | An ADIF file (.adi or .adif) exported from your logging program, and the power you used | The row of findings under the numbers |

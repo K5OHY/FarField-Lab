@@ -547,6 +547,6 @@ def nothing_found_message(ss, example_hint="**Try an example** in the sidebar sh
                    f"wider range of dates. {example_hint} what a result looks like.")
     else:
         st.warning(f"RBN has no spots of {ss.callsign} for that date. Next steps: check the callsign, try another day, "
-                   "or, for today, copy your spots from reversebeacon.net and choose **Paste from RBN site** (the daily "
+                   "or, for today, copy your spots from reversebeacon.net and choose **Paste spots** (the daily "
                    "files are published after the UTC day ends).")
     return True

@@ -162,7 +162,7 @@ PAGES = {}   # the app's pages by short name (set in web.py), so a page can link
 # what it cannot tell you.
 GUIDES = {
     "spots": dict(
-        purpose="Who heard me, and how well? It maps the Reverse Beacon Network skimmers and WSPR stations that reported your signal.",
+        purpose="Where was my signal decoded, and at what SNR? It maps the Reverse Beacon Network skimmers and WSPR receivers that decoded your signal, and shows the SNR each one reported.",
         steps=["Type your callsign and pick a day in the sidebar (RBN for CW, WSPR for a WSPR transmitter). Or click **Try an example** to see real spots first.",
                "Click **Load spots**.",
                "Use the band buttons above the map to look at one band. The **Session report** tab always covers every band."],
@@ -171,7 +171,7 @@ GUIDES = {
                "A chart of which directions you were heard in, and a world view from your station.",
                "A **Session report** of when you were heard, band by hour, and by region. You can also download the map or a PDF report.",
                "For CW, the speed the skimmers measured for you: a tile, the speed in each skimmer's popup, and a table of how you were heard at each speed."],
-        limits="It shows where you were reported, not everywhere you could have been heard. Only stations running a skimmer or a WSPR receiver "
+        limits="It shows where your signal was decoded, not everywhere it could be heard. Only stations running a skimmer or a WSPR receiver "
                "can report you, so a quiet part of the map can mean no one was listening there, not that the path was closed."),
     "compare": dict(
         purpose="Which of two antennas (or two power levels) gets out better? It compares the reports one station received while switching "
@@ -220,9 +220,9 @@ GUIDES = {
 
 # The four goals as Help's Start here shows them: what you need, three steps, and what to know about examples. The steps follow the page guides above.
 QUICK = [
-    dict(key="spots", goal="See where I was heard", icon=":material/cell_tower:", page="My spots",
+    dict(key="spots", goal="See where my signal was decoded", icon=":material/cell_tower:", page="My spots",
          need="Your callsign and a day that has RBN or WSPR reports.",
-         steps=["Type your callsign and pick a day. Use RBN for CW or WSPR for a WSPR transmitter.", "Click **Load spots**.", "Look at the map, then the band buttons above it."],
+         steps=["Type your callsign and pick a day. Use RBN for CW or WSPR for a WSPR transmitter.", "Click **Load spots**.", "Look at the map and the band buttons above it. Click a station's dot to see its SNR over time, band by band."],
          note="No data handy? Click **Try an example** on that page."),
     dict(key="compare", goal="Compare two antennas", icon=":material/balance:", page="Compare antennas",
          need="Reports from a test where you switched between two antennas. A WSPR transmitter is the recommended test; RBN is a quick check for CW.",
@@ -257,7 +257,7 @@ def page_guide(key):
         show_guide(key)
 
 
-CHOOSER = [("spots", "See who heard me", "Map your RBN or WSPR reports by band, strength, distance and direction.", ":material/cell_tower:", "Open the map"),
+CHOOSER = [("spots", "See where my signal was decoded", "Map your RBN or WSPR reports by band, strength, distance and direction.", ":material/cell_tower:", "Open the map"),
            ("compare", "Compare antennas", "Compare two setups using reports from the same receivers.", ":material/balance:", "Open comparison"),
            ("conditions", "Check the bands now", "Explore recent WSPR paths near your operating location.", ":material/public:", "Check conditions"),
            ("log", "Analyze a log", "Discover multiband hunters, session highlights and the conditions around your contacts.", ":material/fact_check:", "Upload a log")]

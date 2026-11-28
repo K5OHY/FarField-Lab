@@ -1477,7 +1477,7 @@ class HelpPage(unittest.TestCase):
         at = page("help_page").run()
         self.assertEqual(errors(at), [])
         text = "\n".join(m.value for m in at.markdown)
-        self.assertIn("See where I was heard", text)              # it opens on Start here: a card for each goal
+        self.assertIn("See where my signal was decoded", text)              # it opens on Start here: a card for each goal
         _, compare = self._topic_text("Compare antennas")
         self.assertIn("Open an example", compare)                 # the examples in detail are with the Compare guide
         self.assertIn("DX Commander", compare)
