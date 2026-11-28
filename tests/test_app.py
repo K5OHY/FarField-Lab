@@ -1562,7 +1562,7 @@ class HelpPage(unittest.TestCase):
         self.assertEqual(labels, ["Where the data comes from, and what happens to yours"])
         self.assertNotIn("streamlit.app/", text)
         self.assertNotIn("a park, say", text)                                # there is no park lookup: the grid you operate from, or My location
-        self.assertEqual([b.label for b in at.button], ["Open troubleshooting", "Install and run it yourself", "Methodology and calculations"])
+        self.assertEqual([b.label for b in at.button], [])                       # the topic tabs above already lead to Troubleshooting, Run it yourself and the methodology
         _, yourself = self._topic_text("Run it yourself")
         for heading in ("Run it locally", "Update your copy", "Optional keys for your own copy", "Live spots and collectors"):
             self.assertIn(heading, yourself)

@@ -26,9 +26,8 @@ EXTRA = {"Run it yourself": [("The live collector, step by step", "collector/SET
 LINKED_NOT_SHOWN = {"METHODOLOGY.md"}
 REPLACES_GUIDE = "<!-- help:replaces-page-guide -->"   # on a line of its own in a guide file: Help shows that guide, not the page's short one above it
 SEE_ALSO = {"My spots": ["Troubleshooting"], "Compare antennas": ["Troubleshooting", "About and methodology"],
-            "Band conditions": ["Troubleshooting", "About and methodology"], "Log analysis": ["Troubleshooting"],
-            "Start here": ["Troubleshooting", "Run it yourself", "About and methodology"]}
-BUTTONS = {"Troubleshooting": "Open troubleshooting", "Run it yourself": "Install and run it yourself", "About and methodology": "Methodology and calculations"}
+            "Band conditions": ["Troubleshooting", "About and methodology"], "Log analysis": ["Troubleshooting"]}
+BUTTONS = {"Troubleshooting": "Open troubleshooting", "About and methodology": "Methodology and calculations"}
 INTRO = ("See where your signal is heard, how strong it is, and how conditions change. Map the [Reverse Beacon Network](https://www.reversebeacon.net/) "
          "stations that spotted your CQ, or the [WSPR](https://wsprnet.org/) stations that heard your beacon. Compare which of two antennas, frequencies or "
          "power levels is getting out better, using real-world signal measurements. And check which bands are open and where you would be heard right now.")
@@ -207,7 +206,6 @@ def help_page():
         st.warning(f"Part of this topic isn't here ({', '.join(missing)}). The guides are on [GitHub]({github_url()}/tree/main/docs).")
     if topic == "Start here":
         _start_here(root)
-        _see_also(topic, "For the curious")
         return
     if last:
         _about()
