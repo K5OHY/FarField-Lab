@@ -18,6 +18,7 @@ TOPICS = {
     "About and methodology": (None, ["about.md", "developer.md"]),
 }
 LINKED_NOT_SHOWN = {"METHODOLOGY.md"}
+REPLACES_GUIDE = "<!-- help:replaces-page-guide -->"   # on a line of its own in a guide file: Help shows that guide, not the page's short one above it
 SEE_ALSO = {"My spots": ["Troubleshooting"], "Compare antennas": ["Troubleshooting", "About and methodology"],
             "Band conditions": ["Troubleshooting", "About and methodology"], "Log analysis": ["Troubleshooting"],
             "Start here": ["Troubleshooting"]}
@@ -177,9 +178,11 @@ def help_page():
         _start_here()
     if last:
         _about()
-    if guide:
+    replaces = REPLACES_GUIDE in (l.strip() for l in lines)   # a guide file that has its own purpose, steps and limits stands in for the page's short guide
+    lines = [l for l in lines if l.strip() != REPLACES_GUIDE]
+    if guide and not replaces:
         show_guide(guide)
-    if guide and sum(1 for l in lines if l.startswith("## ")) == 1:   # the topic's own name is the heading already
+    if guide and not replaces and sum(1 for l in lines if l.startswith("## ")) == 1:   # the topic's own name is the heading already
         lines = [l for l in lines if not l.startswith("## ")]
     _show(lines, root)
     _see_also(topic)

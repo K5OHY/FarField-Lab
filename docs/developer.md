@@ -65,19 +65,20 @@ To check that a key works without showing it, run `.venv\Scripts\python check_ha
 
 ## Help inside the app
 
-The **Help and README** page in the app opens with the same four tasks as the home page, then has one tab for each part of this README (My spots, Compare antennas, Band conditions, Log analysis, Troubleshooting, Deep dive), with the long explanations folded closed. The sidebar has a link to the README and code on GitHub.
+The **Help** page in the app opens with the same four tasks as the home page, then has one tab for each part (My spots, Compare antennas, Band conditions, Log analysis, Troubleshooting, About and methodology), built from the guide files in `docs/`, with the long explanations folded closed. The sidebar has a link to the README and code on GitHub.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
 | `web.py` | The Streamlit app's entry point: page setup and navigation |
-| `views/` | One file per page: `spots_view.py` (My spots), `compare_view.py` (comparing antennas), `conditions_view.py` (Band conditions), `compare_page.py`, `inputs.py` (the sidebar choices and loading both spots pages share), `test_link.py` (a whole test in a link), `help_view.py` (Help and README) |
+| `views/` | One file per page: `spots_view.py` (My spots), `compare_view.py` (comparing antennas), `conditions_view.py` (Band conditions), `compare_page.py`, `inputs.py` (the sidebar choices and loading both spots pages share), `test_link.py` (a whole test in a link), `help_view.py` (Help, built from `docs/`) |
 | `ui_common.py` | Settings, colours, constants and small helpers shared by the pages |
 | `data_sources.py` | Getting spots: the RBN download and pasted rows, WSPR from wspr.live, the skimmer list |
 | `live_rbn.py` | Today's RBN spots: from a live collector elsewhere (the address is `LIVE_RBN_URL` in the settings), or, when the app runs on your own computer, from a collector it starts inside itself |
 | `collector/` | The live collector: `rbn_service.py` stays connected to RBN's live feed on an always-on machine and answers "the spots of this callsign today"; `setup_vm.sh` and `SETUP.md` put it on a free Google Cloud machine; `rbn_listen.py` is a one-off tool that counts the feed's rate |
 | `simulate_validation.py` | Simulated tests with a known antenna difference, run through the program's own analysis, to check how often the summary is right, wrong and how often the 95% range holds the truth |
+| `docs/*.md` | The guides: one for each page of the app, troubleshooting, this developer guide and the "About the method" page. The in-app Help is built from them |
 | `docs/METHODOLOGY.md` | The technical methodology: every rule and number behind a summary, how it was checked, and its limits |
 | `disk_cache.py` | Remembers days that are over (the RBN file, WSPR spots and who was on the band), so each is fetched once and wspr.live's limit of 20 requests a minute is not used up on repeats |
 | `maps.py` | The interactive map of who heard you |

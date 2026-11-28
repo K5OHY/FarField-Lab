@@ -1,6 +1,6 @@
 # Technical methodology
 
-This is the detailed companion to the [README](../README.md). The README explains how to use the program. This page says exactly what is calculated, which numbers decide a summary, how the program was checked, and what it does not establish. Everything here describes the code as it is, so a result can be reproduced and challenged.
+This is the detailed companion to the [README](../README.md) and to the page guides ([My spots](my-spots.md), [Compare antennas](compare-antennas.md), [Band conditions](band-conditions.md) and [Log analysis](log-analysis.md)), which explain how to use the program. This page says exactly what is calculated, which numbers decide a summary, how the program was checked, and what it does not establish. Everything here describes the code as it is, so a result can be reproduced and challenged.
 
 **In one sentence:** the program compares two antennas by asking the *same receivers* about both, which cancels each receiver's own noise and path, and then it is careful about how sure it can be.
 
@@ -127,7 +127,7 @@ With 250 tests a cell, a figure is uncertain by about 2 points either way. Two t
 
 The "chance this lead is real" figures in the summary text (for example "a lead this big would still show up about 30% of the time if they were equal") are approximate. They come from the width of the final range, as if it were a t interval, so they are as rough as the range itself.
 
-**Band conditions against RBN.** See the README section "Band conditions now". In short, predicted signal margins were compared with what skimmers actually reported for four stations' activations, and the typical error was about 7 dB (6 dB within 1,000 miles, 9 dB at 1,000 to 2,000 miles, no DX paths in the sample).
+**Band conditions against RBN.** See the [Band conditions guide](band-conditions.md). In short, predicted signal margins were compared with what skimmers actually reported for four stations' activations, and the typical error was about 7 dB (6 dB within 1,000 miles, 9 dB at 1,000 to 2,000 miles, no DX paths in the sample).
 
 ## 7. The band conditions model
 
@@ -138,7 +138,7 @@ For each WSPR report near you, the program restates the SNR for your power and m
 and works out the **margin** over the mode's threshold (2,500 Hz reference bandwidth): CW -5 dB, SSB +8 dB, FT8 -21 dB, WSPR -28 dB.
 
 - **The percentage** is `Φ(margin / 8 dB)`, where Φ is the standard normal curve and 8 dB is the spread of prediction errors. The 8 dB is a rounded engineering figure, informed by the RBN comparison above (7.4 dB overall), not a fitted statistic. A margin of zero is a coin flip and +8 dB is about 84%.
-- **It is not the chance of an RBN spot.** Skimmers report less often than this estimate suggests, which the README quantifies. Treat the percentages as "decodable under the model".
+- **It is not the chance of an RBN spot.** Skimmers report less often than this estimate suggests, which the [Band conditions guide](band-conditions.md) explains. Treat the percentages as "decodable under the model".
 - **Regional percentages** are averages over the receivers actually seen in each band and region. They describe those receivers, not every receiver in the region.
 - **"Power needed"** uses the 75th-percentile margin among a region's receivers, so it describes the power to reach a fairly favourable receiver, not a typical one.
 - **Cells with fewer than 3 receivers** show only a count, because the receivers that reported anything are the lucky exceptions and a figure from one or two would look far too easy.

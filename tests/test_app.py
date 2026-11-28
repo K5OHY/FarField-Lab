@@ -573,7 +573,7 @@ class ComparePage(unittest.TestCase):
         text = " ".join(c.value for c in at.main.caption)
         self.assertIn("https://www.wspradar.org/", text)
         self.assertIn("Markus (DL1MKS)", text)
-        self.assertIn("https://www.wspradar.org/", (__import__("pathlib").Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8"))
+        self.assertIn("https://www.wspradar.org/", (__import__("pathlib").Path(__file__).resolve().parent.parent / "docs" / "compare-antennas.md").read_text(encoding="utf-8"))
 
     def test_the_example_shows_a_typical_speed_and_how_you_were_heard_at_each_speed(self):
         spots = page_after_example("spots_page", "map").run()
@@ -1498,10 +1498,19 @@ class HelpPage(unittest.TestCase):
 
     def test_each_page_topic_opens_with_the_pages_own_guide(self):
         import ui_common
+        from views.help_view import REPLACES_GUIDE, TOPICS
         for topic, key in (("My spots", "spots"), ("Compare antennas", "compare"), ("Band conditions", "conditions"), ("Log analysis", "log")):
             _, text = self._topic_text(topic)
-            self.assertIn(ui_common.GUIDES[key]["purpose"], text, topic)
-            self.assertIn(ui_common.GUIDES[key]["limits"], text, topic)   # the limits are not left in a folded block
+            with open(os.path.join(HERE, "docs", TOPICS[topic][1][0]), encoding="utf-8") as f:
+                own = REPLACES_GUIDE in f.read().splitlines()
+            if own:                                   # a guide file that carries its own purpose and limits stands in for the page's short guide
+                self.assertNotIn(ui_common.GUIDES[key]["purpose"], text, f"{topic}: the same guide twice")
+                for heading in ("What this page answers", "Get your first result", "What it cannot tell you"):
+                    self.assertIn(heading, text, topic)
+                self.assertNotIn(REPLACES_GUIDE, text, topic)
+            else:
+                self.assertIn(ui_common.GUIDES[key]["purpose"], text, topic)
+                self.assertIn(ui_common.GUIDES[key]["limits"], text, topic)   # the limits are not left in a folded block
 
     def test_the_help_page_has_a_topic_for_each_part_and_loses_no_section_of_the_guides(self):
         """The Help page shows the guide files in docs/. Every topic has its files, a section added to a guide later must still show up, and a link

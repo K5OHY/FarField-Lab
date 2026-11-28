@@ -1,17 +1,81 @@
 # Log analysis
 
-## Log analysis
+<!-- help:replaces-page-guide -->
 
-<!-- help:skip -->
-Upload a log from your logging program and see your session beside who heard you.
+## What this page answers
 
-1. Set the power you ran in the box above the uploader. This page does not read the power from the log, and it starts working the moment a log loads.
-2. Upload an ADIF file (most logging programs can export one). Your callsign, grid square and days come from the log.
-3. Read down the page. Pick a band under the two maps to compare who spotted you with who you worked.
+**What happened during an operating session, and who reported hearing you?**
 
-**You get:** the session in numbers, who followed you from band to band, what you worked (DXCC entities, states, zones), a session chart, two maps (the skimmers that spotted you and the stations you worked), how the bands were doing for DX while you were on, space weather, and for a POTA or SOTA log how your activation compares with the others at that park or summit. The log is used for that visit only and is not saved.
+## Before you begin
 
-<!-- /help:skip -->
+- **An ADIF file** (.adi or .adif) exported from your logging program, up to 5 MB. Each contact needs a call, date, time and band. Or skip this and open an example: no file needed.
+- **The power you used, in watts.** The page does not read it from the log, and it uses one power for the whole log. Set it first: the work starts as soon as a log is loaded, and changing it later starts the calculations again.
+- **You do not need a WSPR transmitter.** The WSPR evidence on this page comes from other stations' transmissions near your operating location.
+
+## Understand the three data sources
+
+| Source | What it tells you |
+|---|---|
+| **Your log** | Who you worked, on which band, and when. |
+| **RBN** | Which automated receivers (skimmers) decoded your signal. This page compares them with your CW contacts. |
+| **Nearby WSPR** | Which paths were reported from near your location, by other people's transmissions. It describes the path, not you. |
+
+A logged contact confirms communication between those two stations at that time. An RBN report confirms that a particular receiver decoded your signal. Nearby WSPR adds evidence from other transmitters around your location. Missing reports can reflect gaps in monitoring coverage.
+
+## Get your first result
+
+1. Open **Log analysis**. To look first, choose a card under the uploader and click **Open this example**.
+2. Set **Your power (watts)**.
+3. Upload your ADIF file. Your callsign, grid square and days are taken from the log. To change them, or the nearby radius, open **Change the callsign, the place or the nearby radius**.
+4. Wait. The first time can take a minute or two, because the page reads the RBN files and the nearby WSPR stations for each band you used.
+5. Start with the row of findings under the numbers. Each finding is a link to the part of the page it comes from.
+
+To try another log or example, click **Clear this log and start over**.
+
+## Read the result
+
+Open the **Bush House** example. **Look for:** the station that worked all five bands. *Who followed you* shows the stations that worked you on more than one band (some call them multiband hunters). Then pick a band under the two maps and compare the skimmers that spotted you with the stations you worked.
+
+The page runs top to bottom in four parts:
+
+| Part | What is in it |
+|---|---|
+| **Session overview** | The park or summit card, who followed you, highlights, how fast the contacts came in. |
+| **Who heard you** | Your session chart, a map of the skimmers that spotted you beside a map of the stations you worked, and *Where RBN heard you* in numbers. |
+| **Openings and reach** | Where nearby WSPR showed a path, your contacts against it, and the space weather around your session. |
+| **Reference** | The long lists, folded away. |
+
+A contact in your log shows the path worked. A skimmer spot or a nearby WSPR path is evidence the band was open toward that place. A band with no reports does not mean the band was closed: nobody may have been listening there.
+
+## Look deeper
+
+- **Nearby WSPR shows:** what was decoded, or an estimate of what would also have been strong enough for your power. Estimates are marked as estimates.
+- **Destination tabs:** one destination at a time, only those with something to show.
+- **Details for one band and time:** switch on *Show what is behind this window* to see the stations, spots and contacts behind a bar.
+- **Space weather:** Kp, solar flux and flares during your session, and, in a storm, what NASA's DONKI links it to.
+- **Share this session:** a picture and a short summary to post.
+- **POTA or SOTA logs:** how your activation compares with the others listed for the same park or summit.
+- **Open this activation on the My spots map:** the same day and window on the My spots page.
+
+## What it cannot tell you
+
+- A log holds when you logged contacts, not when you were on the air or calling.
+- The skimmer comparison uses your CW contacts. Contacts in other modes are in the log but are not compared there.
+- The signal comparison (skimmers against the nearby WSPR reference) rests on a correction that is experimental, and it says nothing about your antenna.
+
+## Your data
+
+Your uploaded log is processed for your session and is not saved as a log file by FarField Lab. The app queries external services to retrieve reception reports and to locate stations, using your callsign and, where needed, the callsigns from your contacts. Public lookup results may be cached.
+
+## Common questions
+
+- **"RBN has no file for this log yet."** RBN publishes a day's file after that day ends (UTC). Try again tomorrow.
+- **Nothing on the skimmer map.** Only CW contacts are compared, so an SSB or FT8 log has nothing to show there.
+- **My log has no grid square, or I was portable.** The place used is the grid square in your log, or the one you type in *Where you operated (grid square)*, so a portable log is compared from where you were. Leave it empty and the page uses where your callsign is registered.
+- **The first load is slow.** Examples open in seconds because their data is saved. Your own log has to fetch its data.
+- **I changed power during the session.** The page uses one power for the whole log. The example logs where the power changed show their own plan.
+
+## Reference: what every part of the page shows
 
 <details>
 <summary><b>What does every part of the Log analysis page show?</b></summary>
